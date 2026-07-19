@@ -64,10 +64,16 @@ jobs:
           # standart "local.properties" dosyasindan okur.
           echo "sdk.dir=$ANDROID_HOME" > "$GITHUB_WORKSPACE/android/build/local.properties"
 
+      - name: Android SDK icerigini derinlemesine listele (teshis)
+        run: |
+          echo "--- build-tools ---"
+          find "$ANDROID_HOME/build-tools" -maxdepth 2
+          echo "--- platforms ---"
+          find "$ANDROID_HOME/platforms" -maxdepth 1
+          echo "--- ndk ---"
+          find "$ANDROID_HOME/ndk" -maxdepth 1 || true
+
       - name: Android APK olustur (debug)
-        # NOT: Bu adimda SDK yolunu editor_settings uzerinden Godot'a
-        # ayrica tanitmiyoruz - bunun etkisiz/gereksiz oldugunu test
-        # ediyoruz (Godot ANDROID_HOME'u kendi algiliyor olabilir).
         run: |
           set -e
           echo "ANDROID_HOME=$ANDROID_HOME"
