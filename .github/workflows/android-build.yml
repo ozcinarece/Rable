@@ -7,9 +7,10 @@ name: Android APK build
 # "latest-apk" adli surekli guncellenen bir GitHub Release'e ekler.
 # Boylece telefondan Releases sayfasindan direkt indirilebilir.
 
+# GECICI: Godot'un headless Android export'undaki detaysiz hata sorunu
+# cozulene kadar bu workflow sadece elle (Actions > Run workflow)
+# tetiklenebilir - her push'ta bosuna calisip kirmizi carpi uretmesin.
 on:
-  push:
-    branches: [main]
   workflow_dispatch: {}
 
 env:
