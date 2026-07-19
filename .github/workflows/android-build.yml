@@ -79,12 +79,14 @@ jobs:
           export/android/android_sdk_path = "$ANDROID_HOME"
           EOF
 
-      - name: Android APK olustur (debug)
+      - name: TESHIS - basit bir Windows preset'i export etmeyi dene
+        # Android'e ozgu olmayan, cok daha basit bir platformda ayni
+        # aciklanamayan hata cikiyor mu diye bakiyoruz.
         run: |
           set -e
           mkdir -p builds
           /opt/godot/godot --headless --verbose --path "$GITHUB_WORKSPACE" \
-            --export-debug "Android" builds/survival-sandbox-debug.apk
+            --export-debug "WindowsTest" builds/test.exe
           ls -la builds
 
       - name: APK'yi is ciktisi olarak yukle
