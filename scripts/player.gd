@@ -35,7 +35,9 @@ func _physics_process(_delta: float) -> void:
 	var direction := _get_input_direction()
 	if direction != Vector2.ZERO:
 		facing = direction
-	velocity = direction * speed
+	# Aclik sifirsa oyuncu yari hizda yurur
+	var effective_speed := speed * (0.5 if Hunger.is_starving() else 1.0)
+	velocity = direction * effective_speed
 	move_and_slide()
 
 func _get_input_direction() -> Vector2:

@@ -24,3 +24,15 @@ func remove_item(item_id: String, amount: int) -> bool:
 
 func get_count(item_id: String) -> int:
 	return items.get(item_id, 0)
+
+## Kayittan yukleme icin: tum envanteri degistirir.
+func set_items(new_items: Dictionary) -> void:
+	items = {}
+	for item_id in new_items:
+		items[item_id] = int(new_items[item_id])
+	changed.emit()
+
+## Yeni oyun icin: envanteri bosaltir.
+func reset() -> void:
+	items = {}
+	changed.emit()

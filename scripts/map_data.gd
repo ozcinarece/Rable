@@ -5,8 +5,9 @@ extends RefCounted
 ##   d  toprak  (yurunebilir)
 ##   s  kum     (yurunebilir)
 ##   ~  su      (engel)
-##   #  tas     (engel - ileride kazilabilir olacak)
-##   T  agac    (engel - ileride odun kaynagi olacak)
+##   #  tas     (engel - kazma ile kirilir)
+##   T  agac    (engel - odun + yaprak verir)
+##   m  meyve calisi (engel - meyve verir, bir sure sonra yeniden buyur)
 ##   P  oyuncunun baslangic noktasi (altina cim doselenir)
 ##
 ## Haritayi degistirmek icin sadece asagidaki satirlari duzenlemek yeterli.
@@ -21,7 +22,7 @@ const MAP: Array[String] = [
 	"#.TTTTT.T.....................#####....#",
 	"#..TTT........................######...#",
 	"#...T..........................####....#",
-	"#................................##....#",
+	"#.........mm.....................##....#",
 	"#....sss...............................#",
 	"#...ss~~ss.............d...............#",
 	"#..ss~~~~ss............d...............#",
@@ -31,9 +32,9 @@ const MAP: Array[String] = [
 	"#...ss~~~~ss...........d...............#",
 	"#....ss~~ss............d...............#",
 	"#.....ssss.............d...............#",
-	"#......................d...............#",
+	"#......................d.....mm........#",
 	"#......ddddddddddddddddd...............#",
-	"#......d...............................#",
+	"#......d...........m...................#",
 	"#......d.........TT....................#",
 	"#......d........TTTT...................#",
 	"#......d.........TT....................#",

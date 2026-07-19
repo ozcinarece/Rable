@@ -1,6 +1,7 @@
-[gd_scene load_steps=2 format=3]
+[gd_scene load_steps=3 format=3]
 
 [ext_resource type="Script" path="res://scripts/hud.gd" id="1_script"]
+[ext_resource type="Texture2D" path="res://assets/items/meyve.png" id="2_meyve"]
 
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1_script")
@@ -11,6 +12,46 @@ offset_top = 12.0
 
 [node name="HBox" type="HBoxContainer" parent="Panel"]
 theme_override_constants/separation = 6
+
+[node name="HungerPanel" type="PanelContainer" parent="."]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -400.0
+offset_top = 12.0
+offset_right = -12.0
+offset_bottom = 62.0
+grow_horizontal = 0
+
+[node name="HBox" type="HBoxContainer" parent="HungerPanel"]
+theme_override_constants/separation = 8
+
+[node name="HungerIcon" type="TextureRect" parent="HungerPanel/HBox"]
+custom_minimum_size = Vector2(34, 34)
+texture = ExtResource("2_meyve")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="HungerBar" type="ProgressBar" parent="HungerPanel/HBox"]
+custom_minimum_size = Vector2(200, 32)
+size_flags_vertical = 4
+max_value = 100.0
+value = 100.0
+show_percentage = false
+
+[node name="EatButton" type="Button" parent="HungerPanel/HBox"]
+text = "Ye"
+theme_override_font_sizes/font_size = 22
+
+[node name="ResetButton" type="Button" parent="."]
+anchor_left = 1.0
+anchor_right = 1.0
+offset_left = -132.0
+offset_top = 70.0
+offset_right = -12.0
+offset_bottom = 108.0
+grow_horizontal = 0
+text = "Yeni Oyun"
+theme_override_font_sizes/font_size = 16
 
 [node name="BuildBar" type="PanelContainer" parent="."]
 anchor_left = 0.5

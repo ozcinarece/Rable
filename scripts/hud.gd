@@ -24,6 +24,9 @@ const ICON_BUILD := preload("res://assets/ui/hammer.png")
 @onready var craft_button: Button = $CraftButton
 @onready var craft_panel: PanelContainer = $CraftPanel
 @onready var craft_rows: VBoxContainer = $CraftPanel/VBox/Rows
+@onready var hunger_bar: ProgressBar = $HungerPanel/HBox/HungerBar
+@onready var eat_button: Button = $HungerPanel/HBox/EatButton
+@onready var reset_button: Button = $ResetButton
 
 var _action_state: String = "idle"
 var _craft_buttons: Dictionary = {}  # recipe_id -> Uret butonu
@@ -32,19 +35,44 @@ var _build_buttons: Dictionary = {}  # recipe_id -> insa toggle butonu
 func _ready() -> void:
 	Inventory.changed.connect(_refresh)
 	Crafting.station_changed.connect(_update_craft_buttons)
+	Hunger.changed.connect(_update_hunger)
 	action_button.pressed.connect(func(): action_pressed.emit())
 	action_button.icon = ICON_FIST
 	craft_button.toggled.connect(func(pressed: bool): craft_panel.visible = pressed)
 	craft_panel.visible = false
+	eat_button.pressed.connect(_on_eat_pressed)
+	reset_button.pressed.connect(_on_reset_pressed)
 	_build_build_bar()
 	_build_craft_panel()
 	_refresh()
+	_update_hunger()
 
 # --- Envanter cubugu ----------------------------------------------------
 
 func _refresh() -> void:
 	_rebuild_inventory_bar()
 	_update_craft_buttons()
+	_update_hunger()
+
+# --- Aclik --------------------------------------------------------------
+
+func _update_hunger() -> void:
+	hunger_bar.value = Hunger.value
+	# Aclik kritik seviyedeyse bari kirmiziya bogar
+	hunger_bar.modulate = Color(1, 0.45, 0.45) if Hunger.value <= 25.0 else Color.WHITE
+	# Meyve varsa ve aclik tam degilse Ye butonu aktif
+	eat_button.disabled = Inventory.get_count("meyve") <= 0 or Hunger.value >= Hunger.MAX_VALUE
+
+func _on_eat_pressed() -> void:
+	if Inventory.remove_item("meyve", 1):
+		Hunger.eat(25.0)
+
+# Kayitli oyunu silip sifirdan baslar.
+func _on_reset_pressed() -> void:
+	SaveManager.delete_save()
+	Inventory.reset()
+	Hunger.reset()
+	get_tree().reload_current_scene()
 
 # Sadece sahip olunan esyalari, items.gd'deki sirayla gosterir.
 func _rebuild_inventory_bar() -> void:

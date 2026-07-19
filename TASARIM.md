@@ -16,9 +16,21 @@ sistemler eklendikce guncellenir.
 ### Ham kaynaklar (dunyadan toplanir)
 | Kaynak | Kaynagi | Vurus | Verdigi |
 |---|---|---|---|
-| Odun | Agac | 3 | +3 odun, +2 yaprak |
+| Odun | Agac | 3 (balta: 1) | +3 odun, +2 yaprak |
 | Yaprak | Agac (yan urun) | - | - |
-| Tas | Kaya | 4 | +2 tas |
+| Tas | Kaya | 4 (kazma: 2) | +2 tas |
+| Meyve | Meyve calisi | 1 | +2 meyve; cali 60 sn sonra yeniden buyur |
+
+### Aclik
+- 100'den baslar, saniyede 0.25 azalir (~6.5 dk)
+- Meyve ye: +25 (HUD'daki "Ye" butonu)
+- Sifira inince oyuncu yari hizda yurur (olum M5'te can sistemiyle)
+
+### Kayit
+- Her 8 saniyede + uygulama arka plana alininca otomatik kayit (user://save.json)
+- Harita durumu, envanter, aclik, respawn ve oyuncu konumu saklanir
+- Harita boyutu degisen guncellemede eski kayit yok sayilir
+- Sag ustteki "Yeni Oyun" butonu kaydi silip bastan baslatir
 
 ### Basit uretim (elde, her yerde)
 | Urun | Tarif |
@@ -60,6 +72,9 @@ sistemler eklendikce guncellenir.
 - [x] M4b: Uretim sistemi (el tarifleri + uretim paneli)
 - [x] M4c: Aletler (balta/kazma, vurus azaltma)
 - [x] M4d: Calisma tezgahi + kamp evi (base) + respawn noktasi
+- [x] M4e: Kaydetme sistemi (otomatik JSON kayit + Yeni Oyun butonu)
+- [x] M4f: Aclik + meyve calisi (yeniden buyuyen kaynak)
+- [ ] M4g: Depo sandigi
 - [ ] M5: Gece/gunduz dongusu + dusman dalgalari + can/savas
 - [ ] M6: Kazma sistemi (grid terrain)
 - [ ] M7: Su sistemi (borularla hacim aktarma)

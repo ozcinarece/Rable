@@ -47,7 +47,16 @@ const TILE_DEFS: Dictionary = {
 			"drops": {"kalas": 4, "cubuk": 2}, "becomes": ".", "hits": 2},
 	"E": {"texture": "res://assets/tiles/ev.png", "solid": true,
 			"drops": {"kalas": 6, "ip": 2, "yaprak": 4}, "becomes": ".", "hits": 3},
+	# Meyve calisi: toplaninca bos caliya donusur, bir sure sonra yeniden buyur
+	"m": {"texture": "res://assets/tiles/bush_full.png", "solid": true,
+			"drops": {"meyve": 2}, "becomes": "n", "hits": 1},
+	"n": {"texture": "res://assets/tiles/bush_empty.png", "solid": true},
 }
+
+## Bos calinin yeniden meyve vermesi icin gecen sure (saniye)
+const REGROW_SECONDS: float = 60.0
+## Otomatik kayit araligi (saniye)
+const SAVE_INTERVAL: float = 8.0
 
 @onready var ground_tile_map: TileMap = $GroundTileMap
 @onready var player: CharacterBody2D = $Player
@@ -61,20 +70,44 @@ var _selected_recipe_id: String = ""
 var _map_width: int = 0
 var _map_height: int = 0
 var _respawn_cell: Vector2i = Vector2i.ZERO  # olum gelince (M5) burada dogacak
+var _regrow: Dictionary = {}  # bos cali hucresi -> yeniden buyumeye kalan sure
+var _save_timer: float = 0.0
 
 func _ready() -> void:
 	ground_tile_map.tile_set = _build_tile_set()
 	_build_map_from_ascii()
+	_load_game()
 	player.world_tapped.connect(_on_player_world_tapped)
 	hud.build_toggled.connect(_on_build_toggled)
 	hud.action_pressed.connect(_on_action_pressed)
 
-func _process(_delta: float) -> void:
+func _process(delta: float) -> void:
 	# Aksiyon butonunun ikonunu duruma gore guncelle
 	# (yumruk = bos, balta = yakinda toplanabilir sey var, cekic = insa modu)
 	hud.set_action_state(_compute_action_state())
 	# Tezgah tarifleri sadece tezgahin yanindayken uretilebilir
 	Crafting.near_station = _is_near_tile("B")
+	_tick_regrow(delta)
+	# Otomatik kayit
+	_save_timer += delta
+	if _save_timer >= SAVE_INTERVAL:
+		_save_timer = 0.0
+		_save_game()
+
+# Uygulama arka plana alinirken / kapanirken hemen kaydet
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_PAUSED or what == NOTIFICATION_WM_CLOSE_REQUEST:
+		_save_game()
+
+# Bos calilarin sayacini isletir; suresi dolan yeniden meyve verir
+func _tick_regrow(delta: float) -> void:
+	var ready_cells: Array[Vector2i] = []
+	for cell in _regrow:
+		_regrow[cell] -= delta
+		if _regrow[cell] <= 0.0:
+			ready_cells.append(cell)
+	for cell in ready_cells:
+		_set_cell_char(cell, "m")
 
 # --- Kurulum -----------------------------------------------------------
 
@@ -306,3 +339,65 @@ func _get_player_cell() -> Vector2i:
 func _set_cell_char(cell: Vector2i, ch: String) -> void:
 	_cell_char[cell] = ch
 	ground_tile_map.set_cell(0, cell, _char_to_source_id[ch], Vector2i(0, 0))
+	# Bos cali olusunca yeniden buyume sayaci baslat
+	if ch == "n":
+		_regrow[cell] = REGROW_SECONDS
+	elif _regrow.has(cell):
+		_regrow.erase(cell)
+
+# --- Kayit / yukleme ---------------------------------------------------
+
+func _save_game() -> void:
+	var rows: PackedStringArray = []
+	for y in _map_height:
+		var row := ""
+		for x in _map_width:
+			row += _cell_char.get(Vector2i(x, y), ".")
+		rows.append(row)
+
+	var floor_data: Dictionary = {}
+	for cell in _floor_under:
+		floor_data["%d,%d" % [cell.x, cell.y]] = _floor_under[cell]
+
+	SaveManager.save_data({
+		"version": 1,
+		"w": _map_width,
+		"h": _map_height,
+		"rows": rows,
+		"floor_under": floor_data,
+		"inventory": Inventory.items,
+		"hunger": Hunger.value,
+		"respawn": [_respawn_cell.x, _respawn_cell.y],
+		"player": [player.global_position.x, player.global_position.y],
+	})
+
+func _load_game() -> void:
+	var data := SaveManager.load_data()
+	if data.is_empty():
+		return
+	# Harita boyutu degistiyse (guncelleme sonrasi) eski kaydi yok say
+	if int(data.get("w", 0)) != _map_width or int(data.get("h", 0)) != _map_height:
+		return
+
+	var rows: Array = data.get("rows", [])
+	for y in rows.size():
+		var row: String = rows[y]
+		for x in row.length():
+			var ch := row[x]
+			if TILE_DEFS.has(ch) and _cell_char.get(Vector2i(x, y), "") != ch:
+				_set_cell_char(Vector2i(x, y), ch)
+
+	for key in data.get("floor_under", {}):
+		var parts: PackedStringArray = key.split(",")
+		_floor_under[Vector2i(int(parts[0]), int(parts[1]))] = data["floor_under"][key]
+
+	Inventory.set_items(data.get("inventory", {}))
+	Hunger.value = float(data.get("hunger", Hunger.MAX_VALUE))
+	Hunger.changed.emit()
+
+	var respawn: Array = data.get("respawn", [])
+	if respawn.size() == 2:
+		_respawn_cell = Vector2i(int(respawn[0]), int(respawn[1]))
+	var pos: Array = data.get("player", [])
+	if pos.size() == 2:
+		player.global_position = Vector2(float(pos[0]), float(pos[1]))
