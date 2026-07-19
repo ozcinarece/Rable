@@ -18,8 +18,11 @@ signal chest_dismantle_requested
 ## Panel Kapat butonuyla kapatildi (World acik sandik kaydini temizler)
 signal chest_closed
 
-## Kazma modu acildi/kapandi (kurek butonu)
-signal dig_toggled(enabled: bool)
+## Tasima modu acildi/kapandi (Tasi butonu)
+signal move_toggled(enabled: bool)
+
+## Envanterden bir esyayi eline alma istegi (bos string = birak)
+signal hold_requested(item_id: String)
 
 const Items = preload("res://scripts/items.gd")
 const Recipes = preload("res://scripts/recipes.gd")
@@ -28,6 +31,7 @@ const ICON_FIST := preload("res://assets/ui/fist.png")
 const ICON_GATHER := preload("res://assets/ui/axe.png")
 const ICON_BUILD := preload("res://assets/ui/hammer.png")
 const ICON_DIG := preload("res://assets/ui/shovel.png")
+const ICON_MOVE := preload("res://assets/ui/move.png")
 
 @onready var inventory_box: HBoxContainer = $Panel/HBox
 @onready var build_box: HBoxContainer = $BuildBar/HBox
@@ -42,7 +46,8 @@ const ICON_DIG := preload("res://assets/ui/shovel.png")
 @onready var chest_rows: VBoxContainer = $ChestPanel/VBox/Scroll/Rows
 @onready var chest_close_button: Button = $ChestPanel/VBox/TitleRow/CloseButton
 @onready var chest_dismantle_button: Button = $ChestPanel/VBox/DismantleButton
-@onready var dig_button: Button = $DigButton
+@onready var move_button: Button = $MoveButton
+@onready var hold_button: Button = $InventoryPanel/VBox/HoldButton
 @onready var inventory_button: Button = $InventoryButton
 @onready var inventory_panel: PanelContainer = $InventoryPanel
 @onready var inventory_title: Label = $InventoryPanel/VBox/TitleRow/Title
@@ -52,6 +57,7 @@ const ICON_DIG := preload("res://assets/ui/shovel.png")
 @onready var chest_title: Label = $ChestPanel/VBox/TitleRow/Title
 
 var _selected_item: String = ""
+var _held_item: String = ""  # World bildirir; detay butonunun metni icin
 
 var _action_state: String = "idle"
 var _craft_buttons: Dictionary = {}  # recipe_id -> Uret butonu
@@ -72,8 +78,9 @@ func _ready() -> void:
 		chest_closed.emit())
 	chest_dismantle_button.pressed.connect(func(): chest_dismantle_requested.emit())
 	chest_panel.visible = false
-	dig_button.icon = ICON_DIG
-	dig_button.toggled.connect(_on_dig_toggled)
+	move_button.icon = ICON_MOVE
+	move_button.toggled.connect(_on_move_toggled)
+	hold_button.pressed.connect(_on_hold_pressed)
 	inventory_button.toggled.connect(func(pressed: bool):
 		inventory_panel.visible = pressed
 		if pressed:
@@ -128,6 +135,7 @@ func _update_detail() -> void:
 	if _selected_item == "" or Inventory.get_count(_selected_item) <= 0:
 		inventory_detail.text = "Bir esyaya dokun: detayi burada gorunur. Yigin limiti: %d." % Inventory.STACK_MAX
 		panel_eat_button.visible = false
+		hold_button.visible = false
 		return
 	inventory_detail.text = "%s x%d - %s" % [
 		Items.display_name(_selected_item),
@@ -135,6 +143,8 @@ func _update_detail() -> void:
 		Items.description(_selected_item),
 	]
 	panel_eat_button.visible = _selected_item == "meyve"
+	hold_button.visible = Items.HOLDABLE.has(_selected_item)
+	hold_button.text = "Bırak" if _held_item == _selected_item else "Eline Al"
 
 # --- Aclik --------------------------------------------------------------
 
@@ -200,22 +210,35 @@ func _on_build_button_toggled(pressed: bool, recipe_id: String, button: Button) 
 			var other: Button = _build_buttons[other_id]
 			if other != button and other.button_pressed:
 				other.set_pressed_no_signal(false)
-		if dig_button.button_pressed:
-			dig_button.set_pressed_no_signal(false)
-			dig_toggled.emit(false)
+		if move_button.button_pressed:
+			move_button.set_pressed_no_signal(false)
+			move_toggled.emit(false)
 		build_toggled.emit(recipe_id)
 	else:
 		build_toggled.emit("")
 
-# Kazma modu acilinca insa secimini kapat (tek mod aktif olabilir)
-func _on_dig_toggled(pressed: bool) -> void:
+# Tasima modu acilinca insa secimini kapat (tek mod aktif olabilir)
+func _on_move_toggled(pressed: bool) -> void:
 	if pressed:
 		for other_id in _build_buttons:
 			var other: Button = _build_buttons[other_id]
 			if other.button_pressed:
 				other.set_pressed_no_signal(false)
 		build_toggled.emit("")
-	dig_toggled.emit(pressed)
+	move_toggled.emit(pressed)
+
+# --- Eline alma ---------------------------------------------------------
+
+func _on_hold_pressed() -> void:
+	if _selected_item == "":
+		return
+	# Zaten eldeyse birak, degilse eline al
+	hold_requested.emit("" if _held_item == _selected_item else _selected_item)
+
+## World bildirir: eldeki esya degisti (buton metni guncellenir)
+func set_held_item(item_id: String) -> void:
+	_held_item = item_id
+	_update_detail()
 
 # --- Uretim paneli ------------------------------------------------------
 
@@ -356,5 +379,7 @@ func set_action_state(state: String) -> void:
 			action_button.icon = ICON_BUILD
 		"dig":
 			action_button.icon = ICON_DIG
+		"move":
+			action_button.icon = ICON_MOVE
 		_:
 			action_button.icon = ICON_FIST

@@ -29,6 +29,7 @@ const TEX_SIDE := preload("res://assets/player/player_side.png")
 
 @onready var sprite: Sprite2D = $Sprite2D
 
+var _held_sprite: Sprite2D  # eline alinan aletin gorseli
 var _touch_start_position: Vector2 = Vector2.ZERO
 var _touch_current_position: Vector2 = Vector2.ZERO
 var _touch_start_time: float = 0.0
@@ -37,6 +38,19 @@ var _is_touching: bool = false
 func _ready() -> void:
 	# Top-down oyun: yercekimi/zemin mantigi olmayan serbest hareket modu
 	motion_mode = CharacterBody2D.MOTION_MODE_FLOATING
+	_held_sprite = Sprite2D.new()
+	_held_sprite.visible = false
+	_held_sprite.scale = Vector2(0.8, 0.8)
+	add_child(_held_sprite)
+	_update_sprite()
+
+## Eline alinan esyanin ikonunu gosterir; bos yol = eli bos.
+func set_held_item(icon_path: String) -> void:
+	if icon_path == "":
+		_held_sprite.visible = false
+		return
+	_held_sprite.texture = load(icon_path)
+	_held_sprite.visible = true
 	_update_sprite()
 
 func _physics_process(_delta: float) -> void:
@@ -60,6 +74,9 @@ func _update_sprite() -> void:
 	else:
 		sprite.texture = TEX_DOWN
 		sprite.flip_h = false
+	# Eldeki alet, bakilan tarafta dursun
+	if _held_sprite != null:
+		_held_sprite.position = Vector2(-13.0 if facing.x < 0 else 13.0, -8.0)
 
 func _get_input_direction() -> Vector2:
 	if _is_touching:

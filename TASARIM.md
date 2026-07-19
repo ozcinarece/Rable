@@ -33,8 +33,17 @@ sistemler eklendikce guncellenir.
 - Envanter paneli: slot izgarasi, esya detayi, panelden meyve yeme
 - Sandiklar sinirsiz: depolamanin amaci bu
 
-### Kazma (kurek gerekir)
-- Kazma modu: sag ustteki kurek butonu; acikken dokunma/aksiyon kazar
+### Eline alma ve tasima
+- Balta/kazma/kurek envanter panelinden "Eline Al" ile ele alinir;
+  karakterin elinde gorunur ve KAYITLIDIR
+- Alet bonuslari SADECE alet eldeyken calisir (balta elde: agac 1 vurus)
+- Kurek eldeyken zemine dokunmak kazar (ayri kazma modu butonu kalkti)
+- Tasi butonu (sag ust): yapiya dokun (yari saydam olur) -> bos zemine
+  dokun -> yapi tasinir. Sandik icindekilerle birlikte tasinir; ev
+  tasininca respawn noktasi da tasinir. Dogal seyler tasinamaz.
+
+### Kazma (kurek eldeyken)
+- Kurek eldeyken bos zemine dokunmak/aksiyon butonu kazar
 - Cim ve toprak kazilinca +1 toprak, kum kazilinca +1 kum verir
 - Kazilan hucre cukur olur: gecilemez (hendek savunmasi)
 - Cukur suya komsuysa suyla dolar ve su bagli tum cukurlara yayilir
@@ -89,9 +98,9 @@ sistemler eklendikce guncellenir.
 
 ## Buyuk Fazlar (oncelik sirasi)
 1. [x] Gorsel temel: 3/4 perspektif + Y-sort + karakter yonleri
-2. [~] Envanter altyapisi: envanter paneli (slot/detay) [x] + canta
-   (kapasite) [x] -> eline esya alma/ekipman (elde gorunur alet) ->
-   yapi tasima
+2. [x] Envanter altyapisi: envanter paneli (slot/detay) + canta
+   (kapasite) + eline esya alma (elde gorunur alet, bonuslar eldeyken) +
+   yapi tasima (sandik icerigiyle birlikte tasinir)
 3. [ ] Savas cagi: mizrak/zirh/sapka + gece-gunduz + dusman dalgalari +
    can/savas + tuzaklar
 4. [ ] Yerlesik hayat: cok tile'li ev/base insaati (oda mantigi, gorsel +

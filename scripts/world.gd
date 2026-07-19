@@ -68,7 +68,9 @@ var _regrow: Dictionary = {}
 var _chests: Dictionary = {}
 var _open_chest: Vector2i = NO_CELL
 var _selected_recipe_id: String = ""
-var _dig_mode: bool = false
+var _held_item: String = ""       # oyuncunun eline aldigi alet
+var _move_mode: bool = false      # tasima modu (HUD'daki Tasi butonu)
+var _move_source: Vector2i = NO_CELL  # tasinmak uzere secilen yapinin hucresi
 var _respawn_cell: Vector2i = Vector2i.ZERO
 var _save_timer: float = 0.0
 var _map_width: int = 0
@@ -84,7 +86,8 @@ func _ready() -> void:
 	hud.chest_transfer_requested.connect(_on_chest_transfer)
 	hud.chest_dismantle_requested.connect(_on_chest_dismantle)
 	hud.chest_closed.connect(func(): _open_chest = NO_CELL)
-	hud.dig_toggled.connect(func(enabled: bool): _dig_mode = enabled)
+	hud.move_toggled.connect(_on_move_toggled)
+	hud.hold_requested.connect(_on_hold_requested)
 
 func _process(delta: float) -> void:
 	hud.set_action_state(_compute_action_state())
@@ -93,6 +96,9 @@ func _process(delta: float) -> void:
 		var diff := (_open_chest - _get_player_cell()).abs()
 		if maxi(diff.x, diff.y) > 1:
 			_close_chest()
+	# Eldeki alet envanterden ciktiysa (sandiga kondu vb.) eli bosalt
+	if _held_item != "" and Inventory.get_count(_held_item) <= 0:
+		_on_hold_requested("")
 	_tick_regrow(delta)
 	_save_timer += delta
 	if _save_timer >= SAVE_INTERVAL:
@@ -210,13 +216,15 @@ func _on_player_world_tapped(world_pos: Vector2) -> void:
 	var diff := (cell - player_cell).abs()
 	if maxi(diff.x, diff.y) > HARVEST_REACH_TILES:
 		return
-	if _dig_mode:
-		_try_dig(cell)
+	if _move_mode:
+		_handle_move_tap(cell, player_cell)
 	elif _selected_recipe_id != "":
 		_try_place(cell, player_cell)
 	elif _object_char.get(cell, "") == "S":
 		_open_chest = cell
 		hud.show_chest(_chests.get(cell, {}))
+	elif _held_item == "kurek" and not _object_char.has(cell):
+		_try_dig(cell)
 	else:
 		_try_harvest(cell)
 
@@ -225,8 +233,10 @@ func _on_action_pressed() -> void:
 	var facing_offset := Vector2i(player.facing.round())
 	if facing_offset == Vector2i.ZERO:
 		facing_offset = Vector2i(0, 1)
-	if _dig_mode:
-		_try_dig(player_cell + facing_offset)
+	if _move_mode:
+		_handle_move_tap(player_cell + facing_offset, player_cell)
+		return
+	if _held_item == "kurek" and _try_dig(player_cell + facing_offset):
 		return
 	if _selected_recipe_id != "":
 		_try_place(player_cell + facing_offset, player_cell)
@@ -288,7 +298,7 @@ func _try_harvest(cell: Vector2i) -> bool:
 
 	var def: Dictionary = OBJECT_DEFS[ch]
 	var hits_needed: int = def.get("hits", 1)
-	if def.has("tool") and Inventory.get_count(def["tool"]["item"]) > 0:
+	if def.has("tool") and _held_item == def["tool"]["item"]:
 		hits_needed = def["tool"]["hits"]
 	var damage: int = _cell_damage.get(cell, 0) + 1
 	if damage < hits_needed:
@@ -322,8 +332,7 @@ func _try_dig(cell: Vector2i) -> bool:
 	var ground: String = _ground_char.get(cell, "")
 	if ground == "" or not GROUND_DEFS[ground].has("dig"):
 		return false
-	if Inventory.get_count("kurek") <= 0:
-		_spawn_floating_text(cell, "Kürek gerekli! (Tezgahta üret)", Color(1, 0.7, 0.6))
+	if _held_item != "kurek":
 		return false
 	if not Inventory.can_add_all(GROUND_DEFS[ground]["dig"]):
 		_spawn_floating_text(cell, "Envanter dolu!", Color(1, 0.6, 0.6))
@@ -357,6 +366,62 @@ func _maybe_flood(start_cell: Vector2i) -> void:
 		for offset in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 			if _ground_char.get(cell + offset, "") == "o":
 				queue.append(cell + offset)
+
+# --- Eline alma / tasima -------------------------------------------------
+
+## Verilen esyayi eline alir; bos string eli bosaltir.
+func _on_hold_requested(item_id: String) -> void:
+	if item_id != "" and Inventory.get_count(item_id) <= 0:
+		return
+	_held_item = item_id
+	player.set_held_item("" if item_id == "" else Items.ITEMS[item_id]["icon"])
+	hud.set_held_item(item_id)
+
+## Tasinabilir yapilar (dogal seyler tasinamaz)
+const MOVABLE: Array[String] = ["W", "K", "B", "E", "S"]
+
+func _on_move_toggled(enabled: bool) -> void:
+	_move_mode = enabled
+	if not enabled and _move_source != NO_CELL:
+		# Bekleyen secim iptal: yari saydamligi kaldir
+		if _object_nodes.has(_move_source):
+			_object_nodes[_move_source].modulate = Color.WHITE
+		_move_source = NO_CELL
+
+# Tasima modunda dokunma: once yapiyi sec, sonra bos zemine birak.
+func _handle_move_tap(cell: Vector2i, player_cell: Vector2i) -> void:
+	if _move_source == NO_CELL:
+		# Secim: tasinabilir bir yapiya dokun
+		var ch: String = _object_char.get(cell, "")
+		if ch == "" or not MOVABLE.has(ch) or not _is_editable_cell(cell):
+			return
+		_move_source = cell
+		_object_nodes[cell].modulate = Color(1, 1, 1, 0.5)
+		_spawn_floating_text(cell, "Seçildi - boş zemine dokun", Color(0.8, 0.9, 1.0))
+		return
+	if cell == _move_source:
+		return
+	# Birakma: hedef bos ve yurunebilir olmali
+	if not _is_editable_cell(cell) or cell == player_cell:
+		return
+	if _object_char.has(cell):
+		return
+	var ground: String = _ground_char.get(cell, "")
+	if ground == "" or GROUND_DEFS[ground]["solid"]:
+		return
+
+	var moving_ch: String = _object_char.get(_move_source, "")
+	var source := _move_source
+	_move_source = NO_CELL
+	_set_object(source, "")
+	_set_object(cell, moving_ch)
+	# Sandik iceriden tasinir, ev respawn noktasini beraberinde goturur
+	if moving_ch == "S" and _chests.has(source):
+		_chests[cell] = _chests[source]
+		_chests.erase(source)
+	if moving_ch == "E" and _respawn_cell == source:
+		_respawn_cell = cell
+	_spawn_floating_text(cell, "Taşındı", Color(0.8, 1.0, 0.8))
 
 # --- Sandik ------------------------------------------------------------
 
@@ -402,10 +467,12 @@ func _on_chest_dismantle() -> void:
 # --- Yardimcilar -------------------------------------------------------
 
 func _compute_action_state() -> String:
-	if _dig_mode:
-		return "dig"
+	if _move_mode:
+		return "move"
 	if _selected_recipe_id != "":
 		return "build"
+	if _held_item == "kurek":
+		return "dig"
 	var player_cell := _get_player_cell()
 	for oy in [-1, 0, 1]:
 		for ox in [-1, 0, 1]:
@@ -477,6 +544,7 @@ func _save_game() -> void:
 		"hunger": Hunger.value,
 		"respawn": [_respawn_cell.x, _respawn_cell.y],
 		"player": [player.global_position.x, player.global_position.y],
+		"held": _held_item,
 	})
 
 func _load_game() -> void:
@@ -541,3 +609,6 @@ func _load_game() -> void:
 	var pos: Array = data.get("player", [])
 	if pos.size() == 2:
 		player.global_position = Vector2(float(pos[0]), float(pos[1]))
+	var held: String = data.get("held", "")
+	if held != "" and Inventory.get_count(held) > 0:
+		_on_hold_requested(held)

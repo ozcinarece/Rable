@@ -21,6 +21,9 @@ const ITEMS: Dictionary = {
 	"canta": {"name": "Çanta", "icon": "res://assets/items/canta.png"},
 }
 
+## Ele alinabilen esyalar (envanter panelindeki "Eline Al" butonu)
+const HOLDABLE: Array[String] = ["balta", "kazma", "kurek"]
+
 ## Envanter panelinde gosterilen kisa aciklamalar
 const DESCRIPTIONS: Dictionary = {
 	"odun": "Agactan gelir; kalasa cevrilir.",
@@ -29,10 +32,10 @@ const DESCRIPTIONS: Dictionary = {
 	"cubuk": "Alet saplarinda kullanilir.",
 	"ip": "Alet ve yapi baglamada kullanilir.",
 	"tas": "Saglam yapi ve alet malzemesi.",
-	"balta": "Agaclar tek vurusta kesilir.",
-	"kazma": "Kayalar 2 vurusta kirilir.",
+	"balta": "Eline al: agaclar tek vurusta kesilir.",
+	"kazma": "Eline al: kayalar 2 vurusta kirilir.",
 	"meyve": "Yenir: +25 aclik.",
-	"kurek": "Kazma modunda zemin kazar.",
+	"kurek": "Eline al: zemine dokununca kazar.",
 	"toprak": "Cukurlari doldurur.",
 	"kum": "Ileride ise yarayacak...",
 	"canta": "+4 envanter slotu (en fazla 2).",
