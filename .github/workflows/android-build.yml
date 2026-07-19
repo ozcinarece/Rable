@@ -64,6 +64,11 @@ jobs:
           # Gradle projeleri SDK yolunu Godot'un ayarlarindan degil,
           # standart "local.properties" dosyasindan okur.
           echo "sdk.dir=$ANDROID_HOME" > "$GITHUB_WORKSPACE/android/build/local.properties"
+          # Editorun "Install Android Build Template" adimi bu iki dosyayi
+          # da olusturur; Godot "Checking build version..." asamasinda
+          # .build_version dosyasindaki surumu motorla karsilastirir.
+          echo "${GODOT_TEMPLATE_VERSION}" > "$GITHUB_WORKSPACE/android/.build_version"
+          touch "$GITHUB_WORKSPACE/android/build/.gdignore"
 
       - name: Android SDK icerigini derinlemesine listele (teshis)
         run: |
