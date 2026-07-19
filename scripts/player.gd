@@ -58,6 +58,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_touch_current_position = event.position
 			_touch_start_time = Time.get_ticks_msec() / 1000.0
 		else:
+			if not _is_touching:
+				return  # basma olayini arayuz (HUD butonu) yutmus; birakmayi isleme
 			_is_touching = false
 			var duration := Time.get_ticks_msec() / 1000.0 - _touch_start_time
 			var drift := _touch_current_position.distance_to(_touch_start_position)
