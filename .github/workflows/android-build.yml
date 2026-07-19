@@ -46,22 +46,10 @@ jobs:
           mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}"
           cp -r "$TEMPLATES_SRC"/* "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}/"
 
-      - name: Debug keystore olustur
-        # Godot editorunde normalde bu keystore ilk export'ta otomatik
-        # olusturulur; headless CI'da bu adim calismadigi icin elle
-        # olusturup Godot'a ortam degiskenleriyle gosteriyoruz.
-        run: |
-          set -e
-          keytool -genkeypair -v -keystore /tmp/debug.keystore \
-            -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass android -keypass android \
-            -dname "CN=Android Debug,O=Android,C=US"
+      - name: Indirilen template dosyalarini listele (teshis)
+        run: find "$HOME/.local/share/godot/export_templates" -maxdepth 2
 
       - name: Android APK olustur (debug)
-        env:
-          GODOT_ANDROID_KEYSTORE_DEBUG_PATH: /tmp/debug.keystore
-          GODOT_ANDROID_KEYSTORE_DEBUG_USER: androiddebugkey
-          GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: android
         run: |
           set -e
           mkdir -p builds
