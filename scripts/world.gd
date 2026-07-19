@@ -51,6 +51,9 @@ const TILE_DEFS: Dictionary = {
 	"m": {"texture": "res://assets/tiles/bush_full.png", "solid": true,
 			"drops": {"meyve": 2}, "becomes": "n", "hits": 1},
 	"n": {"texture": "res://assets/tiles/bush_empty.png", "solid": true},
+	# Sandik: vurusla toplanamaz (esya kaybi olmasin); dokununca acilir,
+	# sokme islemi sadece bos sandikta, panelin icindeki Sok butonuyla
+	"S": {"texture": "res://assets/tiles/sandik.png", "solid": true},
 }
 
 ## Bos calinin yeniden meyve vermesi icin gecen sure (saniye)
@@ -73,6 +76,12 @@ var _respawn_cell: Vector2i = Vector2i.ZERO  # olum gelince (M5) burada dogacak
 var _regrow: Dictionary = {}  # bos cali hucresi -> yeniden buyumeye kalan sure
 var _save_timer: float = 0.0
 
+## Sandik icerikleri: hucre -> {esya: adet}. Acik sandigin hucresi
+## _open_chest'te tutulur; oyuncu uzaklasinca panel kapanir.
+const NO_CELL := Vector2i(-999, -999)
+var _chests: Dictionary = {}
+var _open_chest: Vector2i = NO_CELL
+
 func _ready() -> void:
 	ground_tile_map.tile_set = _build_tile_set()
 	_build_map_from_ascii()
@@ -80,6 +89,9 @@ func _ready() -> void:
 	player.world_tapped.connect(_on_player_world_tapped)
 	hud.build_toggled.connect(_on_build_toggled)
 	hud.action_pressed.connect(_on_action_pressed)
+	hud.chest_transfer_requested.connect(_on_chest_transfer)
+	hud.chest_dismantle_requested.connect(_on_chest_dismantle)
+	hud.chest_closed.connect(func(): _open_chest = NO_CELL)
 
 func _process(delta: float) -> void:
 	# Aksiyon butonunun ikonunu duruma gore guncelle
@@ -87,6 +99,11 @@ func _process(delta: float) -> void:
 	hud.set_action_state(_compute_action_state())
 	# Tezgah tarifleri sadece tezgahin yanindayken uretilebilir
 	Crafting.near_station = _is_near_tile("B")
+	# Acik sandiktan uzaklasildiysa paneli kapat
+	if _open_chest != NO_CELL:
+		var diff := (_open_chest - _get_player_cell()).abs()
+		if maxi(diff.x, diff.y) > 1:
+			_close_chest()
 	_tick_regrow(delta)
 	# Otomatik kayit
 	_save_timer += delta
@@ -184,6 +201,10 @@ func _on_player_world_tapped(world_pos: Vector2) -> void:
 
 	if _selected_recipe_id != "":
 		_try_place(cell, player_cell)
+	elif _cell_char.get(cell, "") == "S":
+		# Sandiga dokununca depolama paneli acilir
+		_open_chest = cell
+		hud.show_chest(_chests.get(cell, {}))
 	else:
 		_try_harvest(cell)
 
@@ -280,6 +301,50 @@ func _try_harvest(cell: Vector2i) -> bool:
 	_set_cell_char(cell, new_ch)
 	return true
 
+# --- Sandik ------------------------------------------------------------
+
+func _close_chest() -> void:
+	_open_chest = NO_CELL
+	hud.close_chest()
+
+# Bir esyanin tum yiginini envanterden sandiga (veya tersine) tasir.
+func _on_chest_transfer(item_id: String, to_chest: bool) -> void:
+	if _open_chest == NO_CELL:
+		return
+	var chest: Dictionary = _chests.get(_open_chest, {})
+	if to_chest:
+		var amount := Inventory.get_count(item_id)
+		if amount <= 0:
+			return
+		Inventory.remove_item(item_id, amount)
+		chest[item_id] = int(chest.get(item_id, 0)) + amount
+	else:
+		var amount: int = int(chest.get(item_id, 0))
+		if amount <= 0:
+			return
+		chest.erase(item_id)
+		Inventory.add_item(item_id, amount)
+	_chests[_open_chest] = chest
+	hud.show_chest(chest)  # paneli guncel icerikle yeniden ciz
+
+# Bos sandigi soker ve maliyetini iade eder.
+func _on_chest_dismantle() -> void:
+	if _open_chest == NO_CELL:
+		return
+	if not _chests.get(_open_chest, {}).is_empty():
+		return  # ici dolu sandik sokulemez (esya kaybi olmasin)
+	var cell := _open_chest
+	_close_chest()
+	_chests.erase(cell)
+	var cost: Dictionary = Recipes.BUILD_RECIPES["sandik"]["cost"]
+	for item_id in cost:
+		Inventory.add_item(item_id, cost[item_id])
+	var new_ch: String = "."
+	if _floor_under.has(cell):
+		new_ch = _floor_under[cell]
+		_floor_under.erase(cell)
+	_set_cell_char(cell, new_ch)
+
 # --- Yardimcilar -------------------------------------------------------
 
 # Aksiyon butonunun hangi ikonu gosterecegini belirler.
@@ -359,12 +424,17 @@ func _save_game() -> void:
 	for cell in _floor_under:
 		floor_data["%d,%d" % [cell.x, cell.y]] = _floor_under[cell]
 
+	var chest_data: Dictionary = {}
+	for cell in _chests:
+		chest_data["%d,%d" % [cell.x, cell.y]] = _chests[cell]
+
 	SaveManager.save_data({
 		"version": 1,
 		"w": _map_width,
 		"h": _map_height,
 		"rows": rows,
 		"floor_under": floor_data,
+		"chests": chest_data,
 		"inventory": Inventory.items,
 		"hunger": Hunger.value,
 		"respawn": [_respawn_cell.x, _respawn_cell.y],
@@ -390,6 +460,13 @@ func _load_game() -> void:
 	for key in data.get("floor_under", {}):
 		var parts: PackedStringArray = key.split(",")
 		_floor_under[Vector2i(int(parts[0]), int(parts[1]))] = data["floor_under"][key]
+
+	for key in data.get("chests", {}):
+		var parts: PackedStringArray = key.split(",")
+		var contents: Dictionary = {}
+		for item_id in data["chests"][key]:
+			contents[item_id] = int(data["chests"][key][item_id])
+		_chests[Vector2i(int(parts[0]), int(parts[1]))] = contents
 
 	Inventory.set_items(data.get("inventory", {}))
 	Hunger.value = float(data.get("hunger", Hunger.MAX_VALUE))

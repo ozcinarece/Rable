@@ -53,6 +53,44 @@ grow_horizontal = 0
 text = "Yeni Oyun"
 theme_override_font_sizes/font_size = 16
 
+[node name="ChestPanel" type="PanelContainer" parent="."]
+visible = false
+anchor_left = 0.5
+anchor_top = 0.5
+anchor_right = 0.5
+anchor_bottom = 0.5
+offset_left = -280.0
+offset_top = -240.0
+offset_right = 280.0
+offset_bottom = 240.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="VBox" type="VBoxContainer" parent="ChestPanel"]
+theme_override_constants/separation = 8
+
+[node name="TitleRow" type="HBoxContainer" parent="ChestPanel/VBox"]
+
+[node name="Title" type="Label" parent="ChestPanel/VBox/TitleRow"]
+text = "Sandık"
+size_flags_horizontal = 3
+theme_override_font_sizes/font_size = 26
+
+[node name="CloseButton" type="Button" parent="ChestPanel/VBox/TitleRow"]
+text = "Kapat"
+theme_override_font_sizes/font_size = 20
+
+[node name="Scroll" type="ScrollContainer" parent="ChestPanel/VBox"]
+size_flags_vertical = 3
+
+[node name="Rows" type="VBoxContainer" parent="ChestPanel/VBox/Scroll"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 6
+
+[node name="DismantleButton" type="Button" parent="ChestPanel/VBox"]
+text = "Sandığı Sök (boşken)"
+theme_override_font_sizes/font_size = 20
+
 [node name="BuildBar" type="PanelContainer" parent="."]
 anchor_left = 0.5
 anchor_top = 1.0

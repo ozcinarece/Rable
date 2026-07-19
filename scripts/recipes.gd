@@ -22,6 +22,8 @@ const BUILD_RECIPES: Dictionary = {
 			"tile": "B", "cost": {"kalas": 4, "cubuk": 2}},
 	"kamp_evi": {"name": "Kamp Evi", "icon": "res://assets/tiles/ev.png",
 			"tile": "E", "cost": {"kalas": 6, "ip": 2, "yaprak": 4}},
+	"sandik": {"name": "Sandık", "icon": "res://assets/tiles/sandik.png",
+			"tile": "S", "cost": {"kalas": 4, "ip": 1}},
 }
 
 const CRAFT_RECIPES: Dictionary = {

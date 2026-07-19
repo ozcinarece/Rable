@@ -50,8 +50,9 @@ sistemler eklendikce guncellenir.
 |---|---|---|
 | Ahsap duvar | 2 kalas | Engel/savunma (sokulunce iade) |
 | Tas duvar | 2 tas | Saglam engel |
-| Calisma Tezgahi (M4d) | 4 kalas + 2 cubuk | Yaninda karmasik tarifler acilir |
-| Kamp Evi / Base (M4d) | 6 kalas + 2 ip + 4 yaprak | Yeniden dogma noktasi; ileride depo/uyku |
+| Calisma Tezgahi | 4 kalas + 2 cubuk | Yaninda karmasik tarifler acilir |
+| Kamp Evi / Base | 6 kalas + 2 ip + 4 yaprak | Yeniden dogma noktasi; ileride depo/uyku |
+| Sandik | 4 kalas + 1 ip | Depolama: dokununca panel acilir, yigin tasima; sadece bosken sokulur |
 
 ## Arayuz
 - Sol ust: dinamik envanter cubugu (sahip olunan kaynaklar otomatik listelenir)
@@ -74,7 +75,7 @@ sistemler eklendikce guncellenir.
 - [x] M4d: Calisma tezgahi + kamp evi (base) + respawn noktasi
 - [x] M4e: Kaydetme sistemi (otomatik JSON kayit + Yeni Oyun butonu)
 - [x] M4f: Aclik + meyve calisi (yeniden buyuyen kaynak)
-- [ ] M4g: Depo sandigi
+- [x] M4g: Depo sandigi (esya tasima paneli, sandik basina depolama)
 - [ ] M5: Gece/gunduz dongusu + dusman dalgalari + can/savas
 - [ ] M6: Kazma sistemi (grid terrain)
 - [ ] M7: Su sistemi (borularla hacim aktarma)

@@ -11,6 +11,13 @@ signal build_toggled(recipe_id: String)
 ## Sag alttaki aksiyon butonuna basilinca yayinlanir.
 signal action_pressed
 
+## Sandik paneli: esya tasima istegi (to_chest: true = sandiga koy)
+signal chest_transfer_requested(item_id: String, to_chest: bool)
+## Bos sandigi sokme istegi
+signal chest_dismantle_requested
+## Panel Kapat butonuyla kapatildi (World acik sandik kaydini temizler)
+signal chest_closed
+
 const Items = preload("res://scripts/items.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 
@@ -27,6 +34,10 @@ const ICON_BUILD := preload("res://assets/ui/hammer.png")
 @onready var hunger_bar: ProgressBar = $HungerPanel/HBox/HungerBar
 @onready var eat_button: Button = $HungerPanel/HBox/EatButton
 @onready var reset_button: Button = $ResetButton
+@onready var chest_panel: PanelContainer = $ChestPanel
+@onready var chest_rows: VBoxContainer = $ChestPanel/VBox/Scroll/Rows
+@onready var chest_close_button: Button = $ChestPanel/VBox/TitleRow/CloseButton
+@onready var chest_dismantle_button: Button = $ChestPanel/VBox/DismantleButton
 
 var _action_state: String = "idle"
 var _craft_buttons: Dictionary = {}  # recipe_id -> Uret butonu
@@ -42,6 +53,11 @@ func _ready() -> void:
 	craft_panel.visible = false
 	eat_button.pressed.connect(_on_eat_pressed)
 	reset_button.pressed.connect(_on_reset_pressed)
+	chest_close_button.pressed.connect(func():
+		close_chest()
+		chest_closed.emit())
+	chest_dismantle_button.pressed.connect(func(): chest_dismantle_requested.emit())
+	chest_panel.visible = false
 	_build_build_bar()
 	_build_craft_panel()
 	_refresh()
@@ -173,6 +189,76 @@ func _cost_text(cost: Dictionary) -> String:
 func _update_craft_buttons() -> void:
 	for recipe_id in _craft_buttons:
 		_craft_buttons[recipe_id].disabled = not Crafting.can_craft(recipe_id)
+
+# --- Sandik paneli ------------------------------------------------------
+
+## World tarafindan cagrilir: paneli verilen icerikle (yeniden) cizer.
+func show_chest(contents: Dictionary) -> void:
+	chest_panel.visible = true
+	for child in chest_rows.get_children():
+		child.queue_free()
+
+	_add_chest_section_title("Sandıktakiler:")
+	if contents.is_empty():
+		_add_chest_note("(boş)")
+	for item_id in contents:
+		_add_chest_row(item_id, contents[item_id], "Al", false)
+
+	_add_chest_section_title("Envanterin:")
+	var has_any := false
+	for item_id in Items.ITEMS:
+		var count := Inventory.get_count(item_id)
+		if count <= 0:
+			continue
+		has_any = true
+		_add_chest_row(item_id, count, "Koy", true)
+	if not has_any:
+		_add_chest_note("(boş)")
+
+	chest_dismantle_button.disabled = not contents.is_empty()
+
+func close_chest() -> void:
+	chest_panel.visible = false
+
+func _add_chest_section_title(text: String) -> void:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", 22)
+	label.modulate = Color(1, 1, 0.75)
+	chest_rows.add_child(label)
+
+func _add_chest_note(text: String) -> void:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", 20)
+	label.modulate = Color(0.8, 0.8, 0.8)
+	chest_rows.add_child(label)
+
+# Tek esya satiri: ikon + "Ad x adet" + tasima butonu (tum yigini tasir)
+func _add_chest_row(item_id: String, count: int, button_text: String, to_chest: bool) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+
+	var icon := TextureRect.new()
+	icon.texture = load(Items.ITEMS[item_id]["icon"])
+	icon.custom_minimum_size = Vector2(30, 30)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	row.add_child(icon)
+
+	var label := Label.new()
+	label.text = "%s x%d" % [Items.display_name(item_id), count]
+	label.add_theme_font_size_override("font_size", 20)
+	label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	row.add_child(label)
+
+	var move := Button.new()
+	move.text = button_text
+	move.add_theme_font_size_override("font_size", 20)
+	move.pressed.connect(func(): chest_transfer_requested.emit(item_id, to_chest))
+	row.add_child(move)
+
+	chest_rows.add_child(row)
 
 # --- Aksiyon butonu -----------------------------------------------------
 
