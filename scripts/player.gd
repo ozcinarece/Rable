@@ -79,7 +79,12 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag:
 		_touch_current_position = event.position
 	elif event is InputEventMouseButton:
-		# Masaustunde test icin: sol tik da dokunma sayilir
+		# Dokunmatikten uretilen sahte fare olaylarini yok say - dokunma
+		# zaten yukaridaki ScreenTouch dalinda isleniyor (cift islem olmasin).
+		# (Bu emulasyon acik kalmali cunku HUD butonlari ona ihtiyac duyuyor.)
+		if event.device == InputEvent.DEVICE_ID_EMULATION:
+			return
+		# Masaustunde test icin: gercek sol tik da dokunma sayilir
 		if event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
 			world_tapped.emit(get_global_mouse_position())
 
