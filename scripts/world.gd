@@ -15,6 +15,7 @@ extends Node2D
 const TILE_SIZE: int = 32
 const MapData = preload("res://scripts/map_data.gd")
 const Recipes = preload("res://scripts/recipes.gd")
+const Items = preload("res://scripts/items.gd")
 
 ## Oyuncu en fazla kac tile uzakligi etkileyebilir (1 = komsu tile'lar)
 const HARVEST_REACH_TILES: int = 1
@@ -33,7 +34,7 @@ const TILE_DEFS: Dictionary = {
 	"#": {"texture": "res://assets/tiles/stone.png", "solid": true,
 			"drops": {"tas": 2}, "becomes": "d", "hits": 4},
 	"T": {"texture": "res://assets/tiles/tree.png", "solid": true,
-			"drops": {"odun": 3}, "becomes": ".", "hits": 3},
+			"drops": {"odun": 3, "yaprak": 2}, "becomes": ".", "hits": 3},
 	# Insa edilebilir yapilar (sokulunce maliyeti tamamen iade edilir)
 	"W": {"texture": "res://assets/tiles/wood_wall.png", "solid": true,
 			"drops": {"odun": 2}, "becomes": ".", "hits": 2},
@@ -178,7 +179,7 @@ func _try_place(cell: Vector2i, player_cell: Vector2i) -> bool:
 	if ch == "" or TILE_DEFS[ch]["solid"]:
 		return false  # sadece yurunebilir zemine insa edilebilir
 
-	var recipe: Dictionary = Recipes.RECIPES[_selected_recipe_id]
+	var recipe: Dictionary = Recipes.BUILD_RECIPES[_selected_recipe_id]
 	var cost: Dictionary = recipe["cost"]
 
 	# Once tum maliyeti karsilayabildigimizden emin ol, sonra harca
@@ -215,7 +216,7 @@ func _try_harvest(cell: Vector2i) -> bool:
 	var gained: PackedStringArray = []
 	for item_id in def["drops"]:
 		Inventory.add_item(item_id, def["drops"][item_id])
-		gained.append("+%d %s" % [def["drops"][item_id], item_id])
+		gained.append("+%d %s" % [def["drops"][item_id], Items.display_name(item_id)])
 	_spawn_floating_text(cell, " ".join(gained), Color(0.7, 1.0, 0.7))
 
 	# Insa edilmis bir yapiysa altindaki zemini geri getir,

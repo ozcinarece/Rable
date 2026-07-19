@@ -1,12 +1,23 @@
 extends RefCounted
-## Insa tarifleri.
-## Yeni bir insa edilebilir sey eklemek icin buraya bir kayit ekle,
-## world.gd'deki TILE_DEFS'e tile tanimini yaz ve HUD'a bir buton koy.
+## Tum tarifler tek yerde.
 ##
+## BUILD_RECIPES: haritaya yerlestirilen yapilar (insa cubugu)
 ##   tile: yerlestirilecek harita karakteri (world.gd TILE_DEFS'te tanimli)
-##   cost: insa maliyeti (envanterdeki kaynak id'leri)
+##   cost: insa maliyeti
+##
+## CRAFT_RECIPES: envanterde uretilen esyalar (uretim paneli)
+##   output:  uretilen esya(lar) ve adetleri
+##   cost:    harcanan esyalar
+##   station: "" = elde her yerde uretilir;
+##            "tezgah" = calisma tezgahinin yaninda olmayi gerektirir (M4d)
 
-const RECIPES: Dictionary = {
-	"ahsap_duvar": {"tile": "W", "cost": {"odun": 2}},
+const BUILD_RECIPES: Dictionary = {
+	"ahsap_duvar": {"tile": "W", "cost": {"kalas": 2}},
 	"tas_duvar": {"tile": "K", "cost": {"tas": 2}},
+}
+
+const CRAFT_RECIPES: Dictionary = {
+	"kalas": {"output": {"kalas": 2}, "cost": {"odun": 1}, "station": ""},
+	"cubuk": {"output": {"cubuk": 2}, "cost": {"kalas": 1}, "station": ""},
+	"ip": {"output": {"ip": 1}, "cost": {"yaprak": 3}, "station": ""},
 }
