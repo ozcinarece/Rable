@@ -9,6 +9,9 @@ script = ExtResource("1_script")
 
 [node name="GroundTileMap" type="TileMap" parent="."]
 
-[node name="Player" parent="." instance=ExtResource("2_player")]
+[node name="YSort" type="Node2D" parent="."]
+y_sort_enabled = true
+
+[node name="Player" parent="YSort" instance=ExtResource("2_player")]
 
 [node name="HUD" parent="." instance=ExtResource("3_hud")]

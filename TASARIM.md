@@ -73,6 +73,26 @@ sistemler eklendikce guncellenir.
 - Surukle: hareket (sanal joystick), kisa dokunus: tile etkilesimi
 - Aksiyon butonu: bakilan yondeki hucreye vur / insa et
 
+## Gorunum
+- 3/4 perspektif (Animal Crossing / Stardew tarzi): nesnelerin hem ustu
+  hem on yuzu gorunur; ekranda asagida olan one cizilir (Y-sort)
+- Zemin duz TileMap; nesneler (agac/kaya/yapilar) 32x64 gorselli,
+  Y-sirali sprite'lar - oyuncu agacin arkasindan gecebilir
+- Karakter 4 yone bakar (asagi/yukari/yan+ayna)
+
+## Buyuk Fazlar (oncelik sirasi)
+1. [x] Gorsel temel: 3/4 perspektif + Y-sort + karakter yonleri
+2. [ ] Envanter altyapisi: envanter paneli (slot/detay) -> canta
+   (kapasite) -> eline esya alma/ekipman (elde gorunur alet) -> yapi tasima
+3. [ ] Savas cagi: mizrak/zirh/sapka + gece-gunduz + dusman dalgalari +
+   can/savas + tuzaklar
+4. [ ] Yerlesik hayat: cok tile'li ev/base insaati (oda mantigi, gorsel +
+   stratejik) + tarim (su kanallariyla sulama)
+5. [ ] Ilerleme: seviye/yetenekler/tarif kilitleri (XP kaynaklari
+   olgunlasinca)
+Surekli: gorsel iyilestirme her fazda dozunda; cit vb. kucuk icerikler
+uygun faza serpistirilir.
+
 ## Yol Haritasi
 - [x] M1: Tile dunya + hareket + kamera
 - [x] M2: Kaynak toplama + envanter + HUD

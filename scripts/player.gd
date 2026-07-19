@@ -19,8 +19,15 @@ const TAP_MAX_DRIFT: float = 12.0     # piksel - bundan fazla kaydiysa tap sayil
 const DRAG_DEAD_ZONE: float = 10.0    # kucuk parmak titremelerini yok say
 
 ## Oyuncunun son baktigi yon. Aksiyon butonu hangi hucreyi
-## hedefleyecegini bundan hesaplar.
+## hedefleyecegini bundan hesaplar; sprite de buna gore secilir.
 var facing: Vector2 = Vector2.DOWN
+
+# 3/4 perspektif yon gorselleri (sol = sag gorselinin aynasi)
+const TEX_DOWN := preload("res://assets/player/player_down.png")
+const TEX_UP := preload("res://assets/player/player_up.png")
+const TEX_SIDE := preload("res://assets/player/player_side.png")
+
+@onready var sprite: Sprite2D = $Sprite2D
 
 var _touch_start_position: Vector2 = Vector2.ZERO
 var _touch_current_position: Vector2 = Vector2.ZERO
@@ -30,15 +37,29 @@ var _is_touching: bool = false
 func _ready() -> void:
 	# Top-down oyun: yercekimi/zemin mantigi olmayan serbest hareket modu
 	motion_mode = CharacterBody2D.MOTION_MODE_FLOATING
+	_update_sprite()
 
 func _physics_process(_delta: float) -> void:
 	var direction := _get_input_direction()
 	if direction != Vector2.ZERO:
 		facing = direction
+		_update_sprite()
 	# Aclik sifirsa oyuncu yari hizda yurur
 	var effective_speed := speed * (0.5 if Hunger.is_starving() else 1.0)
 	velocity = direction * effective_speed
 	move_and_slide()
+
+# Baktigi yone gore dogru gorseli secer (sola bakarken yan gorsel aynalanir)
+func _update_sprite() -> void:
+	if absf(facing.x) > absf(facing.y):
+		sprite.texture = TEX_SIDE
+		sprite.flip_h = facing.x < 0
+	elif facing.y < 0:
+		sprite.texture = TEX_UP
+		sprite.flip_h = false
+	else:
+		sprite.texture = TEX_DOWN
+		sprite.flip_h = false
 
 func _get_input_direction() -> Vector2:
 	if _is_touching:
