@@ -26,20 +26,27 @@ const HARVEST_REACH_TILES: int = 1
 #   becomes: toplandiktan sonra tile'in donusecegi karakter
 #            (insa edilmis duvarlarda bunun yerine altindaki zemin geri gelir)
 #   hits:    kac vurusta toplanacagi (yazilmazsa 1; buyuk/sert seyler fazla)
+#   tool:    dogru alet envanterdeyse vurus sayisi dusurulur
 const TILE_DEFS: Dictionary = {
 	".": {"texture": "res://assets/tiles/grass.png", "solid": false},
 	"d": {"texture": "res://assets/tiles/dirt.png", "solid": false},
 	"s": {"texture": "res://assets/tiles/sand.png", "solid": false},
 	"~": {"texture": "res://assets/tiles/water.png", "solid": true},
 	"#": {"texture": "res://assets/tiles/stone.png", "solid": true,
-			"drops": {"tas": 2}, "becomes": "d", "hits": 4},
+			"drops": {"tas": 2}, "becomes": "d", "hits": 4,
+			"tool": {"item": "kazma", "hits": 2}},
 	"T": {"texture": "res://assets/tiles/tree.png", "solid": true,
-			"drops": {"odun": 3, "yaprak": 2}, "becomes": ".", "hits": 3},
+			"drops": {"odun": 3, "yaprak": 2}, "becomes": ".", "hits": 3,
+			"tool": {"item": "balta", "hits": 1}},
 	# Insa edilebilir yapilar (sokulunce maliyeti tamamen iade edilir)
 	"W": {"texture": "res://assets/tiles/wood_wall.png", "solid": true,
-			"drops": {"odun": 2}, "becomes": ".", "hits": 2},
+			"drops": {"kalas": 2}, "becomes": ".", "hits": 2},
 	"K": {"texture": "res://assets/tiles/stone_wall.png", "solid": true,
 			"drops": {"tas": 2}, "becomes": ".", "hits": 3},
+	"B": {"texture": "res://assets/tiles/tezgah.png", "solid": true,
+			"drops": {"kalas": 4, "cubuk": 2}, "becomes": ".", "hits": 2},
+	"E": {"texture": "res://assets/tiles/ev.png", "solid": true,
+			"drops": {"kalas": 6, "ip": 2, "yaprak": 4}, "becomes": ".", "hits": 3},
 }
 
 @onready var ground_tile_map: TileMap = $GroundTileMap
@@ -53,6 +60,7 @@ var _cell_damage: Dictionary = {}  # hucre -> su ana kadar yedigi vurus sayisi
 var _selected_recipe_id: String = ""
 var _map_width: int = 0
 var _map_height: int = 0
+var _respawn_cell: Vector2i = Vector2i.ZERO  # olum gelince (M5) burada dogacak
 
 func _ready() -> void:
 	ground_tile_map.tile_set = _build_tile_set()
@@ -65,6 +73,8 @@ func _process(_delta: float) -> void:
 	# Aksiyon butonunun ikonunu duruma gore guncelle
 	# (yumruk = bos, balta = yakinda toplanabilir sey var, cekic = insa modu)
 	hud.set_action_state(_compute_action_state())
+	# Tezgah tarifleri sadece tezgahin yanindayken uretilebilir
+	Crafting.near_station = _is_near_tile("B")
 
 # --- Kurulum -----------------------------------------------------------
 
@@ -110,6 +120,7 @@ func _build_map_from_ascii() -> void:
 			var ch := row[x]
 			if ch == "P":
 				player.position = ground_tile_map.map_to_local(Vector2i(x, y))
+				_respawn_cell = Vector2i(x, y)
 				ch = "."
 			if not TILE_DEFS.has(ch):
 				ch = "."
@@ -191,6 +202,11 @@ func _try_place(cell: Vector2i, player_cell: Vector2i) -> bool:
 
 	_floor_under[cell] = ch  # sokulurse ayni zemin geri gelsin
 	_set_cell_char(cell, recipe["tile"])
+
+	# Kamp evi dikildiyse yeniden dogma noktasi artik burasi
+	if recipe["tile"] == "E":
+		_respawn_cell = cell
+		_spawn_floating_text(cell, "Kamp kuruldu!", Color(0.75, 0.9, 1.0))
 	return true
 
 # Hedef hucreye bir vurus yapar; yeterince vurulduysa toplar.
@@ -204,8 +220,11 @@ func _try_harvest(cell: Vector2i) -> bool:
 
 	var def: Dictionary = TILE_DEFS[ch]
 
-	# Coklu vurus: buyuk/sert seyler tek vurusta dusmez
+	# Coklu vurus: buyuk/sert seyler tek vurusta dusmez.
+	# Dogru alet envanterdeyse cok daha az vurus yeter.
 	var hits_needed: int = def.get("hits", 1)
+	if def.has("tool") and Inventory.get_count(def["tool"]["item"]) > 0:
+		hits_needed = def["tool"]["hits"]
 	var damage: int = _cell_damage.get(cell, 0) + 1
 	if damage < hits_needed:
 		_cell_damage[cell] = damage
@@ -268,6 +287,17 @@ func _spawn_floating_text(cell: Vector2i, text: String, color: Color) -> void:
 func _is_editable_cell(cell: Vector2i) -> bool:
 	return cell.x > 0 and cell.y > 0 \
 		and cell.x < _map_width - 1 and cell.y < _map_height - 1
+
+# Oyuncunun 8 komsusundan herhangi biri verilen karakter mi?
+func _is_near_tile(target_ch: String) -> bool:
+	var player_cell := _get_player_cell()
+	for oy in [-1, 0, 1]:
+		for ox in [-1, 0, 1]:
+			if ox == 0 and oy == 0:
+				continue
+			if _cell_char.get(player_cell + Vector2i(ox, oy), "") == target_ch:
+				return true
+	return false
 
 func _get_player_cell() -> Vector2i:
 	return ground_tile_map.local_to_map(ground_tile_map.to_local(player.global_position))

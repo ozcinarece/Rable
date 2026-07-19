@@ -7,8 +7,16 @@ extends Node
 
 const Recipes = preload("res://scripts/recipes.gd")
 
+## Tezgah yakinligi degistiginde yayinlanir (HUD tarif butonlarini gunceller)
+signal station_changed
+
 ## Oyuncu su anda bir calisma tezgahinin yaninda mi? (World gunceller)
-var near_station: bool = false
+var near_station: bool = false:
+	set(value):
+		if near_station == value:
+			return
+		near_station = value
+		station_changed.emit()
 
 ## Tarif su an uretilebilir mi? (istasyon + kaynak kontrolu)
 func can_craft(recipe_id: String) -> bool:

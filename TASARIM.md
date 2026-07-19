@@ -56,10 +56,10 @@ sistemler eklendikce guncellenir.
 - [x] M2: Kaynak toplama + envanter + HUD
 - [x] M3: Insa sistemi (duvarlar)
 - [x] M3.5: Coklu vurus, ikonlu aksiyon butonu, carpisma duzeltmeleri
-- [ ] M4a: Yaprak, agacin cift urunu, dinamik envanter HUD'i
-- [ ] M4b: Uretim sistemi (el tarifleri + uretim paneli)
-- [ ] M4c: Aletler (balta/kazma, vurus azaltma)
-- [ ] M4d: Calisma tezgahi + kamp evi (base) + respawn
+- [x] M4a: Yaprak, agacin cift urunu, dinamik envanter HUD'i
+- [x] M4b: Uretim sistemi (el tarifleri + uretim paneli)
+- [x] M4c: Aletler (balta/kazma, vurus azaltma)
+- [x] M4d: Calisma tezgahi + kamp evi (base) + respawn noktasi
 - [ ] M5: Gece/gunduz dongusu + dusman dalgalari + can/savas
 - [ ] M6: Kazma sistemi (grid terrain)
 - [ ] M7: Su sistemi (borularla hacim aktarma)
