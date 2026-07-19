@@ -18,12 +18,16 @@ signal chest_dismantle_requested
 ## Panel Kapat butonuyla kapatildi (World acik sandik kaydini temizler)
 signal chest_closed
 
+## Kazma modu acildi/kapandi (kurek butonu)
+signal dig_toggled(enabled: bool)
+
 const Items = preload("res://scripts/items.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 
 const ICON_FIST := preload("res://assets/ui/fist.png")
 const ICON_GATHER := preload("res://assets/ui/axe.png")
 const ICON_BUILD := preload("res://assets/ui/hammer.png")
+const ICON_DIG := preload("res://assets/ui/shovel.png")
 
 @onready var inventory_box: HBoxContainer = $Panel/HBox
 @onready var build_box: HBoxContainer = $BuildBar/HBox
@@ -38,6 +42,7 @@ const ICON_BUILD := preload("res://assets/ui/hammer.png")
 @onready var chest_rows: VBoxContainer = $ChestPanel/VBox/Scroll/Rows
 @onready var chest_close_button: Button = $ChestPanel/VBox/TitleRow/CloseButton
 @onready var chest_dismantle_button: Button = $ChestPanel/VBox/DismantleButton
+@onready var dig_button: Button = $DigButton
 
 var _action_state: String = "idle"
 var _craft_buttons: Dictionary = {}  # recipe_id -> Uret butonu
@@ -58,6 +63,8 @@ func _ready() -> void:
 		chest_closed.emit())
 	chest_dismantle_button.pressed.connect(func(): chest_dismantle_requested.emit())
 	chest_panel.visible = false
+	dig_button.icon = ICON_DIG
+	dig_button.toggled.connect(_on_dig_toggled)
 	_build_build_bar()
 	_build_craft_panel()
 	_refresh()
@@ -128,14 +135,28 @@ func _build_build_bar() -> void:
 
 func _on_build_button_toggled(pressed: bool, recipe_id: String, button: Button) -> void:
 	if pressed:
-		# Ayni anda tek tarif secili olabilir: digerlerini sessizce kapat
+		# Ayni anda tek mod aktif olabilir: diger insa butonlarini ve
+		# kazma modunu sessizce kapat
 		for other_id in _build_buttons:
 			var other: Button = _build_buttons[other_id]
 			if other != button and other.button_pressed:
 				other.set_pressed_no_signal(false)
+		if dig_button.button_pressed:
+			dig_button.set_pressed_no_signal(false)
+			dig_toggled.emit(false)
 		build_toggled.emit(recipe_id)
 	else:
 		build_toggled.emit("")
+
+# Kazma modu acilinca insa secimini kapat (tek mod aktif olabilir)
+func _on_dig_toggled(pressed: bool) -> void:
+	if pressed:
+		for other_id in _build_buttons:
+			var other: Button = _build_buttons[other_id]
+			if other.button_pressed:
+				other.set_pressed_no_signal(false)
+		build_toggled.emit("")
+	dig_toggled.emit(pressed)
 
 # --- Uretim paneli ------------------------------------------------------
 
@@ -272,5 +293,7 @@ func set_action_state(state: String) -> void:
 			action_button.icon = ICON_GATHER
 		"build":
 			action_button.icon = ICON_BUILD
+		"dig":
+			action_button.icon = ICON_DIG
 		_:
 			action_button.icon = ICON_FIST

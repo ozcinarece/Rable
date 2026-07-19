@@ -28,10 +28,16 @@ const HARVEST_REACH_TILES: int = 1
 #   hits:    kac vurusta toplanacagi (yazilmazsa 1; buyuk/sert seyler fazla)
 #   tool:    dogru alet envanterdeyse vurus sayisi dusurulur
 const TILE_DEFS: Dictionary = {
-	".": {"texture": "res://assets/tiles/grass.png", "solid": false},
-	"d": {"texture": "res://assets/tiles/dirt.png", "solid": false},
-	"s": {"texture": "res://assets/tiles/sand.png", "solid": false},
+	# "dig" alani: kurekle kazilabilir; verdigi esya belirtilir
+	".": {"texture": "res://assets/tiles/grass.png", "solid": false,
+			"dig": {"toprak": 1}},
+	"d": {"texture": "res://assets/tiles/dirt.png", "solid": false,
+			"dig": {"toprak": 1}},
+	"s": {"texture": "res://assets/tiles/sand.png", "solid": false,
+			"dig": {"kum": 1}},
 	"~": {"texture": "res://assets/tiles/water.png", "solid": true},
+	# Cukur: kazilmis zemin; engel (hendek!). Suya komsuysa suyla dolar.
+	"o": {"texture": "res://assets/tiles/cukur.png", "solid": true},
 	"#": {"texture": "res://assets/tiles/stone.png", "solid": true,
 			"drops": {"tas": 2}, "becomes": "d", "hits": 4,
 			"tool": {"item": "kazma", "hits": 2}},
@@ -81,6 +87,7 @@ var _save_timer: float = 0.0
 const NO_CELL := Vector2i(-999, -999)
 var _chests: Dictionary = {}
 var _open_chest: Vector2i = NO_CELL
+var _dig_mode: bool = false  # kazma modu (HUD'daki kurek butonu)
 
 func _ready() -> void:
 	ground_tile_map.tile_set = _build_tile_set()
@@ -92,6 +99,7 @@ func _ready() -> void:
 	hud.chest_transfer_requested.connect(_on_chest_transfer)
 	hud.chest_dismantle_requested.connect(_on_chest_dismantle)
 	hud.chest_closed.connect(func(): _open_chest = NO_CELL)
+	hud.dig_toggled.connect(func(enabled: bool): _dig_mode = enabled)
 
 func _process(delta: float) -> void:
 	# Aksiyon butonunun ikonunu duruma gore guncelle
@@ -199,7 +207,9 @@ func _on_player_world_tapped(world_pos: Vector2) -> void:
 	if maxi(diff.x, diff.y) > HARVEST_REACH_TILES:
 		return
 
-	if _selected_recipe_id != "":
+	if _dig_mode:
+		_try_dig(cell)
+	elif _selected_recipe_id != "":
 		_try_place(cell, player_cell)
 	elif _cell_char.get(cell, "") == "S":
 		# Sandiga dokununca depolama paneli acilir
@@ -216,6 +226,10 @@ func _on_action_pressed() -> void:
 	var facing_offset := Vector2i(player.facing.round())
 	if facing_offset == Vector2i.ZERO:
 		facing_offset = Vector2i(0, 1)
+
+	if _dig_mode:
+		_try_dig(player_cell + facing_offset)
+		return
 
 	if _selected_recipe_id != "":
 		_try_place(player_cell + facing_offset, player_cell)
@@ -241,10 +255,15 @@ func _try_place(cell: Vector2i, player_cell: Vector2i) -> bool:
 		return false  # oyuncu kendini duvarin icine hapsedemesin
 
 	var ch: String = _cell_char.get(cell, "")
-	if ch == "" or TILE_DEFS[ch]["solid"]:
-		return false  # sadece yurunebilir zemine insa edilebilir
-
 	var recipe: Dictionary = Recipes.BUILD_RECIPES[_selected_recipe_id]
+
+	if recipe.has("place_on"):
+		# Ozel hedefli tarif (orn. Doldur sadece cukura uygulanir)
+		if ch != recipe["place_on"]:
+			return false
+	elif ch == "" or TILE_DEFS[ch]["solid"]:
+		return false  # normal tarifler sadece yurunebilir zemine
+
 	var cost: Dictionary = recipe["cost"]
 
 	# Once tum maliyeti karsilayabildigimizden emin ol, sonra harca
@@ -254,7 +273,8 @@ func _try_place(cell: Vector2i, player_cell: Vector2i) -> bool:
 	for item_id in cost:
 		Inventory.remove_item(item_id, cost[item_id])
 
-	_floor_under[cell] = ch  # sokulurse ayni zemin geri gelsin
+	if not recipe.has("place_on"):
+		_floor_under[cell] = ch  # sokulurse ayni zemin geri gelsin
 	_set_cell_char(cell, recipe["tile"])
 
 	# Kamp evi dikildiyse yeniden dogma noktasi artik burasi
@@ -300,6 +320,52 @@ func _try_harvest(cell: Vector2i) -> bool:
 		_floor_under.erase(cell)
 	_set_cell_char(cell, new_ch)
 	return true
+
+# --- Kazma -------------------------------------------------------------
+
+# Hedef hucreyi kazmayi dener (kurek gerekir).
+func _try_dig(cell: Vector2i) -> bool:
+	if not _is_editable_cell(cell):
+		return false
+	var ch: String = _cell_char.get(cell, "")
+	if ch == "" or not TILE_DEFS[ch].has("dig"):
+		return false
+	if Inventory.get_count("kurek") <= 0:
+		_spawn_floating_text(cell, "Kürek gerekli! (Tezgahta üret)", Color(1, 0.7, 0.6))
+		return false
+
+	var dig_drops: Dictionary = TILE_DEFS[ch]["dig"]
+	var gained: PackedStringArray = []
+	for item_id in dig_drops:
+		Inventory.add_item(item_id, dig_drops[item_id])
+		gained.append("+%d %s" % [dig_drops[item_id], Items.display_name(item_id)])
+	_spawn_floating_text(cell, " ".join(gained), Color(0.9, 0.8, 0.6))
+
+	_set_cell_char(cell, "o")
+	_maybe_flood(cell)
+	return true
+
+# Yeni kazilan cukur suya komsuysa, su bu cukura ve ona bagli tum
+# cukurlara yayilir (kanal mekanigi: kuru kanali gole baglayinca
+# tamami suyla dolar).
+func _maybe_flood(start_cell: Vector2i) -> void:
+	var touches_water := false
+	for offset in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		if _cell_char.get(start_cell + offset, "") == "~":
+			touches_water = true
+			break
+	if not touches_water:
+		return
+
+	var queue: Array[Vector2i] = [start_cell]
+	while not queue.is_empty():
+		var cell: Vector2i = queue.pop_front()
+		if _cell_char.get(cell, "") != "o":
+			continue
+		_set_cell_char(cell, "~")
+		for offset in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if _cell_char.get(cell + offset, "") == "o":
+				queue.append(cell + offset)
 
 # --- Sandik ------------------------------------------------------------
 
@@ -349,6 +415,8 @@ func _on_chest_dismantle() -> void:
 
 # Aksiyon butonunun hangi ikonu gosterecegini belirler.
 func _compute_action_state() -> String:
+	if _dig_mode:
+		return "dig"
 	if _selected_recipe_id != "":
 		return "build"
 	var player_cell := _get_player_cell()

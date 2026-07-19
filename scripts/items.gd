@@ -15,6 +15,9 @@ const ITEMS: Dictionary = {
 	"balta": {"name": "Balta", "icon": "res://assets/items/balta.png"},
 	"kazma": {"name": "Kazma", "icon": "res://assets/items/kazma.png"},
 	"meyve": {"name": "Meyve", "icon": "res://assets/items/meyve.png"},
+	"kurek": {"name": "Kürek", "icon": "res://assets/items/kurek.png"},
+	"toprak": {"name": "Toprak", "icon": "res://assets/items/toprak.png"},
+	"kum": {"name": "Kum", "icon": "res://assets/items/kum.png"},
 }
 
 static func display_name(item_id: String) -> String:

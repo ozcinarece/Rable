@@ -24,6 +24,9 @@ const BUILD_RECIPES: Dictionary = {
 			"tile": "E", "cost": {"kalas": 6, "ip": 2, "yaprak": 4}},
 	"sandik": {"name": "Sandık", "icon": "res://assets/tiles/sandik.png",
 			"tile": "S", "cost": {"kalas": 4, "ip": 1}},
+	# Cukur doldurma: sadece cukur ("o") uzerine uygulanabilir
+	"doldur": {"name": "Doldur", "icon": "res://assets/items/toprak.png",
+			"tile": "d", "cost": {"toprak": 1}, "place_on": "o"},
 }
 
 const CRAFT_RECIPES: Dictionary = {
@@ -32,4 +35,5 @@ const CRAFT_RECIPES: Dictionary = {
 	"ip": {"output": {"ip": 1}, "cost": {"yaprak": 3}, "station": ""},
 	"balta": {"output": {"balta": 1}, "cost": {"cubuk": 2, "ip": 1, "tas": 1}, "station": "tezgah"},
 	"kazma": {"output": {"kazma": 1}, "cost": {"cubuk": 2, "ip": 1, "tas": 2}, "station": "tezgah"},
+	"kurek": {"output": {"kurek": 1}, "cost": {"cubuk": 2, "ip": 1, "kalas": 1}, "station": "tezgah"},
 }

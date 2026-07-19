@@ -26,6 +26,15 @@ sistemler eklendikce guncellenir.
 - Meyve ye: +25 (HUD'daki "Ye" butonu)
 - Sifira inince oyuncu yari hizda yurur (olum M5'te can sistemiyle)
 
+### Kazma (kurek gerekir)
+- Kazma modu: sag ustteki kurek butonu; acikken dokunma/aksiyon kazar
+- Cim ve toprak kazilinca +1 toprak, kum kazilinca +1 kum verir
+- Kazilan hucre cukur olur: gecilemez (hendek savunmasi)
+- Cukur suya komsuysa suyla dolar ve su bagli tum cukurlara yayilir
+  (kanal mekanigi - su sisteminin temeli)
+- Cukur, insa cubugundaki "Doldur" ile 1 toprak karsiligi kapatilir
+- Kurek: 2 cubuk + 1 ip + 1 kalas [tezgah]
+
 ### Kayit
 - Her 8 saniyede + uygulama arka plana alininca otomatik kayit (user://save.json)
 - Harita durumu, envanter, aclik, respawn ve oyuncu konumu saklanir
@@ -76,9 +85,9 @@ sistemler eklendikce guncellenir.
 - [x] M4e: Kaydetme sistemi (otomatik JSON kayit + Yeni Oyun butonu)
 - [x] M4f: Aclik + meyve calisi (yeniden buyuyen kaynak)
 - [x] M4g: Depo sandigi (esya tasima paneli, sandik basina depolama)
+- [x] M4h: Kazma sistemi (kurek, cukur/hendek, su kanali, doldurma)
 - [ ] M5: Gece/gunduz dongusu + dusman dalgalari + can/savas
-- [ ] M6: Kazma sistemi (grid terrain)
-- [ ] M7: Su sistemi (borularla hacim aktarma)
+- [ ] M7: Su sistemi genisletme (borular, hacim aktarma, pompa)
 - [ ] Prosedurel harita uretimi (ayni ASCII formatini ureten uretec)
 
 ## Teknik Notlar
