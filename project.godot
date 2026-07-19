@@ -11,6 +11,10 @@ config/description="2D top-down survival sandbox oyunu - Milestone 1: tile taban
 run/main_scene="res://scenes/World.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 
+[autoload]
+
+Inventory="*res://scripts/inventory.gd"
+
 [display]
 
 window/size/viewport_width=1280
@@ -18,6 +22,12 @@ window/size/viewport_height=720
 window/stretch/mode="canvas_items"
 window/stretch/aspect="expand"
 window/handheld/orientation=4
+
+[input_devices]
+
+; Dokunmatikte tap, ayrica sahte bir fare tiklamasi uretmesin -
+; yoksa telefonda her dokunus iki kez islenirdi (cift toplama).
+pointing/emulate_mouse_from_touch=false
 
 [rendering]
 
