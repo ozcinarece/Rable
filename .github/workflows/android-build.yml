@@ -13,8 +13,8 @@ on:
   workflow_dispatch: {}
 
 env:
-  GODOT_TAG: "4.3-stable"          # GitHub release etiketi (indirme URL'sinde kullanilir)
-  GODOT_TEMPLATE_VERSION: "4.3.stable"  # Godot'un yerelde bekledigi klasor adi (nokta ile)
+  GODOT_TAG: "4.4-stable"          # GitHub release etiketi (indirme URL'sinde kullanilir)
+  GODOT_TEMPLATE_VERSION: "4.4.stable"  # Godot'un yerelde bekledigi klasor adi (nokta ile)
 
 permissions:
   contents: write  # Release olusturup APK yuklemek icin gerekli
