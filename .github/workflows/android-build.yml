@@ -64,29 +64,16 @@ jobs:
           # standart "local.properties" dosyasindan okur.
           echo "sdk.dir=$ANDROID_HOME" > "$GITHUB_WORKSPACE/android/build/local.properties"
 
-      - name: Android SDK yolunu Godot'a tanit
-        # ubuntu-latest runner'inda Android SDK zaten kurulu geliyor (ANDROID_HOME).
-        # Godot, zipalign/apksigner icin bu yolu editor ayarlarindan bilmesi gerekiyor;
-        # aksi halde "Cannot export project ... configuration errors" hatasi veriyor.
+      - name: Android APK olustur (debug)
+        # NOT: Bu adimda SDK yolunu editor_settings uzerinden Godot'a
+        # ayrica tanitmiyoruz - bunun etkisiz/gereksiz oldugunu test
+        # ediyoruz (Godot ANDROID_HOME'u kendi algiliyor olabilir).
         run: |
           set -e
           echo "ANDROID_HOME=$ANDROID_HOME"
-          mkdir -p "$HOME/.config/godot"
-          cat > "$HOME/.config/godot/editor_settings-4.tres" <<EOF
-          [gd_resource type="EditorSettings" format=3]
-
-          [resource]
-          export/android/android_sdk_path = "$ANDROID_HOME"
-          EOF
-
-      - name: TESHIS - basit bir Windows preset'i export etmeyi dene
-        # Android'e ozgu olmayan, cok daha basit bir platformda ayni
-        # aciklanamayan hata cikiyor mu diye bakiyoruz.
-        run: |
-          set -e
           mkdir -p builds
           /opt/godot/godot --headless --verbose --path "$GITHUB_WORKSPACE" \
-            --export-debug "WindowsTest" builds/test.exe
+            --export-debug "Android" builds/survival-sandbox-debug.apk
           ls -la builds
 
       - name: APK'yi is ciktisi olarak yukle
