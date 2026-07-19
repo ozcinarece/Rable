@@ -295,6 +295,9 @@ func _try_harvest(cell: Vector2i) -> bool:
 		_cell_damage[cell] = damage
 		_spawn_floating_text(cell, "%d/%d" % [damage, hits_needed], Color(1.0, 0.95, 0.6))
 		return true
+	if not Inventory.can_add_all(def["drops"]):
+		_spawn_floating_text(cell, "Envanter dolu!", Color(1, 0.6, 0.6))
+		return false
 	_cell_damage.erase(cell)
 
 	var gained: PackedStringArray = []
@@ -321,6 +324,9 @@ func _try_dig(cell: Vector2i) -> bool:
 		return false
 	if Inventory.get_count("kurek") <= 0:
 		_spawn_floating_text(cell, "Kürek gerekli! (Tezgahta üret)", Color(1, 0.7, 0.6))
+		return false
+	if not Inventory.can_add_all(GROUND_DEFS[ground]["dig"]):
+		_spawn_floating_text(cell, "Envanter dolu!", Color(1, 0.6, 0.6))
 		return false
 
 	var dig_drops: Dictionary = GROUND_DEFS[ground]["dig"]
@@ -371,6 +377,9 @@ func _on_chest_transfer(item_id: String, to_chest: bool) -> void:
 	else:
 		var amount: int = int(chest.get(item_id, 0))
 		if amount <= 0:
+			return
+		if not Inventory.can_add(item_id, amount):
+			hud.show_chest(chest, "Envanter dolu!")
 			return
 		chest.erase(item_id)
 		Inventory.add_item(item_id, amount)

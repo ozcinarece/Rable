@@ -18,7 +18,28 @@ const ITEMS: Dictionary = {
 	"kurek": {"name": "Kürek", "icon": "res://assets/items/kurek.png"},
 	"toprak": {"name": "Toprak", "icon": "res://assets/items/toprak.png"},
 	"kum": {"name": "Kum", "icon": "res://assets/items/kum.png"},
+	"canta": {"name": "Çanta", "icon": "res://assets/items/canta.png"},
 }
+
+## Envanter panelinde gosterilen kisa aciklamalar
+const DESCRIPTIONS: Dictionary = {
+	"odun": "Agactan gelir; kalasa cevrilir.",
+	"yaprak": "Ip yapiminda kullanilir.",
+	"kalas": "Insaatin temel malzemesi.",
+	"cubuk": "Alet saplarinda kullanilir.",
+	"ip": "Alet ve yapi baglamada kullanilir.",
+	"tas": "Saglam yapi ve alet malzemesi.",
+	"balta": "Agaclar tek vurusta kesilir.",
+	"kazma": "Kayalar 2 vurusta kirilir.",
+	"meyve": "Yenir: +25 aclik.",
+	"kurek": "Kazma modunda zemin kazar.",
+	"toprak": "Cukurlari doldurur.",
+	"kum": "Ileride ise yarayacak...",
+	"canta": "+4 envanter slotu (en fazla 2).",
+}
+
+static func description(item_id: String) -> String:
+	return DESCRIPTIONS.get(item_id, "")
 
 static func display_name(item_id: String) -> String:
 	if ITEMS.has(item_id):

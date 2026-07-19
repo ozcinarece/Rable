@@ -26,6 +26,13 @@ sistemler eklendikce guncellenir.
 - Meyve ye: +25 (HUD'daki "Ye" butonu)
 - Sifira inince oyuncu yari hizda yurur (olum M5'te can sistemiyle)
 
+### Envanter
+- Slot mantigi: her esya turu 1 slot, yigin limiti 50
+- Baslangic 8 slot; Canta (3 ip + 4 yaprak [tezgah]) +4 slot, en fazla 2
+- Envanter dolunca toplama/kazma/uretim reddedilir ("Envanter dolu!")
+- Envanter paneli: slot izgarasi, esya detayi, panelden meyve yeme
+- Sandiklar sinirsiz: depolamanin amaci bu
+
 ### Kazma (kurek gerekir)
 - Kazma modu: sag ustteki kurek butonu; acikken dokunma/aksiyon kazar
 - Cim ve toprak kazilinca +1 toprak, kum kazilinca +1 kum verir
@@ -82,8 +89,9 @@ sistemler eklendikce guncellenir.
 
 ## Buyuk Fazlar (oncelik sirasi)
 1. [x] Gorsel temel: 3/4 perspektif + Y-sort + karakter yonleri
-2. [ ] Envanter altyapisi: envanter paneli (slot/detay) -> canta
-   (kapasite) -> eline esya alma/ekipman (elde gorunur alet) -> yapi tasima
+2. [~] Envanter altyapisi: envanter paneli (slot/detay) [x] + canta
+   (kapasite) [x] -> eline esya alma/ekipman (elde gorunur alet) ->
+   yapi tasima
 3. [ ] Savas cagi: mizrak/zirh/sapka + gece-gunduz + dusman dalgalari +
    can/savas + tuzaklar
 4. [ ] Yerlesik hayat: cok tile'li ev/base insaati (oda mantigi, gorsel +

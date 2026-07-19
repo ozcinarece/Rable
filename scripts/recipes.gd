@@ -36,4 +36,5 @@ const CRAFT_RECIPES: Dictionary = {
 	"balta": {"output": {"balta": 1}, "cost": {"cubuk": 2, "ip": 1, "tas": 1}, "station": "tezgah"},
 	"kazma": {"output": {"kazma": 1}, "cost": {"cubuk": 2, "ip": 1, "tas": 2}, "station": "tezgah"},
 	"kurek": {"output": {"kurek": 1}, "cost": {"cubuk": 2, "ip": 1, "kalas": 1}, "station": "tezgah"},
+	"canta": {"output": {"canta": 1}, "cost": {"ip": 3, "yaprak": 4}, "station": "tezgah"},
 }

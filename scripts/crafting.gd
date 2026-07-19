@@ -29,12 +29,15 @@ func can_craft(recipe_id: String) -> bool:
 	return true
 
 ## Uretmeyi dener; basariliysa true doner.
+## Maliyet dusuldukten sonra urun envantere sigmiyorsa islem geri alinir.
 func craft(recipe_id: String) -> bool:
 	if not can_craft(recipe_id):
 		return false
 	var recipe: Dictionary = Recipes.CRAFT_RECIPES[recipe_id]
 	for item_id in recipe["cost"]:
 		Inventory.remove_item(item_id, recipe["cost"][item_id])
-	for item_id in recipe["output"]:
-		Inventory.add_item(item_id, recipe["output"][item_id])
+	if not Inventory.add_all(recipe["output"]):
+		for item_id in recipe["cost"]:  # geri al: envanter dolu
+			Inventory.add_item(item_id, recipe["cost"][item_id])
+		return false
 	return true

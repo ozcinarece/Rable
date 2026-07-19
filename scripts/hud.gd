@@ -43,6 +43,15 @@ const ICON_DIG := preload("res://assets/ui/shovel.png")
 @onready var chest_close_button: Button = $ChestPanel/VBox/TitleRow/CloseButton
 @onready var chest_dismantle_button: Button = $ChestPanel/VBox/DismantleButton
 @onready var dig_button: Button = $DigButton
+@onready var inventory_button: Button = $InventoryButton
+@onready var inventory_panel: PanelContainer = $InventoryPanel
+@onready var inventory_title: Label = $InventoryPanel/VBox/TitleRow/Title
+@onready var inventory_slots: GridContainer = $InventoryPanel/VBox/Slots
+@onready var inventory_detail: Label = $InventoryPanel/VBox/Detail
+@onready var panel_eat_button: Button = $InventoryPanel/VBox/PanelEatButton
+@onready var chest_title: Label = $ChestPanel/VBox/TitleRow/Title
+
+var _selected_item: String = ""
 
 var _action_state: String = "idle"
 var _craft_buttons: Dictionary = {}  # recipe_id -> Uret butonu
@@ -65,6 +74,13 @@ func _ready() -> void:
 	chest_panel.visible = false
 	dig_button.icon = ICON_DIG
 	dig_button.toggled.connect(_on_dig_toggled)
+	inventory_button.toggled.connect(func(pressed: bool):
+		inventory_panel.visible = pressed
+		if pressed:
+			_rebuild_inventory_panel())
+	$InventoryPanel/VBox/TitleRow/CloseButton.pressed.connect(func():
+		inventory_button.button_pressed = false)
+	panel_eat_button.pressed.connect(_on_eat_pressed)
 	_build_build_bar()
 	_build_craft_panel()
 	_refresh()
@@ -76,6 +92,49 @@ func _refresh() -> void:
 	_rebuild_inventory_bar()
 	_update_craft_buttons()
 	_update_hunger()
+	if inventory_panel.visible:
+		_rebuild_inventory_panel()
+
+# --- Envanter paneli ----------------------------------------------------
+
+# Slot izgarasini yeniden kurar: dolu slotlar esya butonu, boslar gri kutu.
+func _rebuild_inventory_panel() -> void:
+	inventory_title.text = "Envanter (%d/%d slot)" % [Inventory.get_used_slots(), Inventory.get_slot_count()]
+	for child in inventory_slots.get_children():
+		child.queue_free()
+	for item_id in Items.ITEMS:
+		var count := Inventory.get_count(item_id)
+		if count <= 0:
+			continue
+		var slot := Button.new()
+		slot.icon = load(Items.ITEMS[item_id]["icon"])
+		slot.text = "x%d" % count
+		slot.custom_minimum_size = Vector2(120, 52)
+		slot.add_theme_font_size_override("font_size", 20)
+		slot.pressed.connect(_on_slot_pressed.bind(item_id))
+		inventory_slots.add_child(slot)
+	for i in Inventory.get_slot_count() - Inventory.get_used_slots():
+		var empty := Button.new()
+		empty.disabled = true
+		empty.custom_minimum_size = Vector2(120, 52)
+		inventory_slots.add_child(empty)
+	_update_detail()
+
+func _on_slot_pressed(item_id: String) -> void:
+	_selected_item = item_id
+	_update_detail()
+
+func _update_detail() -> void:
+	if _selected_item == "" or Inventory.get_count(_selected_item) <= 0:
+		inventory_detail.text = "Bir esyaya dokun: detayi burada gorunur. Yigin limiti: %d." % Inventory.STACK_MAX
+		panel_eat_button.visible = false
+		return
+	inventory_detail.text = "%s x%d - %s" % [
+		Items.display_name(_selected_item),
+		Inventory.get_count(_selected_item),
+		Items.description(_selected_item),
+	]
+	panel_eat_button.visible = _selected_item == "meyve"
 
 # --- Aclik --------------------------------------------------------------
 
@@ -214,7 +273,9 @@ func _update_craft_buttons() -> void:
 # --- Sandik paneli ------------------------------------------------------
 
 ## World tarafindan cagrilir: paneli verilen icerikle (yeniden) cizer.
-func show_chest(contents: Dictionary) -> void:
+## message: baslikta gosterilecek kisa uyari (orn. "Envanter dolu!")
+func show_chest(contents: Dictionary, message: String = "") -> void:
+	chest_title.text = "Sandık" if message == "" else "Sandık - %s" % message
 	chest_panel.visible = true
 	for child in chest_rows.get_children():
 		child.queue_free()
