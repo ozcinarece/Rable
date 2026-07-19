@@ -1,0 +1,77 @@
+name: Web build ve GitHub Pages yayini
+
+# Her main'e push'ta Godot Web (HTML5) build'i uretir ve GitHub Pages'e
+# yayinlar. Boylece telefonun tarayicisindan sabit bir link ile oyun
+# test edilebilir. Not: preset'te thread_support=false olmali, cunku
+# GitHub Pages SharedArrayBuffer icin gereken COOP/COEP basliklarini
+# gondermez; thread'siz build bu basliklar olmadan calisir.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  GODOT_TAG: "4.4-stable"
+  GODOT_TEMPLATE_VERSION: "4.4.stable"
+
+permissions:
+  contents: read
+  pages: write      # Pages'e yayin icin
+  id-token: write   # deploy-pages action'inin kimlik dogrulamasi icin
+
+# Ayni anda tek yayin calissin
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build-web:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repoyu al
+        uses: actions/checkout@v4
+
+      - name: Godot editor + export template'lerini indir
+        run: |
+          set -e
+          mkdir -p /opt/godot
+
+          curl -sSL -o /tmp/godot.zip \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_TAG}/Godot_v${GODOT_TAG}_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d /opt/godot/editor
+          GODOT_BIN=$(find /opt/godot/editor -maxdepth 2 -type f -name 'Godot_*')
+          chmod +x "$GODOT_BIN"
+          mv "$GODOT_BIN" /opt/godot/godot
+
+          curl -sSL -o /tmp/templates.tpz \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_TAG}/Godot_v${GODOT_TAG}_export_templates.tpz"
+          mkdir -p /tmp/templates_extracted
+          unzip -q /tmp/templates.tpz -d /tmp/templates_extracted
+          TEMPLATES_SRC=$(find /tmp/templates_extracted -maxdepth 2 -type d -name templates | head -1)
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}"
+          cp -r "$TEMPLATES_SRC"/* "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}/"
+
+      - name: Web build olustur
+        run: |
+          set -e
+          mkdir -p builds/web
+          /opt/godot/godot --headless --path "$GITHUB_WORKSPACE" \
+            --export-release "Web" builds/web/index.html
+          ls -la builds/web
+
+      - name: Pages artifact'i olarak yukle
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: builds/web
+
+  deploy:
+    needs: build-web
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: GitHub Pages'e yayinla
+        id: deployment
+        uses: actions/deploy-pages@v4
