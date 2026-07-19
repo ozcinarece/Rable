@@ -18,13 +18,24 @@ const TAP_MAX_DURATION: float = 0.25  # saniye - bundan uzunsa tap sayilmaz
 const TAP_MAX_DRIFT: float = 12.0     # piksel - bundan fazla kaydiysa tap sayilmaz
 const DRAG_DEAD_ZONE: float = 10.0    # kucuk parmak titremelerini yok say
 
+## Oyuncunun son baktigi yon. Aksiyon butonu hangi hucreyi
+## hedefleyecegini bundan hesaplar.
+var facing: Vector2 = Vector2.DOWN
+
 var _touch_start_position: Vector2 = Vector2.ZERO
 var _touch_current_position: Vector2 = Vector2.ZERO
 var _touch_start_time: float = 0.0
 var _is_touching: bool = false
 
+func _ready() -> void:
+	# Top-down oyun: yercekimi/zemin mantigi olmayan serbest hareket modu
+	motion_mode = CharacterBody2D.MOTION_MODE_FLOATING
+
 func _physics_process(_delta: float) -> void:
-	velocity = _get_input_direction() * speed
+	var direction := _get_input_direction()
+	if direction != Vector2.ZERO:
+		facing = direction
+	velocity = direction * speed
 	move_and_slide()
 
 func _get_input_direction() -> Vector2:

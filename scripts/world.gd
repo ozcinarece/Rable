@@ -6,8 +6,8 @@ extends Node2D
 ##   1. Tile gorselleri + carpismalari iceren TileSet'i kod ile olusturmak
 ##   2. ASCII haritayi okuyup TileMap'e dosemek
 ##   3. Oyuncuyu P noktasina yerlestirmek, kamerayi sinirlamak
-##   4. Dokunma isleme: insa modu acikken duvar yerlestirir,
-##      degilken yanindaki agac/tas/duvari toplar
+##   4. Dokunma/aksiyon butonu isleme: insa modu acikken duvar
+##      yerlestirir, degilken yakindaki agac/tas/duvari toplar
 ##
 ## Tarifler scripts/recipes.gd'de, envanter Inventory autoload'unda -
 ## bu dosya sadece "dunya" ile ilgilenir.
@@ -56,6 +56,7 @@ func _ready() -> void:
 	_build_map_from_ascii()
 	player.world_tapped.connect(_on_player_world_tapped)
 	hud.build_toggled.connect(_on_build_toggled)
+	hud.action_pressed.connect(_on_action_pressed)
 
 # --- Kurulum -----------------------------------------------------------
 
@@ -72,6 +73,11 @@ func _build_tile_set() -> TileSet:
 		source.texture_region_size = Vector2i(TILE_SIZE, TILE_SIZE)
 		source.create_tile(Vector2i(0, 0))
 
+		# ONEMLI: kaynak once TileSet'e eklenmeli, carpisma ondan sonra
+		# tanimlanmali. Aksi halde tile henuz fizik katmanini bilmedigi
+		# icin carpisma sessizce eklenmez (her seyin uzerinden yurunurdu).
+		tile_set.add_source(source, next_id)
+
 		if def["solid"]:
 			var tile_data: TileData = source.get_tile_data(Vector2i(0, 0), 0)
 			tile_data.add_collision_polygon(0)
@@ -80,7 +86,6 @@ func _build_tile_set() -> TileSet:
 				Vector2(-h, -h), Vector2(h, -h), Vector2(h, h), Vector2(-h, h),
 			]))
 
-		tile_set.add_source(source, next_id)
 		_char_to_source_id[ch] = next_id
 		next_id += 1
 
@@ -111,22 +116,18 @@ func _apply_camera_limits() -> void:
 	camera.limit_right = _map_width * TILE_SIZE
 	camera.limit_bottom = _map_height * TILE_SIZE
 
-# --- Dokunma isleme ----------------------------------------------------
+# --- Girdi isleme ------------------------------------------------------
 
 func _on_build_toggled(recipe_id: String) -> void:
 	_selected_recipe_id = recipe_id
 
+# Haritaya dokununca: insa modundaysa yerlestir, degilse topla.
 func _on_player_world_tapped(world_pos: Vector2) -> void:
 	var cell := ground_tile_map.local_to_map(ground_tile_map.to_local(world_pos))
-	var player_cell := ground_tile_map.local_to_map(ground_tile_map.to_local(player.global_position))
+	var player_cell := _get_player_cell()
 
-	# Erisim kontrolu: sadece oyuncunun yanindaki tile'lar etkilenebilir
 	var diff := (cell - player_cell).abs()
 	if maxi(diff.x, diff.y) > HARVEST_REACH_TILES:
-		return
-
-	# Haritanin en dis kenari (sinir duvarlari) hicbir sekilde degistirilemez
-	if cell.x <= 0 or cell.y <= 0 or cell.x >= _map_width - 1 or cell.y >= _map_height - 1:
 		return
 
 	if _selected_recipe_id != "":
@@ -134,14 +135,41 @@ func _on_player_world_tapped(world_pos: Vector2) -> void:
 	else:
 		_try_harvest(cell)
 
-# Insa modu: secili tarifi dokunulan zemine yerlestirmeyi dener.
-func _try_place(cell: Vector2i, player_cell: Vector2i) -> void:
+# Sagdaki aksiyon butonu: oyuncunun baktigi yondeki hucreyi hedefler.
+# Toplama modunda bakilan hucrede toplanacak bir sey yoksa diger
+# komsu hucreler de denenir (telefonda nisan almayi kolaylastirir).
+func _on_action_pressed() -> void:
+	var player_cell := _get_player_cell()
+	var facing_offset := Vector2i(player.facing.round())
+	if facing_offset == Vector2i.ZERO:
+		facing_offset = Vector2i(0, 1)
+
+	if _selected_recipe_id != "":
+		_try_place(player_cell + facing_offset, player_cell)
+		return
+
+	var offsets: Array[Vector2i] = [facing_offset]
+	for oy in [-1, 0, 1]:
+		for ox in [-1, 0, 1]:
+			var o := Vector2i(ox, oy)
+			if o != Vector2i.ZERO and o != facing_offset:
+				offsets.append(o)
+	for o in offsets:
+		if _try_harvest(player_cell + o):
+			return
+
+# --- Insa ve toplama ---------------------------------------------------
+
+# Secili tarifi hedef hucreye yerlestirmeyi dener.
+func _try_place(cell: Vector2i, player_cell: Vector2i) -> bool:
+	if not _is_editable_cell(cell):
+		return false
 	if cell == player_cell:
-		return  # oyuncu kendini duvarin icine hapsedemesin
+		return false  # oyuncu kendini duvarin icine hapsedemesin
 
 	var ch: String = _cell_char.get(cell, "")
 	if ch == "" or TILE_DEFS[ch]["solid"]:
-		return  # sadece yurunebilir zemine insa edilebilir
+		return false  # sadece yurunebilir zemine insa edilebilir
 
 	var recipe: Dictionary = Recipes.RECIPES[_selected_recipe_id]
 	var cost: Dictionary = recipe["cost"]
@@ -149,18 +177,22 @@ func _try_place(cell: Vector2i, player_cell: Vector2i) -> void:
 	# Once tum maliyeti karsilayabildigimizden emin ol, sonra harca
 	for item_id in cost:
 		if Inventory.get_count(item_id) < cost[item_id]:
-			return
+			return false
 	for item_id in cost:
 		Inventory.remove_item(item_id, cost[item_id])
 
 	_floor_under[cell] = ch  # sokulurse ayni zemin geri gelsin
 	_set_cell_char(cell, recipe["tile"])
+	return true
 
-# Normal mod: dokunulan tile toplanabilirse toplar.
-func _try_harvest(cell: Vector2i) -> void:
+# Hedef hucre toplanabilirse toplar.
+func _try_harvest(cell: Vector2i) -> bool:
+	if not _is_editable_cell(cell):
+		return false
+
 	var ch: String = _cell_char.get(cell, "")
 	if ch == "" or not TILE_DEFS[ch].has("drops"):
-		return
+		return false
 
 	var def: Dictionary = TILE_DEFS[ch]
 	for item_id in def["drops"]:
@@ -173,6 +205,17 @@ func _try_harvest(cell: Vector2i) -> void:
 		new_ch = _floor_under[cell]
 		_floor_under.erase(cell)
 	_set_cell_char(cell, new_ch)
+	return true
+
+# --- Yardimcilar -------------------------------------------------------
+
+# Harita icinde ve en dis kenar (yikilamaz sinir duvarlari) disinda mi?
+func _is_editable_cell(cell: Vector2i) -> bool:
+	return cell.x > 0 and cell.y > 0 \
+		and cell.x < _map_width - 1 and cell.y < _map_height - 1
+
+func _get_player_cell() -> Vector2i:
+	return ground_tile_map.local_to_map(ground_tile_map.to_local(player.global_position))
 
 # Bir hucrenin karakterini gunceller ve gorselini doser
 func _set_cell_char(cell: Vector2i, ch: String) -> void:
