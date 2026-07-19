@@ -1,0 +1,70 @@
+name: Android APK build
+
+# Her main'e push'ta ve istersen elle (Actions sekmesinden "Run workflow")
+# tetiklenir. Godot'u ve Android export template'lerini indirip
+# export_presets.cfg'deki "Android" preset'ini kullanarak bir debug APK
+# uretir, sonra bu APK'yi hem calisan is (workflow) ciktisina hem de
+# "latest-apk" adli surekli guncellenen bir GitHub Release'e ekler.
+# Boylece telefondan Releases sayfasindan direkt indirilebilir.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+env:
+  GODOT_TAG: "4.3-stable"          # GitHub release etiketi (indirme URL'sinde kullanilir)
+  GODOT_TEMPLATE_VERSION: "4.3.stable"  # Godot'un yerelde bekledigi klasor adi (nokta ile)
+
+permissions:
+  contents: write  # Release olusturup APK yuklemek icin gerekli
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repoyu al
+        uses: actions/checkout@v4
+
+      - name: Godot editor + Android export template'lerini indir
+        run: |
+          set -e
+          mkdir -p /opt/godot
+
+          curl -sSL -o /tmp/godot.zip \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_TAG}/Godot_v${GODOT_TAG}_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d /opt/godot/editor
+          GODOT_BIN=$(find /opt/godot/editor -maxdepth 2 -type f -name 'Godot_*')
+          chmod +x "$GODOT_BIN"
+          mv "$GODOT_BIN" /opt/godot/godot
+
+          curl -sSL -o /tmp/templates.tpz \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_TAG}/Godot_v${GODOT_TAG}_export_templates.tpz"
+          mkdir -p /tmp/templates_extracted
+          unzip -q /tmp/templates.tpz -d /tmp/templates_extracted
+          TEMPLATES_SRC=$(find /tmp/templates_extracted -maxdepth 2 -type d -name templates | head -1)
+          mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}"
+          cp -r "$TEMPLATES_SRC"/* "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}/"
+
+      - name: Android APK olustur (debug)
+        run: |
+          set -e
+          mkdir -p builds
+          /opt/godot/godot --headless --path "$GITHUB_WORKSPACE" \
+            --export-debug "Android" builds/survival-sandbox-debug.apk
+          ls -la builds
+
+      - name: APK'yi is ciktisi olarak yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: survival-sandbox-debug-apk
+          path: builds/survival-sandbox-debug.apk
+
+      - name: "latest-apk" release'ini guncelle
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest-apk
+          name: "Son Android build (debug)"
+          body: "Otomatik olusturulan en guncel debug APK. Telefonda 'bilinmeyen kaynaklardan yukleme' izniyle kurabilirsin."
+          make_latest: true
+          files: builds/survival-sandbox-debug.apk
