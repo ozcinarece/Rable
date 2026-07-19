@@ -61,28 +61,20 @@ jobs:
           unzip -q "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}/android_source.zip" \
             -d "$GITHUB_WORKSPACE/android/build"
 
-      - name: Godot'u bir kez calistirip varsayilan ayarlarini olustur
-        # Godot ilk acilista kendi editor_settings dosyasini ve debug
-        # keystore'unu otomatik olusturuyor. Bu dosyayi biz onceden
-        # yazarsak bu otomatik olusturma adimi atlanabiliyor; o yuzden
-        # once Godot'u projeyle bir kere calistirip kendi varsayilanlarini
-        # olusturmasina izin veriyoruz, sonra SDK yolunu bu dosyaya ekliyoruz.
-        run: |
-          set -e
-          /opt/godot/godot --headless --path "$GITHUB_WORKSPACE" --quit || true
-          cat "$HOME/.config/godot/editor_settings-4.tres"
-
       - name: Android SDK yolunu Godot'a tanit
         # ubuntu-latest runner'inda Android SDK zaten kurulu geliyor (ANDROID_HOME).
         # Godot, zipalign/apksigner icin bu yolu editor ayarlarindan bilmesi gerekiyor;
         # aksi halde "Cannot export project ... configuration errors" hatasi veriyor.
-        # Var olan dosyanin uzerine yazmiyoruz, sadece ilgili satiri ekliyoruz.
         run: |
           set -e
           echo "ANDROID_HOME=$ANDROID_HOME"
-          printf '\nexport/android/android_sdk_path = "%s"\n' "$ANDROID_HOME" \
-            >> "$HOME/.config/godot/editor_settings-4.tres"
-          cat "$HOME/.config/godot/editor_settings-4.tres"
+          mkdir -p "$HOME/.config/godot"
+          cat > "$HOME/.config/godot/editor_settings-4.tres" <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          EOF
 
       - name: Android APK olustur (debug)
         run: |
