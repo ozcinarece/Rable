@@ -49,6 +49,22 @@ jobs:
       - name: Indirilen template dosyalarini listele (teshis)
         run: find "$HOME/.local/share/godot/export_templates" -maxdepth 2
 
+      - name: Android SDK yolunu Godot'a tanit
+        # ubuntu-latest runner'inda Android SDK zaten kurulu geliyor (ANDROID_HOME).
+        # Godot, zipalign/apksigner icin bu yolu editor ayarlarindan bilmesi gerekiyor;
+        # aksi halde "Cannot export project ... configuration errors" hatasi veriyor.
+        run: |
+          set -e
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          ls "$ANDROID_HOME" || true
+          mkdir -p "$HOME/.config/godot"
+          cat > "$HOME/.config/godot/editor_settings-4.tres" <<EOF
+          [gd_resource type="EditorSettings" format=3]
+
+          [resource]
+          export/android/android_sdk_path = "$ANDROID_HOME"
+          EOF
+
       - name: Android APK olustur (debug)
         run: |
           set -e
