@@ -49,6 +49,18 @@ jobs:
       - name: Indirilen template dosyalarini listele (teshis)
         run: find "$HOME/.local/share/godot/export_templates" -maxdepth 2
 
+      - name: Android build sablonunu projeye kur (gradle build icin gerekli)
+        # gradle_build/use_gradle_build=true oldugunda Godot, projede
+        # res://android/build/ altinda bir Gradle projesi bekliyor.
+        # Bunu normalde editorde "Project > Install Android Build Template"
+        # ile yapardik; CI'da export template'lerin icindeki
+        # android_source.zip'i elle acarak ayni seyi yapiyoruz.
+        run: |
+          set -e
+          mkdir -p "$GITHUB_WORKSPACE/android/build"
+          unzip -q "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}/android_source.zip" \
+            -d "$GITHUB_WORKSPACE/android/build"
+
       - name: Android SDK yolunu Godot'a tanit
         # ubuntu-latest runner'inda Android SDK zaten kurulu geliyor (ANDROID_HOME).
         # Godot, zipalign/apksigner icin bu yolu editor ayarlarindan bilmesi gerekiyor;

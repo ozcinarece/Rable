@@ -4,3 +4,4 @@
 
 # CI build output (APK'lar GitHub Release'e yukleniyor, repoda tutulmuyor)
 /builds/
+/android/
