@@ -65,7 +65,7 @@ jobs:
         run: |
           set -e
           mkdir -p builds
-          /opt/godot/godot --headless --path "$GITHUB_WORKSPACE" \
+          /opt/godot/godot --headless --verbose --path "$GITHUB_WORKSPACE" \
             --export-debug "Android" builds/survival-sandbox-debug.apk
           ls -la builds
 
