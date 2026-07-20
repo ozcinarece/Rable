@@ -243,18 +243,18 @@ const SHOWCASE_FRAMES: Array = [
 			{"label": "M2", "model": "quat2_mush02"}]},
 	]},
 	{"suffix": "_alet", "cam": [0.0, 3.0, 10.8], "pitch": -15.0, "rows": [
-		{"h": 0.55, "gap": 1.4, "items": [
+		{"h": 0.9, "gap": 1.4, "by": "long", "items": [
 			{"label": "S1", "model": "res://assets/models/tools/tool-axe.glb"},
 			{"label": "S2", "model": "res://assets/models/tools/tool-pickaxe.glb"},
 			{"label": "S3", "model": "res://assets/models/tools/tool-shovel.glb"},
 			{"label": "S4", "model": "res://assets/models/tools/tool-hammer.glb"},
 			{"label": "S5", "model": "res://assets/models/tools/tool-hoe.glb"}]},
-		{"h": 0.85, "gap": 1.9, "items": [
+		{"h": 1.4, "gap": 1.9, "by": "long", "items": [
 			{"label": "T1", "model": "res://assets/models/tools/workbench.glb"},
 			{"label": "T2", "model": "res://assets/models/tools/workbench-anvil.glb"},
 			{"label": "T3", "model": "res://assets/models/tools/workbench-grind.glb"},
 			{"label": "T4", "model": "quat_table"}]},
-		{"h": 0.4, "gap": 1.4, "items": [
+		{"h": 0.9, "gap": 1.4, "by": "long", "items": [
 			{"label": "R1", "model": "res://assets/models/tools/resource-wood.glb"},
 			{"label": "R2", "model": "res://assets/models/tools/resource-planks.glb"},
 			{"label": "R3", "model": "res://assets/models/tools/resource-stone.glb"},
@@ -294,8 +294,12 @@ func _build_showcase_frame(rows: Array, base: Vector3) -> void:
 			var scene: Node3D = load(model_path).instantiate()
 			holder.add_child(scene)
 			var aabb := _scene_aabb(scene)
-			if aabb.size.y > 0.01:
-				var s := h / aabb.size.y
+			# "by": "long" -> yassi/genis modeller (masa, kalas) en uzun
+			# eksenlerine gore olceklenir, yoksa devasa gorunurler
+			var basis_size := aabb.get_longest_axis_size() \
+					if String(row.get("by", "")) == "long" else aabb.size.y
+			if basis_size > 0.01:
+				var s := h / basis_size
 				scene.scale = Vector3(s, s, s)
 				scene.position = Vector3(-aabb.get_center().x * s, -aabb.position.y * s,
 						-aabb.get_center().z * s)

@@ -99,19 +99,21 @@ func set_character(model_path: String) -> void:
 	var model: Node3D = load(model_path).instantiate()
 	_visual.add_child(model)
 	_model_root = model
-	# Model hangi olcekte gelirse gelsin boyunu TARGET_HEIGHT'a getir
-	var mesh_node := _find_mesh_instance(model)
+	# ONCE paketle gelen silah/aksesuar gorselleri kapat (sade gorunum) -
+	# olcek hesabi bu propplara takilmasin (orn. Sam'in elindeki balta)
+	for weapon_name in EMBEDDED_WEAPONS:
+		var weapon := model.find_child(weapon_name, true, false)
+		if weapon != null and weapon is Node3D:
+			(weapon as Node3D).visible = false
+	# Model hangi olcekte gelirse gelsin boyunu TARGET_HEIGHT'a getir.
+	# En BUYUK gorunur mesh govdedir (ilk bulunan kucuk bir prop olabilir)
+	var mesh_node := _find_body_mesh(model)
 	if mesh_node != null:
 		var height: float = mesh_node.get_aabb().size.y
 		if height > 0.01:
 			_raw_height = height
 			_model_scale = TARGET_HEIGHT / height
 			model.scale = Vector3(_model_scale, _model_scale, _model_scale)
-	# Paketle gelen silah/aksesuar gorselleri kapansin (sade gorunum)
-	for weapon_name in EMBEDDED_WEAPONS:
-		var weapon := model.find_child(weapon_name, true, false)
-		if weapon != null and weapon is Node3D:
-			(weapon as Node3D).visible = false
 	# Alet baglama noktasi: sag el kemigi (yoksa govde onunde yedek nokta)
 	var skeleton: Skeleton3D = model.find_child("Skeleton3D", true, false)
 	if skeleton == null:
@@ -151,6 +153,23 @@ func set_character(model_path: String) -> void:
 	set_hat(_hat_id)
 	set_face(_face_path)
 	set_hair(_hair_style, _hair_color)
+
+# Govde mesh'i: en yuksek sinir kutulu GORUNUR mesh (gizli proplar sayilmaz)
+func _find_body_mesh(node: Node) -> MeshInstance3D:
+	var best: MeshInstance3D = null
+	var best_h := 0.0
+	var stack: Array = [node]
+	while not stack.is_empty():
+		var n: Node = stack.pop_back()
+		if n is MeshInstance3D and (n as MeshInstance3D).mesh != null \
+				and (n as Node3D).visible:
+			var hgt: float = (n as MeshInstance3D).get_aabb().size.y
+			if hgt > best_h:
+				best_h = hgt
+				best = n
+		for c in n.get_children():
+			stack.append(c)
+	return best
 
 # Sag el kemigini bulur: once "handslot", sonra "hand", sonra "arm"
 # (Kenney mini karakterlerde el kemigi yok, "arm-right" var)
