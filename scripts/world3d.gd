@@ -177,6 +177,8 @@ func _setup_screenshot(save_path: String) -> void:
 	player.set_hair("kut", Color(0.35, 0.22, 0.12))
 	player.set_hat("yok")
 	cam_distance = 0.58  # yakin cekim: sac/yuz detayi gorunsun
+	cam_pitch = 37.0     # alcak aci: yuz onden gorunsun
+	_apply_camera_angle()
 	var timer := get_tree().create_timer(4.0)
 	timer.timeout.connect(func():
 		var img := get_viewport().get_texture().get_image()

@@ -73,36 +73,48 @@ func _build(skin: Color, shirt: Color, pants: Color) -> void:
 	head_inst.material_override = _mat(skin)
 	_head.add_child(head_inst)
 
-	# Yuz: iri parlak gozler + pembe yanaklar + gulen acik agiz
-	# (gozler percemin ALTINDA kalacak yukseklikte - yuz hep okunur)
+	# Yuz: mini karakterler gibi SADE ve yuze yapisik (disari firlamaz):
+	# kucuk oval gozler + ayni kosede minik isilti + hafif yanak + minik agiz
 	for side in [-1.0, 1.0]:
-		# Goz: dikey oval, koyu
+		# Goz: kucuk dikey oval, yuze yapisik (z'de yassi)
 		var eye := SphereMesh.new()
-		eye.radius = 0.023
-		eye.height = 0.06
+		eye.radius = 0.016
+		eye.height = 0.044
 		var eye_inst := MeshInstance3D.new()
 		eye_inst.mesh = eye
-		eye_inst.position = Vector3(side * 0.056, 0.10, 0.142)
-		eye_inst.material_override = _mat(Color(0.14, 0.12, 0.13))
+		eye_inst.position = Vector3(side * 0.048, 0.10, 0.148)
+		eye_inst.scale = Vector3(1, 1, 0.35)
+		eye_inst.material_override = _mat(Color(0.13, 0.11, 0.12))
 		_head.add_child(eye_inst)
-		# Goz parlamasi: minik beyaz nokta (canlilik verir)
-		_add_ball(_head, Vector3(side * 0.056 + 0.009, 0.115, 0.161),
-				0.0075, Color(0.99, 0.99, 0.99))
-		# Yanak pembesi
-		_add_ball(_head, Vector3(side * 0.098, 0.062, 0.118),
-				0.024, Color(0.99, 0.66, 0.62))
-	# Agiz: gulumseyen kucuk acik agiz (yassi oval)
+		# Isilti: iki gozde de ayni kosede tek minik nokta
+		var glint := SphereMesh.new()
+		glint.radius = 0.005
+		glint.height = 0.01
+		var glint_inst := MeshInstance3D.new()
+		glint_inst.mesh = glint
+		glint_inst.position = Vector3(side * 0.048 + 0.006, 0.112, 0.155)
+		glint_inst.material_override = _mat(Color(0.99, 0.99, 0.99))
+		_head.add_child(glint_inst)
+		# Yanak: soluk pembe, yassi, iyice yanda
+		var cheek := SphereMesh.new()
+		cheek.radius = 0.02
+		cheek.height = 0.028
+		var cheek_inst := MeshInstance3D.new()
+		cheek_inst.mesh = cheek
+		cheek_inst.position = Vector3(side * 0.094, 0.058, 0.122)
+		cheek_inst.scale = Vector3(1.2, 1, 0.35)
+		cheek_inst.material_override = _mat(Color(0.99, 0.74, 0.70))
+		_head.add_child(cheek_inst)
+	# Agiz: ortada, asagida, minicik koyu oval (yuze yapisik)
 	var mouth := SphereMesh.new()
-	mouth.radius = 0.024
-	mouth.height = 0.032
+	mouth.radius = 0.013
+	mouth.height = 0.018
 	var mouth_inst := MeshInstance3D.new()
 	mouth_inst.mesh = mouth
-	mouth_inst.position = Vector3(0, 0.052, 0.144)
-	mouth_inst.scale = Vector3(1.15, 1.0, 0.45)
-	mouth_inst.material_override = _mat(Color(0.52, 0.23, 0.20))
+	mouth_inst.position = Vector3(0, 0.048, 0.150)
+	mouth_inst.scale = Vector3(1.4, 1, 0.35)
+	mouth_inst.material_override = _mat(Color(0.42, 0.20, 0.18))
 	_head.add_child(mouth_inst)
-	# Dil: agzin icinde minik pembe detay
-	_add_ball(_head, Vector3(0, 0.044, 0.152), 0.011, Color(0.95, 0.55, 0.55))
 
 	# Sapka/sac/gozluk noktasi: kafa tabaninda (mini ile ayni cerceve)
 	head_attach = Node3D.new()
