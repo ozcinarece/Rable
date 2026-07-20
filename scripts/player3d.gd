@@ -33,7 +33,8 @@ const EMBEDDED_WEAPONS: Array[String] = ["Knife", "Knife_Offhand",
 		"1H_Crossbow", "2H_Crossbow", "Throwable", "Rogue_Cape",
 		"1H_Sword", "2H_Sword", "1H_Sword_Offhand", "Badge_Shield",
 		"Round_Shield", "Rectangle_Shield", "Spike_Shield", "1H_Axe",
-		"2H_Axe", "Mug", "Mage_Hat", "Spellbook", "Spellbook_open"]
+		"2H_Axe", "Mug", "Mage_Hat", "Spellbook", "Spellbook_open",
+		"Axe", "Gun"]  # Quaternius Sam/Matt serisinin elindeki gomulu aletler
 
 const CustomCharScript = preload("res://scripts/custom_character.gd")
 
@@ -165,6 +166,9 @@ func _find_hand_bone(skeleton: Skeleton3D) -> int:
 		if lower.contains("handslot"):
 			return i
 		if lower.contains("hand") and best_hand == -1:
+			best_hand = i
+		# On kol (bilek) ust koldan iyi tutma noktasidir (Quaternius rigi)
+		if (lower.contains("lowerarm") or lower.contains("forearm")) and best_hand == -1:
 			best_hand = i
 		if lower.contains("arm") and best_arm == -1:
 			best_arm = i

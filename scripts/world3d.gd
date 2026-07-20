@@ -63,6 +63,7 @@ const TREE_HEIGHT := 3.1
 ## kure kafa + kapsul govde; spec = ten/tisort/pantolon renkleri).
 ## Mini'ler Kenney paketi (blok stil). Ayni olcek = aksesuarlar ortak.
 const CHARACTER_OPTIONS := [
+	["Sam (Yeni)", "res://assets/models/characters/quat_sam.glb"],
 	["Yuvarlak Mavi", "custom:f2c29b/4fa7d8/5b6b8c"],
 	["Yuvarlak Yeşil", "custom:e8b48d/6abf69/6b5b4a"],
 	["Yuvarlak Pembe", "custom:f5cba7/ef8fb0/7a6f8f"],
@@ -139,7 +140,7 @@ var _held_item: String = ""
 # Kamera + gorunum ayarlari (kaydedilir)
 var cam_distance: float = 1.0  # yakinlik carpani
 var cam_pitch: float = 52.0    # bakis acisi (derece)
-var character_path: String = "custom:f2c29b/4fa7d8/5b6b8c"  # varsayilan: yuvarlak
+var character_path: String = "res://assets/models/characters/quat_sam.glb"  # varsayilan: Sam
 var hat_id: String = "yok"
 var face_path: String = ""
 var hair_style: String = ""
@@ -172,8 +173,8 @@ func _ready() -> void:
 func _setup_screenshot(save_path: String) -> void:
 	# Vitrin: ornek gorunum, kamera OYUN VARSAYILANINDA
 	# (referansla olcek karsilastirmasi icin)
-	player.set_character("custom:f2c29b/4fa7d8/5b6b8c")
-	player.set_hair("kut", Color(0.35, 0.22, 0.12))
+	player.set_character("res://assets/models/characters/quat_sam.glb")
+	player.set_hair("", Color(0.35, 0.22, 0.12))  # Sam'in kendi saci kalsin
 	player.set_hat("yok")
 	await get_tree().create_timer(4.0).timeout
 	_snap(save_path)
@@ -241,6 +242,25 @@ const SHOWCASE_FRAMES: Array = [
 			{"label": "M1", "model": "quat2_mush01"},
 			{"label": "M2", "model": "quat2_mush02"}]},
 	]},
+	{"suffix": "_alet", "cam": [0.0, 3.0, 10.8], "pitch": -15.0, "rows": [
+		{"h": 0.55, "gap": 1.4, "items": [
+			{"label": "S1", "model": "res://assets/models/tools/tool-axe.glb"},
+			{"label": "S2", "model": "res://assets/models/tools/tool-pickaxe.glb"},
+			{"label": "S3", "model": "res://assets/models/tools/tool-shovel.glb"},
+			{"label": "S4", "model": "res://assets/models/tools/tool-hammer.glb"},
+			{"label": "S5", "model": "res://assets/models/tools/tool-hoe.glb"}]},
+		{"h": 0.85, "gap": 1.9, "items": [
+			{"label": "T1", "model": "res://assets/models/tools/workbench.glb"},
+			{"label": "T2", "model": "res://assets/models/tools/workbench-anvil.glb"},
+			{"label": "T3", "model": "res://assets/models/tools/workbench-grind.glb"},
+			{"label": "T4", "model": "quat_table"}]},
+		{"h": 0.4, "gap": 1.4, "items": [
+			{"label": "R1", "model": "res://assets/models/tools/resource-wood.glb"},
+			{"label": "R2", "model": "res://assets/models/tools/resource-planks.glb"},
+			{"label": "R3", "model": "res://assets/models/tools/resource-stone.glb"},
+			{"label": "R4", "model": "res://assets/models/tools/tree-log-small.glb"},
+			{"label": "R5", "model": "res://assets/models/tools/campfire-pit.glb"}]},
+	]},
 ]
 
 func _build_showcase_frame(rows: Array, base: Vector3) -> void:
@@ -268,7 +288,10 @@ func _build_showcase_frame(rows: Array, base: Vector3) -> void:
 			var holder := Node3D.new()
 			holder.position = Vector3(x, 0, z)
 			root.add_child(holder)
-			var scene: Node3D = load(NATURE_PATH % String(items[i]["model"])).instantiate()
+			var model_id := String(items[i]["model"])
+			var model_path := model_id if model_id.begins_with("res://") \
+					else NATURE_PATH % model_id
+			var scene: Node3D = load(model_path).instantiate()
 			holder.add_child(scene)
 			var aabb := _scene_aabb(scene)
 			if aabb.size.y > 0.01:
@@ -340,9 +363,12 @@ func _load_settings() -> void:
 	if parsed is Dictionary:
 		cam_distance = clampf(float(parsed.get("zoom", 1.0)), 0.55, 1.7)
 		cam_pitch = clampf(float(parsed.get("pitch", 52.0)), 35.0, 68.0)
-		var saved_char := String(parsed.get("character", character_path))
-		if saved_char.begins_with("custom:") or ResourceLoader.exists(saved_char):
-			character_path = saved_char
+		# v2 gecisi: Sam varsayilan oldu; eski kayitli secim BIR KEZ
+		# Sam'e cevrilir, sonraki secimler (v>=2 kayitlari) aynen korunur
+		if int(parsed.get("v", 1)) >= 2:
+			var saved_char := String(parsed.get("character", character_path))
+			if saved_char.begins_with("custom:") or ResourceLoader.exists(saved_char):
+				character_path = saved_char
 		hat_id = String(parsed.get("hat", hat_id))
 		face_path = String(parsed.get("face", face_path))
 		hair_style = String(parsed.get("hair", hair_style))
@@ -351,7 +377,7 @@ func _load_settings() -> void:
 func _save_settings() -> void:
 	var file := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if file != null:
-		file.store_string(JSON.stringify({"zoom": cam_distance,
+		file.store_string(JSON.stringify({"v": 2, "zoom": cam_distance,
 				"pitch": cam_pitch, "character": character_path,
 				"hat": hat_id, "face": face_path,
 				"hair": hair_style, "hair_color": "#" + hair_color.to_html(false)}))
