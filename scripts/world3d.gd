@@ -19,9 +19,9 @@ const Items = preload("res://scripts/items.gd")
 ## turler icin benekli doku CALISMA ANINDA kodla uretilir (dosya
 ## iceri aktarma boru hattina bagimlilik yok - her platformda calisir).
 const GROUND_DEFS := {
-	".": {"color": Color(0.46, 0.73, 0.36), "top": 0.0, "solid": false, "speckled": true},
-	"d": {"color": Color(0.60, 0.44, 0.29), "top": -0.02, "solid": false, "speckled": true},
-	"s": {"color": Color(0.91, 0.83, 0.58), "top": -0.02, "solid": false, "speckled": true},
+	".": {"color": Color(0.42, 0.68, 0.31), "top": 0.0, "solid": false, "speckled": true},
+	"d": {"color": Color(0.55, 0.40, 0.26), "top": -0.02, "solid": false, "speckled": true},
+	"s": {"color": Color(0.85, 0.72, 0.44), "top": -0.02, "solid": false, "speckled": true},
 	"~": {"color": Color(0.30, 0.58, 0.88), "top": -0.14, "solid": true, "water": true},
 	"o": {"color": Color(0.33, 0.26, 0.20), "top": -0.25, "solid": true},
 }
@@ -440,7 +440,9 @@ func _build_environment() -> void:
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
-	env.ambient_light_energy = 1.1
+	env.ambient_light_energy = 0.75
+	# Filmic ton eslemesi: parlak renkler beyaza patlamasin
+	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
@@ -448,7 +450,7 @@ func _build_environment() -> void:
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-52, -32, 0)
 	sun.light_color = Color(1.0, 0.96, 0.88)
-	sun.light_energy = 1.2
+	sun.light_energy = 1.05
 	sun.shadow_enabled = true
 	add_child(sun)
 
@@ -570,7 +572,7 @@ func _water_material() -> ShaderMaterial:
 	shader.code = """
 shader_type spatial;
 // Opak su: seffaflik siralama sorunlari (beyaz ucgen artiklari) olmaz
-uniform vec4 col : source_color = vec4(0.24, 0.55, 0.86, 1.0);
+uniform vec4 col : source_color = vec4(0.19, 0.48, 0.82, 1.0);
 void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	VERTEX.y += sin(TIME * 1.6 + wp.x * 0.9 + wp.z * 0.7) * 0.05
