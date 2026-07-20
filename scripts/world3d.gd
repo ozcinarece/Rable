@@ -196,7 +196,72 @@ func _setup_screenshot(save_path: String) -> void:
 		camera.rotation_degrees = Vector3(frame["pitch"], 0, 0)
 		await get_tree().create_timer(1.2).timeout
 		_snap(save_path.replace(".png", String(frame["suffix"]) + ".png"))
+	# Son kare: theme_main.tres ornek sayfasi (Turkce karakter testi dahil)
+	_build_theme_test()
+	await get_tree().create_timer(0.6).timeout
+	_snap(save_path.replace(".png", "_tema.png"))
 	get_tree().quit()
+
+# Tema test sayfasi: paneller, sekme, butonlar, kategori daireleri.
+# Sadece CI ekran goruntusu modunda kurulur.
+func _build_theme_test() -> void:
+	var UIColors := preload("res://scripts/ui_colors.gd")
+	var layer := CanvasLayer.new()
+	layer.layer = 50
+	add_child(layer)
+	var root := PanelContainer.new()
+	root.theme = load("res://theme_main.tres")
+	root.set_anchors_preset(Control.PRESET_CENTER)
+	root.custom_minimum_size = Vector2(640, 0)
+	layer.add_child(root)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 12)
+	root.add_child(box)
+	var tab := PanelContainer.new()
+	tab.theme_type_variation = "TitleTab"
+	tab.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	box.add_child(tab)
+	var tab_label := Label.new()
+	tab_label.theme_type_variation = "TitleTabLabel"
+	tab_label.text = "Sırt Çantası"
+	tab.add_child(tab_label)
+	var header := Label.new()
+	header.theme_type_variation = "HeaderLabel"
+	header.text = "Şeker Gibi Başlık — ĞÜŞİÖÇ ğüşıöç"
+	box.add_child(header)
+	var body := Label.new()
+	body.text = "Gövde metni 18px: Çalışma Masası yanında üretim açılır."
+	box.add_child(body)
+	var subtle := Label.new()
+	subtle.theme_type_variation = "SubtleLabel"
+	subtle.text = "İkincil açıklama 15px — ink_soft renkte, sakin."
+	box.add_child(subtle)
+	var buttons := HBoxContainer.new()
+	buttons.add_theme_constant_override("separation", 10)
+	box.add_child(buttons)
+	var primary := Button.new()
+	primary.theme_type_variation = "PrimaryButton"
+	primary.text = "Üret"
+	buttons.add_child(primary)
+	var secondary := Button.new()
+	secondary.text = "Vazgeç"
+	buttons.add_child(secondary)
+	var disabled_btn := Button.new()
+	disabled_btn.text = "Kilitli"
+	disabled_btn.disabled = true
+	buttons.add_child(disabled_btn)
+	# Kategori daireleri (pastel paleti tek bakista dogrulamak icin)
+	var dots := HBoxContainer.new()
+	dots.add_theme_constant_override("separation", 8)
+	box.add_child(dots)
+	for cat in UIColors.CATEGORY_COLORS:
+		var dot := Panel.new()
+		dot.custom_minimum_size = Vector2(36, 36)
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = UIColors.CATEGORY_COLORS[cat]
+		sb.set_corner_radius_all(999)
+		dot.add_theme_stylebox_override("panel", sb)
+		dots.add_child(dot)
 
 func _snap(path: String) -> void:
 	get_viewport().get_texture().get_image().save_png(path)
