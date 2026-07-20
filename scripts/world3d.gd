@@ -15,15 +15,13 @@ const MapData = preload("res://scripts/map_data.gd")
 const Player3DScript = preload("res://scripts/player3d.gd")
 const Items = preload("res://scripts/items.gd")
 
-## Zemin turleri: renk (dokusuz yedek) + doku + ust yuzey yuksekligi.
-## Doku yuklenemezse duz renk kullanilir (asla beyaz kalmaz).
+## Zemin turleri: renk + ust yuzey yuksekligi. "speckled": true olan
+## turler icin benekli doku CALISMA ANINDA kodla uretilir (dosya
+## iceri aktarma boru hattina bagimlilik yok - her platformda calisir).
 const GROUND_DEFS := {
-	".": {"color": Color(0.46, 0.73, 0.36), "texture": "res://assets/textures3d/grass.png",
-			"top": 0.0, "solid": false},
-	"d": {"color": Color(0.60, 0.44, 0.29), "texture": "res://assets/textures3d/dirt.png",
-			"top": -0.02, "solid": false},
-	"s": {"color": Color(0.91, 0.83, 0.58), "texture": "res://assets/textures3d/sand.png",
-			"top": -0.02, "solid": false},
+	".": {"color": Color(0.46, 0.73, 0.36), "top": 0.0, "solid": false, "speckled": true},
+	"d": {"color": Color(0.60, 0.44, 0.29), "top": -0.02, "solid": false, "speckled": true},
+	"s": {"color": Color(0.91, 0.83, 0.58), "top": -0.02, "solid": false, "speckled": true},
 	"~": {"color": Color(0.30, 0.58, 0.88), "top": -0.14, "solid": true, "water": true},
 	"o": {"color": Color(0.33, 0.26, 0.20), "top": -0.25, "solid": true},
 }
@@ -490,19 +488,51 @@ func _build_world() -> void:
 			transforms.append(Transform3D(Basis.IDENTITY,
 					_cell_center(cell) + Vector3(0, float(def["top"]) - 0.25, 0)))
 		var node := _make_multimesh(box, def["color"], transforms, def.get("water", false))
-		if def.has("texture"):
-			var tex: Texture2D = load(def["texture"])
-			if tex != null:
-				var mat: StandardMaterial3D = node.material_override
-				mat.albedo_texture = tex
-				mat.albedo_color = Color.WHITE
-			else:
-				push_warning("ZEMIN DOKUSU YUKLENEMEDI: " + String(def["texture"]))
+		if def.get("speckled", false):
+			var mat: StandardMaterial3D = node.material_override
+			mat.albedo_texture = _make_speckle_texture(def["color"])
+			mat.albedo_color = Color.WHITE
 		add_child(node)
 
 	_build_sea()
 	_build_decor(ground_cells["."])
 	_rebuild_objects()
+
+# Benekli zemin dokusu: kod ile uretilir (dosya yok, iceri aktarma yok).
+# Ana renk + acik/koyu benekler; cim icin ince ot cizgileri de eklenir.
+var _speckle_cache: Dictionary = {}
+
+func _make_speckle_texture(base: Color) -> ImageTexture:
+	if _speckle_cache.has(base):
+		return _speckle_cache[base]
+	var size := 64
+	var img := Image.create(size, size, false, Image.FORMAT_RGB8)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 12345  # deterministik: her acilista ayni gorunum
+	for y in size:
+		for x in size:
+			var wave := 1.0 + sin(x * 0.35 + y * 0.21) * cos(y * 0.4 - x * 0.13) * 0.05
+			img.set_pixel(x, y, Color(base.r * wave, base.g * wave, base.b * wave))
+	# Acik ve koyu benekler
+	for i in 90:
+		var px := rng.randi_range(0, size - 1)
+		var py := rng.randi_range(0, size - 1)
+		var tone := 0.86 + rng.randf() * 0.30  # 0.86..1.16
+		var speck := Color(base.r * tone, base.g * tone, base.b * tone)
+		img.set_pixel(px, py, speck)
+		img.set_pixel((px + 1) % size, py, speck)
+		img.set_pixel(px, (py + 1) % size, speck)
+	# Cim icin kisa dikey ot cizgileri (yesil agirlikli renklerde)
+	if base.g > base.r and base.g > base.b:
+		for i in 70:
+			var gx := rng.randi_range(0, size - 1)
+			var gy := rng.randi_range(2, size - 1)
+			var blade := Color(base.r * 1.18, base.g * 1.16, base.b * 1.12)
+			for k in rng.randi_range(2, 4):
+				img.set_pixel(gx, (gy - k + size) % size, blade)
+	var tex := ImageTexture.create_from_image(img)
+	_speckle_cache[base] = tex
+	return tex
 
 # Harita bir ada: cevresini ufka kadar dalgali deniz sarar.
 func _build_sea() -> void:
@@ -534,8 +564,8 @@ void vertex() {
 void fragment() {
 	ALBEDO = col.rgb;
 	ALPHA = col.a;
-	ROUGHNESS = 0.12;
-	SPECULAR = 0.6;
+	ROUGHNESS = 0.45;
+	SPECULAR = 0.2;
 }
 """
 	_water_mat = ShaderMaterial.new()
