@@ -37,6 +37,11 @@ jobs:
           curl -sSL -o survival.zip \
             "https://kenney.nl/media/pages/assets/survival-kit/4065a8185b-1712149243/kenney_survival-kit.zip"
           unzip -q survival.zip -d survival
+          curl -sSL -o minichars.zip \
+            "https://kenney.nl/media/pages/assets/mini-characters/bfc7e272b4-1774770718/kenney_mini-characters.zip"
+          unzip -q minichars.zip -d minichars
+          echo "--- mini characters icerik (tum formatlar) ---"
+          find minichars -type f | head -80
           echo "--- survival kit glb ---"
           find survival -iname '*.glb' 
           echo "--- nature icerigi (ilk 60 glb) ---"
@@ -60,6 +65,11 @@ jobs:
             -exec cp {} assets/models/characters/ \;
           mkdir -p assets/models/tools
           find /tmp/dl/survival -iname '*.glb' -exec cp {} assets/models/tools/ \;
+          mkdir -p assets/models/characters/mini
+          find /tmp/dl/minichars \( -iname '*.glb' -o -iname '*.gltf' \) \
+            -exec cp {} assets/models/characters/mini/ \;
+          echo "--- kopyalanan mini karakterler ---"
+          ls assets/models/characters/mini || true
           echo "--- kopyalanan aletler ---"
           ls assets/models/tools
           echo "--- kopyalanan doga modelleri ---"
