@@ -328,12 +328,16 @@ func _build_showcase_frame(rows: Array, base: Vector3) -> void:
 			label.position = Vector3(x, h + 0.35, z)
 			root.add_child(label)
 
-# Sahnedeki tum MeshInstance3D'lerin birlesik sinir kutusu (kok uzayinda)
+# Sahnedeki GORUNUR MeshInstance3D'lerin birlesik sinir kutusu (kok
+# uzayinda). Gizlenen parcalar (orn. karakterlerin sakli silahlari)
+# hesaba katilmaz - yoksa vitrin olcekleri sapitir.
 func _scene_aabb(node: Node, xform: Transform3D = Transform3D.IDENTITY) -> AABB:
 	var result := AABB()
 	var found := false
 	var t := xform
 	if node is Node3D:
+		if not (node as Node3D).visible:
+			return AABB()
 		t = xform * (node as Node3D).transform
 	if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
 		result = t * (node as MeshInstance3D).mesh.get_aabb()
@@ -403,6 +407,13 @@ func _save_settings() -> void:
 
 # Iki parmakla yakinlastirma (pinch); oyuncu hareketi 1. parmakta kalir
 func _unhandled_input(event: InputEvent) -> void:
+	# ARASTIRMA TESTI (yalnizca klavyeli ortam: masaustu/web).
+	# F9: durum dokumu; F10: stone_tools dugumunu bedava malzemeyle ac
+	if event is InputEventKey and event.pressed and not event.echo:
+		if event.keycode == KEY_F9:
+			Research.debug_print_state()
+		elif event.keycode == KEY_F10:
+			Research.debug_research("stone_tools")
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			_touches[event.index] = event.position

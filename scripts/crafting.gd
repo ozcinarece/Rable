@@ -35,6 +35,11 @@ func can_craft(recipe_id: String) -> bool:
 
 ## Eldeki malzemeyle en fazla kac adet uretilebilir? (istasyon yoksa 0)
 func max_craftable(recipe_id: String) -> int:
+	# Arastirma kapisi: bir arastirma dugumune bagli tarifler yalnizca
+	# dugum acildiginda uretilebilir (bagli olmayanlar serbesttir)
+	var research := get_node_or_null("/root/Research")
+	if research != null and not research.is_recipe_unlocked(recipe_id):
+		return 0
 	var recipe: Dictionary = Recipes.CRAFT_RECIPES[recipe_id]
 	if recipe["station"] != "" and not near_station:
 		return 0

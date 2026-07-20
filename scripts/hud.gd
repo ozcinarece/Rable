@@ -378,6 +378,7 @@ func _on_eat_pressed() -> void:
 func _on_reset_pressed() -> void:
 	SaveManager.delete_save()
 	Inventory.reset()
+	Research.reset()
 	Crafting.reset()
 	Hunger.reset()
 	Thirst.reset()

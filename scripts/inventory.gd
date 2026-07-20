@@ -110,6 +110,10 @@ func add_all(drops: Dictionary) -> bool:
 		return false
 	for item_id in drops:
 		_sim_add(slots, item_id, drops[item_id])
+		# Gizli arastirma dugumlerini tetikle (ilk kez toplanan malzeme)
+		var research := get_node_or_null("/root/Research")
+		if research != null:
+			research.notify_item_collected(item_id)
 	changed.emit()
 	return true
 

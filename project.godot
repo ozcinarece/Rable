@@ -14,6 +14,7 @@ config/features=PackedStringArray("4.3", "GL Compatibility")
 [autoload]
 
 Inventory="*res://scripts/inventory.gd"
+Research="*res://scripts/research.gd"
 Crafting="*res://scripts/crafting.gd"
 Hunger="*res://scripts/hunger.gd"
 Thirst="*res://scripts/thirst.gd"
