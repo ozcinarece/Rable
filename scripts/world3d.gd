@@ -15,12 +15,15 @@ const MapData = preload("res://scripts/map_data.gd")
 const Player3DScript = preload("res://scripts/player3d.gd")
 const Items = preload("res://scripts/items.gd")
 
-## Zemin turleri: renk + ust yuzeyin yuksekligi (0 = yuruyus seviyesi)
+## Zemin turleri: renk/doku + ust yuzeyin yuksekligi (0 = yuruyus seviyesi)
 const GROUND_DEFS := {
-	".": {"color": Color(0.46, 0.73, 0.36), "top": 0.0, "solid": false},
-	"d": {"color": Color(0.60, 0.44, 0.29), "top": -0.02, "solid": false},
-	"s": {"color": Color(0.91, 0.83, 0.58), "top": -0.02, "solid": false},
-	"~": {"color": Color(0.32, 0.60, 0.88), "top": -0.14, "solid": true},
+	".": {"color": Color.WHITE, "texture": "res://assets/textures3d/grass.png",
+			"top": 0.0, "solid": false},
+	"d": {"color": Color.WHITE, "texture": "res://assets/textures3d/dirt.png",
+			"top": -0.02, "solid": false},
+	"s": {"color": Color.WHITE, "texture": "res://assets/textures3d/sand.png",
+			"top": -0.02, "solid": false},
+	"~": {"color": Color(0.30, 0.58, 0.88), "top": -0.14, "solid": true, "water": true},
 	"o": {"color": Color(0.33, 0.26, 0.20), "top": -0.25, "solid": true},
 }
 
@@ -45,9 +48,11 @@ const STONE_MODELS: Array[String] = ["rock_largeA", "rock_tallA",
 		"stone_tallB", "rock_largeB"]
 const BUSH_FULL_MODEL := "plant_bushDetailed"
 const BUSH_EMPTY_MODEL := "plant_bushSmall"
-# Cim hucrelerine serpistirilen susler (engel degil, toplanmaz)
-const DECOR_MODELS: Array[String] = ["flower_redA", "flower_yellowA",
-		"flower_purpleA", "grass_leafs", "mushroom_red", "grass_large"]
+# Cim hucrelerine serpistirilen susler (engel degil, toplanmaz).
+# Ot modelleri listede birkac kez: cimenlik agirlikli olsun
+const DECOR_MODELS: Array[String] = ["grass_leafs", "grass_large",
+		"grass_leafsLarge", "grass_leafs", "flower_redA", "flower_yellowA",
+		"grass_large", "flower_purpleA", "grass_leafs", "mushroom_red"]
 
 var _ground_char: Dictionary = {}  # hucre -> zemin karakteri
 var _objects: Dictionary = {}      # hucre -> "T"/"#"/"m"/"n"
@@ -275,10 +280,53 @@ func _build_world() -> void:
 		for cell in cells:
 			transforms.append(Transform3D(Basis.IDENTITY,
 					_cell_center(cell) + Vector3(0, float(def["top"]) - 0.25, 0)))
-		add_child(_make_multimesh(box, def["color"], transforms, ch == "~"))
+		var node := _make_multimesh(box, def["color"], transforms, def.get("water", false))
+		if def.has("texture"):
+			var mat: StandardMaterial3D = node.material_override
+			mat.albedo_texture = load(def["texture"])
+		add_child(node)
 
+	_build_sea()
 	_build_decor(ground_cells["."])
 	_rebuild_objects()
+
+# Harita bir ada: cevresini ufka kadar dalgali deniz sarar.
+func _build_sea() -> void:
+	var plane := PlaneMesh.new()
+	plane.size = Vector2(_map_w + 160, _map_h + 160)
+	plane.subdivide_width = 72
+	plane.subdivide_depth = 72
+	var sea := MeshInstance3D.new()
+	sea.mesh = plane
+	sea.material_override = _water_material()
+	sea.position = Vector3(_map_w / 2.0, -0.14, _map_h / 2.0)
+	add_child(sea)
+
+# Dalgali su malzemesi (deniz + harita ici su ayni gorunum)
+var _water_mat: ShaderMaterial
+
+func _water_material() -> ShaderMaterial:
+	if _water_mat != null:
+		return _water_mat
+	var shader := Shader.new()
+	shader.code = """
+shader_type spatial;
+uniform vec4 col : source_color = vec4(0.24, 0.55, 0.86, 0.88);
+void vertex() {
+	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	VERTEX.y += sin(TIME * 1.6 + wp.x * 0.9 + wp.z * 0.7) * 0.05
+			+ cos(TIME * 1.1 + wp.z * 1.3) * 0.03;
+}
+void fragment() {
+	ALBEDO = col.rgb;
+	ALPHA = col.a;
+	ROUGHNESS = 0.12;
+	SPECULAR = 0.6;
+}
+"""
+	_water_mat = ShaderMaterial.new()
+	_water_mat.shader = shader
+	return _water_mat
 
 # Bos cim hucrelerinin bir kismina cicek/ot/mantar serpistirir (sus).
 func _build_decor(grass_cells: Array) -> void:
@@ -323,14 +371,15 @@ func _rebuild_objects() -> void:
 	_build_stones(stones)
 	_build_bushes(bushes_full, bushes_empty)
 
-# Agaclar: hucreye gore Kenney modeli secilir, model basina tek MultiMesh
+# Agaclar: hucreye gore Kenney modeli secilir, model basina tek MultiMesh.
+# Olcek buyuk: agaclar insanin 2-2.5 kati boyda olsun (orman hissi)
 func _build_trees(cells: Array[Vector2i]) -> void:
 	var groups: Dictionary = {}
 	for cell in cells:
 		var model: String = TREE_MODELS[absi(cell.x * 31 + cell.y * 57) % TREE_MODELS.size()]
 		if not groups.has(model):
 			groups[model] = []
-		groups[model].append(Transform3D(_cell_variance(cell).scaled(Vector3(1.25, 1.25, 1.25)),
+		groups[model].append(Transform3D(_cell_variance(cell).scaled(Vector3(2.1, 2.1, 2.1)),
 				_cell_center(cell)))
 	for model in groups:
 		_keep(_make_model_multimesh(model, groups[model]))
@@ -411,13 +460,6 @@ func _cell_variance(cell: Vector2i) -> Basis:
 	return Basis(Vector3.UP, angle).scaled(Vector3(scale, scale, scale))
 
 func _make_multimesh(mesh: Mesh, color: Color, transforms: Array, water := false) -> MultiMeshInstance3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 1.0
-	if water:
-		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		material.albedo_color.a = 0.85
-		material.roughness = 0.15
 	var multi := MultiMesh.new()
 	multi.transform_format = MultiMesh.TRANSFORM_3D
 	multi.mesh = mesh
@@ -426,7 +468,14 @@ func _make_multimesh(mesh: Mesh, color: Color, transforms: Array, water := false
 		multi.set_instance_transform(i, transforms[i])
 	var node := MultiMeshInstance3D.new()
 	node.multimesh = multi
-	node.material_override = material
+	if water:
+		# Harita ici su, denizle ayni dalgali malzemeyi kullanir
+		node.material_override = _water_material()
+	else:
+		var material := StandardMaterial3D.new()
+		material.albedo_color = color
+		material.roughness = 1.0
+		node.material_override = material
 	return node
 
 # --- Oyuncu -------------------------------------------------------------
@@ -527,11 +576,20 @@ func _tick_regrow(delta: float) -> void:
 		_objects[cell] = "m"
 	_rebuild_objects()
 
+## Eline alinan aletin 3D modeli (Kenney Survival Kit)
+const TOOL_MODELS := {
+	"balta": "res://assets/models/tools/tool-axe.glb",
+	"kazma": "res://assets/models/tools/tool-pickaxe.glb",
+	"kurek": "res://assets/models/tools/tool-shovel.glb",
+	"mizrak": "spear",  # ozel: player3d basit mizrak insa eder
+}
+
 func _on_hold_requested(item_id: String) -> void:
 	if item_id != "" and Inventory.get_count(item_id) <= 0:
 		return
 	_held_item = item_id
 	hud.set_held_item(item_id)
+	player.set_held_tool(TOOL_MODELS.get(item_id, ""))
 
 func _compute_action_state() -> String:
 	var pc := _player_cell()

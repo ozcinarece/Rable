@@ -1,5 +1,7 @@
 extends Node3D
-## 3D oyuncu - KayKit Sovalye modeli (CC0), yurume/bekleme animasyonlu.
+## 3D oyuncu - KayKit Rogue modeli (CC0): zirhsiz, gunluk kiyafetli
+## "normal" karakter; yurume/bekleme animasyonlu. Eline alinan alet
+## (balta/kazma vs.) sag el kemigine (handslot.r) takilir.
 ## Hareket ayni 2D'deki gibi: parmagi basip surukle (sanal joystick)
 ## veya klavye (WASD/ok). Carpisma, fizik motoru yerine dunyanin
 ## izgara kontroluyle yapilir (basit ve mobilde ucuz).
@@ -22,11 +24,16 @@ var _touch_start := Vector2.ZERO
 var _touch_current := Vector2.ZERO
 var _touch_start_time := 0.0
 
-const MODEL_PATH := "res://assets/models/characters/Knight.glb"
+const MODEL_PATH := "res://assets/models/characters/Rogue.glb"
 const TARGET_HEIGHT: float = 1.35  # karakterin dunya icindeki boyu (metre)
+## Karakter paketiyle gelen gomulu silahlar (normal gorunum icin gizlenir)
+const EMBEDDED_WEAPONS: Array[String] = ["Knife", "Knife_Offhand",
+		"1H_Crossbow", "2H_Crossbow", "Throwable", "Rogue_Cape"]
 
 var _anim: AnimationPlayer
 var _current_anim: String = ""
+var _model_scale: float = 1.0
+var _tool_attach: Node3D  # eldeki aletin baglandigi nokta
 
 func _ready() -> void:
 	_visual = Node3D.new()
@@ -39,8 +46,29 @@ func _ready() -> void:
 	if mesh_node != null:
 		var height: float = mesh_node.get_aabb().size.y
 		if height > 0.01:
-			var s := TARGET_HEIGHT / height
-			model.scale = Vector3(s, s, s)
+			_model_scale = TARGET_HEIGHT / height
+			model.scale = Vector3(_model_scale, _model_scale, _model_scale)
+	# Paketle gelen silah/pelerin gorselleri kapansin (koylu gorunumu)
+	for weapon_name in EMBEDDED_WEAPONS:
+		var weapon := model.find_child(weapon_name, true, false)
+		if weapon != null and weapon is Node3D:
+			(weapon as Node3D).visible = false
+	# Alet baglama noktasi: sag el kemigi (yoksa govde onunde yedek nokta)
+	var skeleton: Skeleton3D = model.find_child("Skeleton3D", true, false)
+	if skeleton == null:
+		skeleton = model.find_child("*Skeleton*", true, false)
+	if skeleton != null:
+		for bone_name in ["handslot.r", "handslot_r", "hand.r", "hand_r"]:
+			if skeleton.find_bone(bone_name) != -1:
+				var attach := BoneAttachment3D.new()
+				skeleton.add_child(attach)
+				attach.bone_name = bone_name
+				_tool_attach = attach
+				break
+	if _tool_attach == null:
+		_tool_attach = Node3D.new()
+		_tool_attach.position = Vector3(0.28, 0.75, 0.18)
+		_visual.add_child(_tool_attach)
 	# Animasyonlar gltf'ten donguye alinmadan gelir; elle donguletiyoruz
 	_anim = model.find_child("AnimationPlayer", true, false)
 	if _anim != null:
@@ -48,6 +76,60 @@ func _ready() -> void:
 			if _anim.has_animation(anim_name):
 				_anim.get_animation(anim_name).loop_mode = Animation.LOOP_LINEAR
 		_play("Idle")
+
+## Eldeki aletin 3D modelini ele takar; bos yol = eli bosalt.
+## "spear" ozel degeri: pakette mizrak yok, basit bir tane insa edilir.
+func set_held_tool(model_path: String) -> void:
+	if _tool_attach == null:
+		return
+	for child in _tool_attach.get_children():
+		child.queue_free()
+	if model_path == "":
+		return
+	if model_path == "spear":
+		_tool_attach.add_child(_make_spear())
+		return
+	if not ResourceLoader.exists(model_path):
+		return
+	var tool_model: Node3D = load(model_path).instantiate()
+	_tool_attach.add_child(tool_model)
+	# Alet gercek boyutta ~0.5 m gorunsun (iskelet olcegini telafi et)
+	var mesh_node := _find_mesh_instance(tool_model)
+	if mesh_node != null:
+		var size: float = mesh_node.get_aabb().get_longest_axis_size()
+		if size > 0.01 and _model_scale > 0.001:
+			var s := 0.5 / (size * _model_scale)
+			tool_model.scale = Vector3(s, s, s)
+
+# Basit mizrak: ahsap sap + gri sivri uc (elde ~0.9 m gorunur)
+func _make_spear() -> Node3D:
+	var spear := Node3D.new()
+	var shaft := MeshInstance3D.new()
+	var shaft_mesh := CylinderMesh.new()
+	shaft_mesh.top_radius = 0.02
+	shaft_mesh.bottom_radius = 0.02
+	shaft_mesh.height = 0.75
+	shaft.mesh = shaft_mesh
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.55, 0.38, 0.22)
+	shaft.material_override = wood
+	spear.add_child(shaft)
+	var tip := MeshInstance3D.new()
+	var tip_mesh := CylinderMesh.new()
+	tip_mesh.top_radius = 0.0
+	tip_mesh.bottom_radius = 0.045
+	tip_mesh.height = 0.16
+	tip.mesh = tip_mesh
+	tip.position = Vector3(0, 0.45, 0)
+	var metal := StandardMaterial3D.new()
+	metal.albedo_color = Color(0.72, 0.74, 0.78)
+	tip.material_override = metal
+	spear.add_child(tip)
+	# Iskelet olcegini telafi et
+	if _model_scale > 0.001:
+		var s := 1.0 / _model_scale
+		spear.scale = Vector3(s, s, s)
+	return spear
 
 func _play(anim_name: String) -> void:
 	if _anim == null or _current_anim == anim_name:
