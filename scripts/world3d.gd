@@ -909,10 +909,12 @@ func _build_lake_surface() -> void:
 					[Vector2(x0 + step, z0), Vector2(x0 + step, z0 + step), Vector2(x0, z0 + step)]]:
 				for p: Vector2 in tri:
 					st.set_normal(Vector3.UP)
-					# Kiyiya uzaklik kose rengine islenir: shader bununla
+					# Su derinligi kose rengine islenir: shader bununla
 					# sig/derin rengi ve kiyi kopugunu cizer (derinlik
-					# dokusu gerektirmez - telefon GL'inde garantili)
-					st.set_color(Color(_shore_depth(lake_cells, p.x, p.y), 0, 0))
+					# dokusu gerektirmez - telefon GL'inde garantili).
+					# Derinlik ARAZIDEN olculur: kopuk, su cizgisinin
+					# dogal kavisini izler (hucre zikzaki olmaz)
+					st.set_color(Color(_shore_depth(p.x, p.y), 0, 0))
 					st.add_vertex(Vector3(p.x, LAKE_Y, p.y))
 			quads += 1
 	if quads == 0:
@@ -922,21 +924,10 @@ func _build_lake_surface() -> void:
 	inst.material_override = _lake_material()
 	add_child(inst)
 
-# Noktanin gol kiyisina uzakligi, 0 (kiyi) .. 1 (>=1.2 m iceride)
-func _shore_depth(lake_cells: Dictionary, x: float, z: float) -> float:
-	var ci := floori(x)
-	var cj := floori(z)
-	var nearest := 9.0
-	for dj in range(-2, 3):
-		for di in range(-2, 3):
-			var cell := Vector2i(ci + di, cj + dj)
-			if lake_cells.has(cell):
-				continue
-			# Gol olmayan hucrenin dikdortgenine uzaklik
-			var nx := clampf(x, float(cell.x), float(cell.x) + 1.0)
-			var nz := clampf(z, float(cell.y), float(cell.y) + 1.0)
-			nearest = minf(nearest, Vector2(x - nx, z - nz).length())
-	return clampf(nearest / 1.2, 0.0, 1.0)
+# Noktadaki su derinligi: 0 (su cizgisi) .. 1 (dip). Arazi yuksekliginden
+# hesaplanir, boylece kiyi kopugu gercek kiyi kavisini izler.
+func _shore_depth(x: float, z: float) -> float:
+	return clampf((LAKE_Y - ground_height(x, z)) / 0.22, 0.0, 1.0)
 
 # Nokta bir gol hucresine (kiyi payi dahil) yakin mi? Su yuzeyi kiyida
 # arazinin altina girsin diye karolar hucre sinirindan biraz tasar.
@@ -950,7 +941,9 @@ func _near_lake(lake_cells: Dictionary, x: float, z: float) -> bool:
 				continue
 			var nx := clampf(x, float(cell.x), float(cell.x) + 1.0)
 			var nz := clampf(z, float(cell.y), float(cell.y) + 1.0)
-			if Vector2(x - nx, z - nz).length() <= 0.35:
+			# Genis pay: su duzlemi su cizgisini her yerde gecsin (fazlasi
+			# arazinin altinda kalir, gorunmez)
+			if Vector2(x - nx, z - nz).length() <= 0.6:
 				return true
 	return false
 
@@ -975,13 +968,13 @@ void vertex() {
 void fragment() {
 	vec3 wp2 = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float depth = COLOR.r;
-	vec3 col = mix(shallow_col.rgb, deep_col.rgb, smoothstep(0.04, 0.72, depth));
+	vec3 col = mix(shallow_col.rgb, deep_col.rgb, smoothstep(0.05, 0.90, depth));
 	// Kiyi kopugu: kiyiyi izleyen, hafifce soluyup dalgalanan bant
-	float wobble = sin(wp2.x * 5.2 + wp2.z * 4.1 + TIME * 1.3) * 0.035
-			+ sin(wp2.x * 2.3 - wp2.z * 3.4 - TIME * 0.8) * 0.025;
-	float foam_edge = smoothstep(0.17, 0.05, depth + wobble);
+	float wobble = sin(wp2.x * 5.2 + wp2.z * 4.1 + TIME * 1.3) * 0.045
+			+ sin(wp2.x * 2.3 - wp2.z * 3.4 - TIME * 0.8) * 0.03;
+	float foam_edge = smoothstep(0.28, 0.08, depth + wobble);
 	// Ikinci ic halka: kiyidan biraz iceride kesik kesik kopuk cizgisi
-	float ring = smoothstep(0.03, 0.0, abs(depth + wobble - 0.30)) * 0.55
+	float ring = smoothstep(0.05, 0.0, abs(depth + wobble - 0.50)) * 0.55
 			* step(0.0, sin(wp2.x * 3.0 + wp2.z * 2.6 + TIME * 0.6));
 	// Ince piriltilar (kocaman beyaz lekeler degil, minik parlamalar)
 	float sp = sin(wp2.x * 7.1 + TIME * 1.1) * sin(wp2.z * 8.3 - TIME * 0.9);
