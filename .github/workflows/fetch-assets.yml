@@ -68,6 +68,11 @@ jobs:
           mkdir -p assets/models/characters/mini
           find /tmp/dl/minichars \( -iname '*.glb' -o -iname '*.gltf' \) \
             -exec cp {} assets/models/characters/mini/ \;
+          # KRITIK: GLB'ler renkleri Textures/colormap.png'den alir!
+          mkdir -p assets/models/characters/mini/Textures assets/models/tools/Textures
+          find /tmp/dl/minichars -iname 'colormap.png' -exec cp {} assets/models/characters/mini/Textures/ \; -quit
+          find /tmp/dl/survival -iname 'colormap.png' -exec cp {} assets/models/tools/Textures/ \; -quit
+          ls -la assets/models/characters/mini/Textures assets/models/tools/Textures
           echo "--- kopyalanan mini karakterler ---"
           ls assets/models/characters/mini || true
           echo "--- kopyalanan aletler ---"
