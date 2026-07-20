@@ -42,8 +42,38 @@ const SETTINGS_PATH := "user://cam3d.json"
 # Kenney Nature Kit modelleri (CC0). Hucreye gore deterministik secilir:
 # orman cesitli ama her acilista ayni gorunur.
 const NATURE_PATH := "res://assets/models/nature/%s.glb"
-const TREE_MODELS: Array[String] = ["tree_default", "tree_oak", "tree_fat",
-		"tree_pineRoundA", "tree_pineRoundC", "tree_simple"]
+## Orman stilleri: Gorunum panelinden secilir, aninda uygulanir
+const FOREST_STYLES := {
+	"karisik": {"label": "Karışık", "models": ["tree_default", "tree_oak",
+			"tree_fat", "tree_pineRoundA", "tree_pineRoundC", "tree_simple"]},
+	"cam": {"label": "Çam Ormanı", "models": ["tree_pineRoundA",
+			"tree_pineRoundB", "tree_pineRoundC", "tree_pineRoundD",
+			"tree_pineTallA", "tree_pineTallB"]},
+	"yaprakli": {"label": "Yapraklı", "models": ["tree_detailed", "tree_oak",
+			"tree_default", "tree_thin"]},
+	"ince": {"label": "İnce Uzun", "models": ["tree_thin", "tree_tall",
+			"tree_pineTallA_detailed", "tree_pineTallB_detailed"]},
+}
+## Karakter secenekleri (Gorunum paneli): ad + model yolu
+const CHARACTER_OPTIONS := [
+	["Erkek A", "res://assets/models/characters/mini/character-male-a.glb"],
+	["Erkek B", "res://assets/models/characters/mini/character-male-b.glb"],
+	["Erkek C", "res://assets/models/characters/mini/character-male-c.glb"],
+	["Erkek D", "res://assets/models/characters/mini/character-male-d.glb"],
+	["Erkek E", "res://assets/models/characters/mini/character-male-e.glb"],
+	["Erkek F", "res://assets/models/characters/mini/character-male-f.glb"],
+	["Kadın A", "res://assets/models/characters/mini/character-female-a.glb"],
+	["Kadın B", "res://assets/models/characters/mini/character-female-b.glb"],
+	["Kadın C", "res://assets/models/characters/mini/character-female-c.glb"],
+	["Kadın D", "res://assets/models/characters/mini/character-female-d.glb"],
+	["Kadın E", "res://assets/models/characters/mini/character-female-e.glb"],
+	["Kadın F", "res://assets/models/characters/mini/character-female-f.glb"],
+	["Köylü", "res://assets/models/characters/Rogue.glb"],
+	["Kapüşonlu", "res://assets/models/characters/Rogue_Hooded.glb"],
+	["Barbar", "res://assets/models/characters/Barbarian.glb"],
+	["Şövalye", "res://assets/models/characters/Knight.glb"],
+	["Büyücü", "res://assets/models/characters/Mage.glb"],
+]
 const STONE_MODELS: Array[String] = ["rock_largeA", "rock_tallA",
 		"stone_tallB", "rock_largeB"]
 const BUSH_FULL_MODEL := "plant_bushDetailed"
@@ -66,9 +96,11 @@ var _map_h: int = 0
 var _spawn_cell := Vector2i(5, 5)
 var _held_item: String = ""
 
-# Kamera ayarlari (kaydedilir)
+# Kamera + gorunum ayarlari (kaydedilir)
 var cam_distance: float = 1.0  # yakinlik carpani
 var cam_pitch: float = 52.0    # bakis acisi (derece)
+var character_path: String = "res://assets/models/characters/mini/character-male-a.glb"
+var forest_style: String = "karisik"
 
 var player: Node3D
 var camera: Camera3D
@@ -125,11 +157,19 @@ func _load_settings() -> void:
 	if parsed is Dictionary:
 		cam_distance = clampf(float(parsed.get("zoom", 1.0)), 0.55, 1.7)
 		cam_pitch = clampf(float(parsed.get("pitch", 52.0)), 35.0, 68.0)
+		var saved_char := String(parsed.get("character", character_path))
+		if ResourceLoader.exists(saved_char):
+			character_path = saved_char
+		var saved_forest := String(parsed.get("forest", forest_style))
+		if FOREST_STYLES.has(saved_forest):
+			forest_style = saved_forest
 
 func _save_settings() -> void:
 	var file := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if file != null:
-		file.store_string(JSON.stringify({"zoom": cam_distance, "pitch": cam_pitch}))
+		file.store_string(JSON.stringify({"zoom": cam_distance,
+				"pitch": cam_pitch, "character": character_path,
+				"forest": forest_style}))
 
 # Iki parmakla yakinlastirma (pinch); oyuncu hareketi 1. parmakta kalir
 func _unhandled_input(event: InputEvent) -> void:
@@ -151,7 +191,8 @@ func _unhandled_input(event: InputEvent) -> void:
 					_zoom_slider.set_value_no_signal(cam_distance)
 			_pinch_last = dist
 
-# Kamera ayar paneli: sol kenarda "Kamera" butonu -> yakinlik/aci
+# Ayar panelleri: sol kenarda "Kamera" ve "Görünüm" butonlari.
+# Kamera: yakinlik/aci. Gorunum: karakter secimi + orman stili.
 func _build_camera_ui() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 2
@@ -165,15 +206,27 @@ func _build_camera_ui() -> void:
 	button.add_theme_font_size_override("font_size", 18)
 	layer.add_child(button)
 
+	var look_button := Button.new()
+	look_button.text = "Görünüm"
+	look_button.toggle_mode = true
+	look_button.position = Vector2(12, 244)
+	look_button.size = Vector2(120, 46)
+	look_button.add_theme_font_size_override("font_size", 18)
+	layer.add_child(look_button)
+
 	var panel := PanelContainer.new()
 	panel.visible = false
-	panel.position = Vector2(12, 244)
+	panel.position = Vector2(144, 190)
 	panel.custom_minimum_size = Vector2(320, 0)
 	layer.add_child(panel)
 	button.toggled.connect(func(pressed: bool):
 		panel.visible = pressed
-		if not pressed:
+		if pressed:
+			look_button.button_pressed = false
+		else:
 			_save_settings())
+
+	_build_look_panel(layer, look_button, button)
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)
@@ -206,6 +259,80 @@ func _build_camera_ui() -> void:
 		cam_pitch = v
 		_apply_camera_angle())
 	box.add_child(_pitch_slider)
+
+# Gorunum paneli: karakter listesi + orman stili (secim aninda uygulanir)
+func _build_look_panel(layer: CanvasLayer, look_button: Button, cam_button: Button) -> void:
+	var panel := PanelContainer.new()
+	panel.visible = false
+	panel.position = Vector2(144, 100)
+	panel.custom_minimum_size = Vector2(360, 0)
+	layer.add_child(panel)
+	look_button.toggled.connect(func(pressed: bool):
+		panel.visible = pressed
+		if pressed:
+			cam_button.button_pressed = false
+		else:
+			_save_settings())
+
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 6)
+	panel.add_child(box)
+
+	var char_label := Label.new()
+	char_label.text = "Karakter"
+	char_label.add_theme_font_size_override("font_size", 17)
+	box.add_child(char_label)
+
+	var scroll := ScrollContainer.new()
+	scroll.custom_minimum_size = Vector2(0, 260)
+	box.add_child(scroll)
+	var grid := GridContainer.new()
+	grid.columns = 3
+	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	grid.add_theme_constant_override("h_separation", 6)
+	grid.add_theme_constant_override("v_separation", 6)
+	scroll.add_child(grid)
+
+	var char_group := ButtonGroup.new()
+	for option in CHARACTER_OPTIONS:
+		var b := Button.new()
+		b.text = option[0]
+		b.toggle_mode = true
+		b.button_group = char_group
+		b.custom_minimum_size = Vector2(108, 42)
+		b.add_theme_font_size_override("font_size", 15)
+		b.button_pressed = option[1] == character_path
+		var path: String = option[1]
+		b.toggled.connect(func(pressed: bool):
+			if pressed:
+				character_path = path
+				player.set_character(path)
+				_save_settings())
+		grid.add_child(b)
+
+	var forest_label := Label.new()
+	forest_label.text = "Orman Stili"
+	forest_label.add_theme_font_size_override("font_size", 17)
+	box.add_child(forest_label)
+
+	var forest_row := HBoxContainer.new()
+	forest_row.add_theme_constant_override("separation", 6)
+	box.add_child(forest_row)
+	var forest_group := ButtonGroup.new()
+	for style_id in FOREST_STYLES:
+		var fb := Button.new()
+		fb.text = FOREST_STYLES[style_id]["label"]
+		fb.toggle_mode = true
+		fb.button_group = forest_group
+		fb.add_theme_font_size_override("font_size", 14)
+		fb.button_pressed = style_id == forest_style
+		var sid: String = style_id
+		fb.toggled.connect(func(pressed: bool):
+			if pressed:
+				forest_style = sid
+				_rebuild_objects()
+				_save_settings())
+		forest_row.add_child(fb)
 
 # --- Ortam: gokyuzu + gunes ---------------------------------------------
 
@@ -371,12 +498,13 @@ func _rebuild_objects() -> void:
 	_build_stones(stones)
 	_build_bushes(bushes_full, bushes_empty)
 
-# Agaclar: hucreye gore Kenney modeli secilir, model basina tek MultiMesh.
-# Olcek buyuk: agaclar insanin 2-2.5 kati boyda olsun (orman hissi)
+# Agaclar: hucreye gore model secilir (secili orman stilinden),
+# model basina tek MultiMesh. Olcek buyuk: insanin 2-2.5 kati boy
 func _build_trees(cells: Array[Vector2i]) -> void:
+	var models: Array = FOREST_STYLES[forest_style]["models"]
 	var groups: Dictionary = {}
 	for cell in cells:
-		var model: String = TREE_MODELS[absi(cell.x * 31 + cell.y * 57) % TREE_MODELS.size()]
+		var model: String = models[absi(cell.x * 31 + cell.y * 57) % models.size()]
 		if not groups.has(model):
 			groups[model] = []
 		groups[model].append(Transform3D(_cell_variance(cell).scaled(Vector3(2.1, 2.1, 2.1)),
@@ -485,6 +613,7 @@ func _spawn_player() -> void:
 	player.world = self
 	player.position = _cell_center(_spawn_cell)
 	add_child(player)
+	player.set_character(character_path)  # kayitli secim
 	player.world_tapped.connect(_on_world_tapped)
 	camera.position = player.position + _camera_offset()
 

@@ -9,7 +9,9 @@ extends Node3D
 ## Kisa dokunusta ekran konumuyla yayinlanir (World hucreye cevirir)
 signal world_tapped(screen_pos: Vector2)
 
-const SPEED: float = 3.6          # hucre (metre) / saniye
+const SPEED: float = 3.6          # yurume hizi (hucre/metre / saniye)
+const RUN_SPEED: float = 5.8      # kosma hizi
+const RUN_DRAG_PX: float = 110.0  # parmak bu kadar uzaga cekilirse kosar
 const DRAG_DEAD_ZONE: float = 10.0
 const TAP_MAX_DURATION: float = 0.25
 const TAP_MAX_DRIFT: float = 12.0
@@ -24,23 +26,46 @@ var _touch_start := Vector2.ZERO
 var _touch_current := Vector2.ZERO
 var _touch_start_time := 0.0
 
-const MODEL_PATH := "res://assets/models/characters/Rogue.glb"
+const DEFAULT_MODEL := "res://assets/models/characters/Rogue.glb"
 const TARGET_HEIGHT: float = 1.35  # karakterin dunya icindeki boyu (metre)
-## Karakter paketiyle gelen gomulu silahlar (normal gorunum icin gizlenir)
+## Karakter paketleriyle gelen gomulu silah/aksesuar gorselleri (gizlenir)
 const EMBEDDED_WEAPONS: Array[String] = ["Knife", "Knife_Offhand",
-		"1H_Crossbow", "2H_Crossbow", "Throwable", "Rogue_Cape"]
+		"1H_Crossbow", "2H_Crossbow", "Throwable", "Rogue_Cape",
+		"1H_Sword", "2H_Sword", "1H_Sword_Offhand", "Badge_Shield",
+		"Round_Shield", "Rectangle_Shield", "Spike_Shield", "1H_Axe",
+		"2H_Axe", "Mug", "Mage_Hat", "Spellbook", "Spellbook_open"]
 
 var _anim: AnimationPlayer
 var _current_anim: String = ""
 var _model_scale: float = 1.0
-var _tool_attach: Node3D  # eldeki aletin baglandigi nokta
+var _model_root: Node3D    # aktif karakter modeli
+var _tool_attach: Node3D   # eldeki aletin baglandigi nokta
+var _held_tool_path: String = ""  # karakter degisince yeniden takmak icin
+# Pakete gore degisen animasyon adlari (otomatik bulunur)
+var _anim_idle: String = ""
+var _anim_walk: String = ""
+var _anim_run: String = ""
 
 func _ready() -> void:
 	_visual = Node3D.new()
 	add_child(_visual)
+	set_character(DEFAULT_MODEL)
 
-	var model: Node3D = load(MODEL_PATH).instantiate()
+## Karakter modelini degistirir (Gorunum panelinden secilir).
+## Her paketi otomatik tanir: olcek, animasyon adlari, el kemigi.
+func set_character(model_path: String) -> void:
+	if not ResourceLoader.exists(model_path):
+		return
+	if _model_root != null:
+		_model_root.queue_free()
+		_model_root = null
+	_tool_attach = null
+	_anim = null
+	_current_anim = ""
+
+	var model: Node3D = load(model_path).instantiate()
 	_visual.add_child(model)
+	_model_root = model
 	# Model hangi olcekte gelirse gelsin boyunu TARGET_HEIGHT'a getir
 	var mesh_node := _find_mesh_instance(model)
 	if mesh_node != null:
@@ -48,7 +73,7 @@ func _ready() -> void:
 		if height > 0.01:
 			_model_scale = TARGET_HEIGHT / height
 			model.scale = Vector3(_model_scale, _model_scale, _model_scale)
-	# Paketle gelen silah/pelerin gorselleri kapansin (koylu gorunumu)
+	# Paketle gelen silah/aksesuar gorselleri kapansin (sade gorunum)
 	for weapon_name in EMBEDDED_WEAPONS:
 		var weapon := model.find_child(weapon_name, true, false)
 		if weapon != null and weapon is Node3D:
@@ -58,28 +83,76 @@ func _ready() -> void:
 	if skeleton == null:
 		skeleton = model.find_child("*Skeleton*", true, false)
 	if skeleton != null:
-		for bone_name in ["handslot.r", "handslot_r", "hand.r", "hand_r"]:
-			if skeleton.find_bone(bone_name) != -1:
-				var attach := BoneAttachment3D.new()
-				skeleton.add_child(attach)
-				attach.bone_name = bone_name
-				_tool_attach = attach
-				break
+		var bone_idx := _find_hand_bone(skeleton)
+		if bone_idx != -1:
+			var attach := BoneAttachment3D.new()
+			skeleton.add_child(attach)
+			attach.bone_name = skeleton.get_bone_name(bone_idx)
+			_tool_attach = attach
 	if _tool_attach == null:
 		_tool_attach = Node3D.new()
 		_tool_attach.position = Vector3(0.28, 0.75, 0.18)
 		_visual.add_child(_tool_attach)
-	# Animasyonlar gltf'ten donguye alinmadan gelir; elle donguletiyoruz
+	# Animasyonlari otomatik bul (paketlerde adlar degisir) ve dongulet
 	_anim = model.find_child("AnimationPlayer", true, false)
-	if _anim != null:
-		for anim_name in ["Idle", "Walking_A", "Running_A"]:
-			if _anim.has_animation(anim_name):
-				_anim.get_animation(anim_name).loop_mode = Animation.LOOP_LINEAR
-		_play("Idle")
+	_detect_animations()
+	if _anim_idle != "":
+		_play(_anim_idle)
+	# Eldeki alet yeni karaktere de takilsin
+	set_held_tool(_held_tool_path)
+
+# Sag el kemigini bulur: once "handslot", sonra "hand", sonra "arm"
+# (Kenney mini karakterlerde el kemigi yok, "arm-right" var)
+func _find_hand_bone(skeleton: Skeleton3D) -> int:
+	var best_hand := -1
+	var best_arm := -1
+	for i in skeleton.get_bone_count():
+		var lower := skeleton.get_bone_name(i).to_lower()
+		var right := lower.ends_with(".r") or lower.ends_with("_r") \
+				or lower.contains("right")
+		if not right:
+			continue
+		if lower.contains("handslot"):
+			return i
+		if lower.contains("hand") and best_hand == -1:
+			best_hand = i
+		if lower.contains("arm") and best_arm == -1:
+			best_arm = i
+	return best_hand if best_hand != -1 else best_arm
+
+# Idle/yurume/kosma animasyonlarini ada gore esnek bulur
+func _detect_animations() -> void:
+	_anim_idle = ""
+	_anim_walk = ""
+	_anim_run = ""
+	if _anim == null:
+		return
+	for anim_name in _anim.get_animation_list():
+		var lower := String(anim_name).to_lower()
+		if _anim_idle == "" and lower.contains("idle"):
+			_anim_idle = anim_name
+		if _anim_walk == "" and lower.contains("walk") \
+				and not lower.contains("back"):
+			_anim_walk = anim_name
+		if _anim_run == "" and (lower.contains("run") or lower.contains("sprint")):
+			_anim_run = anim_name
+	# Tercih: tam adlar varsa onlari kullan (KayKit)
+	for pair in [["Idle", "idle"], ["Walking_A", "walk"], ["Running_A", "run"]]:
+		if _anim.has_animation(pair[0]):
+			match pair[1]:
+				"idle": _anim_idle = pair[0]
+				"walk": _anim_walk = pair[0]
+				"run": _anim_run = pair[0]
+	if _anim_run == "":
+		_anim_run = _anim_walk
+	for anim_name in [_anim_idle, _anim_walk, _anim_run]:
+		if anim_name != "" and _anim.has_animation(anim_name):
+			_anim.get_animation(anim_name).loop_mode = Animation.LOOP_LINEAR
 
 ## Eldeki aletin 3D modelini ele takar; bos yol = eli bosalt.
 ## "spear" ozel degeri: pakette mizrak yok, basit bir tane insa edilir.
 func set_held_tool(model_path: String) -> void:
+	_held_tool_path = model_path
 	if _tool_attach == null:
 		return
 	for child in _tool_attach.get_children():
@@ -132,7 +205,7 @@ func _make_spear() -> Node3D:
 	return spear
 
 func _play(anim_name: String) -> void:
-	if _anim == null or _current_anim == anim_name:
+	if _anim == null or anim_name == "" or _current_anim == anim_name:
 		return
 	if not _anim.has_animation(anim_name):
 		return
@@ -151,14 +224,22 @@ func _find_mesh_instance(node: Node) -> MeshInstance3D:
 func _physics_process(delta: float) -> void:
 	var dir := _get_input_direction()
 	if dir == Vector2.ZERO:
-		_play("Idle")
+		_play(_anim_idle)
 		return
 	facing = dir
-	_play("Walking_A")
-	_try_move(Vector3(dir.x, 0, dir.y) * SPEED * delta)
+	# Kosma: parmagi uzaga cek (veya klavyede Shift)
+	var running := _wants_run()
+	_play(_anim_run if running else _anim_walk)
+	var speed := RUN_SPEED if running else SPEED
+	_try_move(Vector3(dir.x, 0, dir.y) * speed * delta)
 	# Yuruyus yonune yumusakca don (model +Z yonune bakar)
 	var target_angle := atan2(dir.x, dir.y)
 	_visual.rotation.y = lerp_angle(_visual.rotation.y, target_angle, 12.0 * delta)
+
+func _wants_run() -> bool:
+	if _is_touching:
+		return (_touch_current - _touch_start).length() >= RUN_DRAG_PX
+	return Input.is_key_pressed(KEY_SHIFT)
 
 # Eksenleri ayri dener: duvara surtununce diger eksende kaymaya devam
 func _try_move(offset: Vector3) -> void:
