@@ -22,6 +22,7 @@ const ITEMS: Dictionary = {
 	"mizrak": {"name": "Mızrak", "icon": "res://assets/items/mizrak.png"},
 	"zirh": {"name": "Zırh", "icon": "res://assets/items/zirh.png"},
 	"sapka": {"name": "Şapka", "icon": "res://assets/items/sapka.png"},
+	"tohum": {"name": "Tohum", "icon": "res://assets/items/tohum.png"},
 }
 
 ## Ele alinabilen esyalar (envanter panelindeki "Eline Al" butonu)
@@ -45,6 +46,7 @@ const DESCRIPTIONS: Dictionary = {
 	"mizrak": "Eline al: yaratiklara 30 hasar (yumruk 10).",
 	"zirh": "Envanterdeyken hasari %40 azaltir.",
 	"sapka": "Envanterdeyken hasari %15 azaltir.",
+	"tohum": "Toprak zemine ekilir; su kenarinda 2 kat hizli buyur.",
 }
 
 static func description(item_id: String) -> String:

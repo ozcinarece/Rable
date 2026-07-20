@@ -29,6 +29,9 @@ const GROUND_DEFS: Dictionary = {
 	"s": {"texture": "res://assets/tiles/sand.png", "solid": false, "dig": {"kum": 1}},
 	"~": {"texture": "res://assets/tiles/water.png", "solid": true},
 	"o": {"texture": "res://assets/tiles/cukur.png", "solid": true},
+	# Ahsap doseme: evin zemini; kazilirsa kalas iade, altindan toprak cikar
+	"f": {"texture": "res://assets/tiles/zemin.png", "solid": false,
+			"dig": {"kalas": 1}, "dig_to": "d"},
 }
 
 # Nesne tanimlari (hepsi engeldir).
@@ -56,7 +59,23 @@ const OBJECT_DEFS: Dictionary = {
 	# Diken tuzagi: carpismasiz (yaratiklar ustunden gecer ve hasar alir)
 	"Z": {"texture": "res://assets/tiles/tuzak.png", "no_collision": true,
 			"drops": {"cubuk": 2, "tas": 1}, "hits": 1},
+	# Kapi: oyuncu gecer, yaratik gecemez (carpisma katmani 2)
+	"D": {"texture": "res://assets/tiles/kapi.png", "enemy_only_collision": true,
+			"drops": {"kalas": 3, "ip": 1}, "hits": 2},
+	# Yatak: yeniden dogma noktasi; gece dokununca sabaha uyunur
+	"Y": {"texture": "res://assets/tiles/yatak.png",
+			"drops": {"kalas": 4, "ip": 2, "yaprak": 2}, "hits": 2},
+	# Ekin asamalari (carpismasiz): c (filiz) -> g (gelisen) -> r (olgun)
+	# NOT: kayit formati hucre basina tek karakter kullanir
+	"c": {"texture": "res://assets/tiles/ekin1.png", "no_collision": true,
+			"drops": {"tohum": 1}, "hits": 1},
+	"g": {"texture": "res://assets/tiles/ekin2.png", "no_collision": true,
+			"drops": {"tohum": 1}, "hits": 1},
+	"r": {"texture": "res://assets/tiles/ekin3.png", "no_collision": true,
+			"drops": {"meyve": 3, "tohum": 1}, "hits": 1},
 }
+
+const GROWTH_SECONDS: float = 75.0  # ekinin her asamasinin suresi (sulu: yarisi)
 
 const TRAP_DAMAGE: int = 15
 const TRAP_MAX_USES: int = 5
@@ -85,6 +104,7 @@ var _map_width: int = 0
 var _map_height: int = 0
 var _enemies: Array = []           # sahnedeki yaratiklar
 var _trap_uses: Dictionary = {}    # tuzak hucresi -> kalan kullanim
+var _crops: Dictionary = {}        # ekin hucresi -> asamaya kalan sure
 var _night_tint: CanvasModulate
 
 func _ready() -> void:
@@ -121,6 +141,7 @@ func _process(delta: float) -> void:
 	if _held_item != "" and Inventory.get_count(_held_item) <= 0:
 		_on_hold_requested("")
 	_tick_regrow(delta)
+	_tick_crops(delta)
 	_tick_traps()
 	_save_timer += delta
 	if _save_timer >= SAVE_INTERVAL:
@@ -199,6 +220,7 @@ func _set_object(cell: Vector2i, ch: String) -> void:
 		_object_nodes.erase(cell)
 	_object_char.erase(cell)
 	_regrow.erase(cell)
+	_crops.erase(cell)
 	if ch == "":
 		return
 	_object_char[cell] = ch
@@ -210,6 +232,8 @@ func _set_object(cell: Vector2i, ch: String) -> void:
 		rect.size = Vector2(30, 30)
 		shape.shape = rect
 		body.add_child(shape)
+		if OBJECT_DEFS[ch].get("enemy_only_collision", false):
+			body.collision_layer = 2  # oyuncu gecer, yaratik takilir
 	var sprite := Sprite2D.new()
 	sprite.texture = load(OBJECT_DEFS[ch]["texture"])
 	sprite.offset = Vector2(0, -16)  # 32x64 gorselin tabani hucreye oturur
@@ -218,6 +242,8 @@ func _set_object(cell: Vector2i, ch: String) -> void:
 	_object_nodes[cell] = body
 	if ch == "n":
 		_regrow[cell] = REGROW_SECONDS
+	elif ch == "c" or ch == "g":
+		_crops[cell] = GROWTH_SECONDS
 
 func _tick_regrow(delta: float) -> void:
 	var ready_cells: Array[Vector2i] = []
@@ -227,6 +253,26 @@ func _tick_regrow(delta: float) -> void:
 			ready_cells.append(cell)
 	for cell in ready_cells:
 		_set_object(cell, "m")
+
+# Ekinleri buyutur; 4 komsusunda su varsa 2 kat hizli.
+func _tick_crops(delta: float) -> void:
+	var ready_cells: Array[Vector2i] = []
+	for cell in _crops:
+		var speed := 1.0
+		for offset in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if _ground_char.get(cell + offset, "") == "~":
+				speed = 2.0
+				break
+		_crops[cell] -= delta * speed
+		if _crops[cell] <= 0.0:
+			ready_cells.append(cell)
+	for cell in ready_cells:
+		var ch: String = _object_char.get(cell, "")
+		if ch == "c":
+			_set_object(cell, "g")
+		elif ch == "g":
+			_set_object(cell, "r")
+			_spawn_floating_text(cell, "Ekin olgunlasti!", Color(0.8, 1.0, 0.7))
 
 # --- Girdi isleme ------------------------------------------------------
 
@@ -246,6 +292,8 @@ func _on_player_world_tapped(world_pos: Vector2) -> void:
 	elif _object_char.get(cell, "") == "S":
 		_open_chest = cell
 		hud.show_chest(_chests.get(cell, {}))
+	elif _object_char.get(cell, "") == "Y":
+		_try_sleep(cell)
 	elif _try_attack(world_pos):
 		pass  # yakindaki yaratiga vuruldu
 	elif _held_item == "kurek" and not _object_char.has(cell):
@@ -290,8 +338,14 @@ func _try_place(cell: Vector2i, player_cell: Vector2i) -> bool:
 	var ground: String = _ground_char.get(cell, "")
 
 	if recipe.has("place_on"):
-		# Ozel hedefli tarif (Doldur: sadece cukura)
+		# Ozel hedefli tarif (Doldur: cukura, Ekin: topraga)
 		if ground != recipe["place_on"] or _object_char.has(cell):
+			return false
+	elif recipe.get("place_on_walkable", false):
+		# Zemin dosemesi: her yurunebilir zemine (ayni zemine tekrar olmaz)
+		if _object_char.has(cell):
+			return false
+		if ground == "" or GROUND_DEFS[ground]["solid"] or ground == recipe["tile"]:
 			return false
 	else:
 		# Normal yapi: bos, yurunebilir zemine
@@ -307,13 +361,14 @@ func _try_place(cell: Vector2i, player_cell: Vector2i) -> bool:
 	for item_id in cost:
 		Inventory.remove_item(item_id, cost[item_id])
 
-	if recipe.has("place_on"):
+	# Tarifin urettigi sey zeminse zemini degistir, degilse nesne koy
+	if GROUND_DEFS.has(recipe["tile"]):
 		_set_ground(cell, recipe["tile"])
 	else:
 		_set_object(cell, recipe["tile"])
-		if recipe["tile"] == "E":
+		if recipe["tile"] == "E" or recipe["tile"] == "Y":
 			_respawn_cell = cell
-			_spawn_floating_text(cell, "Kamp kuruldu!", Color(0.75, 0.9, 1.0))
+			_spawn_floating_text(cell, "Yeniden dogma noktasi!", Color(0.75, 0.9, 1.0))
 	return true
 
 func _try_harvest(cell: Vector2i) -> bool:
@@ -371,8 +426,10 @@ func _try_dig(cell: Vector2i) -> bool:
 		Inventory.add_item(item_id, dig_drops[item_id])
 		gained.append("+%d %s" % [dig_drops[item_id], Items.display_name(item_id)])
 	_spawn_floating_text(cell, " ".join(gained), Color(0.9, 0.8, 0.6))
-	_set_ground(cell, "o")
-	_maybe_flood(cell)
+	var new_ground: String = GROUND_DEFS[ground].get("dig_to", "o")
+	_set_ground(cell, new_ground)
+	if new_ground == "o":
+		_maybe_flood(cell)
 	return true
 
 # Yeni cukur suya komsuysa su, bagli tum cukurlara yayilir (kanal!).
@@ -405,7 +462,7 @@ func _on_hold_requested(item_id: String) -> void:
 	hud.set_held_item(item_id)
 
 ## Tasinabilir yapilar (dogal seyler tasinamaz)
-const MOVABLE: Array[String] = ["W", "K", "B", "E", "S", "Z"]
+const MOVABLE: Array[String] = ["W", "K", "B", "E", "S", "Z", "D", "Y"]
 
 func _on_move_toggled(enabled: bool) -> void:
 	_move_mode = enabled
@@ -544,6 +601,15 @@ func _tick_traps() -> void:
 			_trap_uses.erase(cell)
 			_set_object(cell, "")
 			_spawn_floating_text(cell, "Tuzak kirildi", Color(1, 0.8, 0.6))
+
+# Yatak: gece dokununca sabaha uyur, biraz can yeniler.
+func _try_sleep(cell: Vector2i) -> void:
+	if not DayNight.is_night:
+		_spawn_floating_text(cell, "Sadece gece uyuyabilirsin", Color(0.9, 0.9, 0.7))
+		return
+	DayNight.sleep_to_morning()
+	Health.heal(30.0)
+	_spawn_floating_text(cell, "Sabah oldu!", Color(1, 0.95, 0.6))
 
 # Olum: kampta yeniden dogus
 func _on_player_died() -> void:

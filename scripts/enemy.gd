@@ -19,6 +19,7 @@ var _attack_cooldown: float = 0.0
 
 func _ready() -> void:
 	motion_mode = CharacterBody2D.MOTION_MODE_FLOATING
+	collision_mask = 3  # katman 1 (dunya) + katman 2 (kapilar)
 	_sprite = Sprite2D.new()
 	_sprite.texture = TEX
 	_sprite.offset = Vector2(0, -8)

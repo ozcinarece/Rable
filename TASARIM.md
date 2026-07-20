@@ -51,6 +51,23 @@ sistemler eklendikce guncellenir.
 - Cukur, insa cubugundaki "Doldur" ile 1 toprak karsiligi kapatilir
 - Kurek: 2 cubuk + 1 ip + 1 kalas [tezgah]
 
+### Ev insaati (moduler base)
+- Zemin dosemesi (1 kalas): yurunebilir her zemine; kazilirsa kalas
+  iade edilir, alti toprak cikar
+- Kapi (3 kalas + 1 ip): OYUNCU GECER, YARATIK GECEMEZ (katman hilesi) -
+  base'e giris cikis noktasi
+- Yatak (4 kalas + 2 ip + 2 yaprak): yeniden dogma noktasi; GECE
+  dokununca sabaha uyunur (+30 can), gunduz uyunmaz
+- Duvarlar + kapi + zemin + yatak + sandik = gercek ev; hepsi tasinabilir
+
+### Tarim
+- Tohum: 1 meyve -> 2 tohum (elde)
+- Ekin: 1 tohum, SADECE toprak ("d") zemine ekilir (kaz + doldur ile
+  tarla acilir)
+- Buyume: filiz -> gelisen -> olgun (asama basi 75 sn); 4 komsusunda
+  su varsa 2 KAT hizli (kanal kazip tarlaya su getir!)
+- Olgun ekin: +3 meyve +1 tohum (kendini surdurur)
+
 ### Gece / Savas
 - Gunduz 180 sn, gece 75 sn; gece ekran kararir, HUD'da "Gun N - GECE!"
 - Gece dalgasi: 2 + gun sayisi yaratik (en fazla 10), harita kenarlarindan
@@ -117,8 +134,8 @@ sistemler eklendikce guncellenir.
    yapi tasima (sandik icerigiyle birlikte tasinir)
 3. [x] Savas cagi: mizrak/zirh/sapka + gece-gunduz + dusman dalgalari +
    can/savas + tuzaklar
-4. [ ] Yerlesik hayat: cok tile'li ev/base insaati (oda mantigi, gorsel +
-   stratejik) + tarim (su kanallariyla sulama)
+4. [x] Yerlesik hayat: moduler ev parcalari (zemin/kapi/yatak) + tarim
+   (tohum -> filiz -> olgun; su kenarinda 2x hiz)
 5. [ ] Ilerleme: seviye/yetenekler/tarif kilitleri (XP kaynaklari
    olgunlasinca)
 Surekli: gorsel iyilestirme her fazda dozunda; cit vb. kucuk icerikler

@@ -24,6 +24,16 @@ const BUILD_RECIPES: Dictionary = {
 			"tile": "E", "cost": {"kalas": 6, "ip": 2, "yaprak": 4}},
 	"sandik": {"name": "Sandık", "icon": "res://assets/tiles/sandik.png",
 			"tile": "S", "cost": {"kalas": 4, "ip": 1}},
+	# Ev parcalari: modviler base insaati
+	"zemin": {"name": "Zemin", "icon": "res://assets/tiles/zemin.png",
+			"tile": "f", "cost": {"kalas": 1}, "place_on_walkable": true},
+	"kapi": {"name": "Kapı", "icon": "res://assets/tiles/kapi.png",
+			"tile": "D", "cost": {"kalas": 3, "ip": 1}},
+	"yatak": {"name": "Yatak", "icon": "res://assets/tiles/yatak.png",
+			"tile": "Y", "cost": {"kalas": 4, "ip": 2, "yaprak": 2}},
+	# Tarim: tohum sadece toprak ("d") zemine ekilir
+	"ekin": {"name": "Ekin", "icon": "res://assets/tiles/ekin1.png",
+			"tile": "c", "cost": {"tohum": 1}, "place_on": "d"},
 	# Diken tuzagi: yaratiklar ustunden gecerken hasar alir (5 kullanimlik)
 	"tuzak": {"name": "Tuzak", "icon": "res://assets/tiles/tuzak.png",
 			"tile": "Z", "cost": {"cubuk": 2, "tas": 1}},
@@ -43,4 +53,5 @@ const CRAFT_RECIPES: Dictionary = {
 	"mizrak": {"output": {"mizrak": 1}, "cost": {"cubuk": 2, "tas": 1, "ip": 1}, "station": "tezgah"},
 	"zirh": {"output": {"zirh": 1}, "cost": {"ip": 4, "kalas": 2, "tas": 2}, "station": "tezgah"},
 	"sapka": {"output": {"sapka": 1}, "cost": {"ip": 2, "yaprak": 3}, "station": "tezgah"},
+	"tohum": {"output": {"tohum": 2}, "cost": {"meyve": 1}, "station": ""},
 }

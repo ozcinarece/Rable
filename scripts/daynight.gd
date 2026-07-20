@@ -28,6 +28,16 @@ func _process(delta: float) -> void:
 		day_started.emit()
 		changed.emit()
 
+## Yatakta uyuyunca geceyi atlar, sabah olur.
+func sleep_to_morning() -> void:
+	if not is_night:
+		return
+	elapsed = 0.0
+	is_night = false
+	day += 1
+	day_started.emit()
+	changed.emit()
+
 ## Kayittan yukleme
 func load_state(new_day: int, new_is_night: bool, new_elapsed: float) -> void:
 	day = maxi(1, new_day)
