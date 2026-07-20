@@ -194,8 +194,8 @@ func _setup_screenshot(save_path: String) -> void:
 			print("genis kare kaydedildi")
 			# Ucuncu kare: cali adaylari vitrini (kullanici secimi icin)
 			var studio := _build_bush_showcase()
-			camera.position = studio + Vector3(2.7, 1.9, 5.6)
-			camera.rotation_degrees = Vector3(-17, 0, 0)
+			camera.position = studio + Vector3(3.0, 3.6, 8.2)
+			camera.rotation_degrees = Vector3(-22, 0, 0)
 			var timer3 := get_tree().create_timer(1.0)
 			timer3.timeout.connect(func():
 				var img3 := get_viewport().get_texture().get_image()
@@ -232,8 +232,8 @@ func _build_bush_showcase() -> Vector3:
 	for i in 8:
 		var col := i % 4
 		var row := i >> 2
-		# Arka sira (etiket 1-4) kameradan uzakta: z=0; on sira z=2.4
-		var pos := Vector3(float(col) * 1.8, 0, float(row) * 2.4)
+		# Arka sira (etiket 1-4) kameradan uzakta: z=0; on sira z=2.6
+		var pos := Vector3(float(col) * 2.0, 0, float(row) * 2.6)
 		var holder := Node3D.new()
 		holder.position = pos
 		root.add_child(holder)
@@ -256,8 +256,8 @@ func _build_bush_showcase() -> Vector3:
 			top = 0.75
 		if i < 6:
 			# Kenney adaylarina da meyve: oyundaki haliyle kiyas adil olsun
-			for bp: Vector3 in [Vector3(0.14, top * 0.72, 0.10),
-					Vector3(-0.12, top * 0.62, -0.06), Vector3(0.02, top * 0.85, -0.12)]:
+			for bp: Vector3 in [Vector3(0.10, top * 0.55, 0.08),
+					Vector3(-0.10, top * 0.50, -0.04), Vector3(0.02, top * 0.68, -0.10)]:
 				var berry := MeshInstance3D.new()
 				var bm := SphereMesh.new()
 				bm.radius = 0.05
@@ -268,12 +268,12 @@ func _build_bush_showcase() -> Vector3:
 				holder.add_child(berry)
 		var label := Label3D.new()
 		label.text = str(i + 1)
-		label.font_size = 140
+		label.font_size = 80
 		label.modulate = Color(0.08, 0.08, 0.08)
-		label.outline_size = 24
+		label.outline_size = 16
 		label.outline_modulate = Color(1, 1, 1)
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		label.position = pos + Vector3(0, 1.35, 0)
+		label.position = pos + Vector3(0, 1.05, 0)
 		root.add_child(label)
 	return base
 
