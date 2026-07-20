@@ -287,47 +287,37 @@ func set_hair(style: String, color: Color) -> void:
 # lobeleri ve minik tepe tutami var - tas gorunumunu bunlar kirar.
 func _make_hair(style: String, color: Color) -> Node3D:
 	var hair := Node3D.new()
-	# Taban: kafayi saran alcak kep (tek basina degil, uzeri sekillenir)
+	# Taban: kafayi saran BUYUK yumusak kubbe - silueti tek parca,
+	# ustune eklenenler hafif dalgalar (yumru yumru gorunmez)
 	var dome := SphereMesh.new()
-	dome.radius = 0.175
-	dome.height = 0.17
+	dome.radius = 0.183
+	dome.height = 0.20
 	dome.is_hemisphere = true
-	hair.add_child(_hat_part(dome, color, Vector3(0, 0.12, -0.015)))
-	# Percemler: alinda 5 yuvarlak tutamlik kakul sirasi
-	# (gozlerin ustunde kalir; yuz acik)
+	hair.add_child(_hat_part(dome, color, Vector3(0, 0.115, -0.012)))
+	# Percemler: kubbeye GOMULU, sadece alt kenari hafif taramali
 	for i in 5:
-		var a := deg_to_rad(-52.0 + 26.0 * i)
+		var a := deg_to_rad(-50.0 + 25.0 * i)
 		var bang := SphereMesh.new()
-		bang.radius = 0.044
-		bang.height = 0.07
+		bang.radius = 0.036
+		bang.height = 0.06
 		hair.add_child(_hat_part(bang, color,
-				Vector3(sin(a) * 0.145, 0.152, cos(a) * 0.145 - 0.005)))
-	# Yan tutamlar: kulak ustlerini ortier
+				Vector3(sin(a) * 0.138, 0.142, cos(a) * 0.138 - 0.008)))
+	# Yan tutamlar: kubbeye gomulu, kulaklari yumusakca ortier
 	var side_lock := SphereMesh.new()
-	side_lock.radius = 0.06
-	side_lock.height = 0.11
-	hair.add_child(_hat_part(side_lock, color, Vector3(0.15, 0.105, 0.0)))
-	hair.add_child(_hat_part(side_lock, color, Vector3(-0.15, 0.105, 0.0)))
-	# Ense dolgusu
+	side_lock.radius = 0.052
+	side_lock.height = 0.10
+	hair.add_child(_hat_part(side_lock, color, Vector3(0.142, 0.10, -0.01)))
+	hair.add_child(_hat_part(side_lock, color, Vector3(-0.142, 0.10, -0.01)))
+	# Ense dolgusu (kubbeyle butunlesik)
 	var nape := SphereMesh.new()
-	nape.radius = 0.115
-	nape.height = 0.17
-	hair.add_child(_hat_part(nape, color, Vector3(0, 0.10, -0.095)))
-	# Tepe lobeleri: kubbenin duzlugunu kiran hacim yumrulari
-	var lobe_a := SphereMesh.new()
-	lobe_a.radius = 0.105
-	lobe_a.height = 0.15
-	hair.add_child(_hat_part(lobe_a, color, Vector3(0.065, 0.205, 0.03)))
-	var lobe_b := SphereMesh.new()
-	lobe_b.radius = 0.095
-	lobe_b.height = 0.14
-	hair.add_child(_hat_part(lobe_b, color, Vector3(-0.06, 0.21, -0.045)))
-	# Tepe tutami: hafif yatik minik ahoge
-	var tuft := CapsuleMesh.new()
-	tuft.radius = 0.022
-	tuft.height = 0.10
-	hair.add_child(_hat_part(tuft, color, Vector3(0.02, 0.285, 0.02),
-			Vector3(18, 0, -28)))
+	nape.radius = 0.11
+	nape.height = 0.16
+	hair.add_child(_hat_part(nape, color, Vector3(0, 0.095, -0.085)))
+	# Tepe dalgasi: TEK genis, iyice gomulu kabarti (dogal hacim)
+	var lobe := SphereMesh.new()
+	lobe.radius = 0.135
+	lobe.height = 0.16
+	hair.add_child(_hat_part(lobe, color, Vector3(0.025, 0.19, 0.0)))
 	match style:
 		"kut":
 			pass  # sekilli kisa kesim (taban set yeterli)

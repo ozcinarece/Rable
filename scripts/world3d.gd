@@ -19,10 +19,10 @@ const Items = preload("res://scripts/items.gd")
 ## turler icin benekli doku CALISMA ANINDA kodla uretilir (dosya
 ## iceri aktarma boru hattina bagimlilik yok - her platformda calisir).
 const GROUND_DEFS := {
-	".": {"color": Color(0.42, 0.68, 0.31), "top": 0.0, "solid": false, "speckled": true},
+	".": {"color": Color(0.36, 0.62, 0.27), "top": 0.0, "solid": false, "speckled": true},
 	"d": {"color": Color(0.55, 0.40, 0.26), "top": -0.02, "solid": false, "speckled": true},
-	"s": {"color": Color(0.85, 0.72, 0.44), "top": -0.02, "solid": false, "speckled": true},
-	"~": {"color": Color(0.30, 0.58, 0.88), "top": -0.14, "solid": true, "water": true},
+	"s": {"color": Color(0.88, 0.76, 0.50), "top": -0.02, "solid": false, "speckled": true},
+	"~": {"color": Color(0.22, 0.50, 0.80), "top": -0.14, "solid": true, "water": true},
 	"o": {"color": Color(0.33, 0.26, 0.20), "top": -0.25, "solid": true},
 }
 
@@ -35,7 +35,7 @@ const OBJECT_DEFS := {
 	"m": {"drops": {"meyve": 2}, "hits": 1, "becomes": "n"},
 }
 const REGROW_SECONDS := 60.0
-const CAM_BASE_DIST := 9.2
+const CAM_BASE_DIST := 12.5  # genis bakis (Longvinter benzeri olcek)
 const SETTINGS_PATH := "user://cam3d.json"
 
 # Kenney Nature Kit modelleri (CC0). Hucreye gore deterministik secilir:
@@ -141,7 +141,7 @@ var _held_item: String = ""
 var cam_distance: float = 1.0  # yakinlik carpani
 var cam_pitch: float = 52.0    # bakis acisi (derece)
 var character_path: String = "custom:f2c29b/4fa7d8/5b6b8c"  # varsayilan: yuvarlak
-var forest_style: String = "karisik"
+var forest_style: String = "cam"  # referans gorunum: cam ormani
 var hat_id: String = "yok"
 var face_path: String = ""
 var hair_style: String = ""
@@ -172,13 +172,11 @@ func _ready() -> void:
 		_setup_screenshot(OS.get_environment("RABLE_SCREENSHOT"))
 
 func _setup_screenshot(save_path: String) -> void:
-	# Vitrin: yeni tasarimlar fotografta gorunsun diye ornek gorunum
+	# Vitrin: ornek gorunum, kamera OYUN VARSAYILANINDA
+	# (referansla olcek karsilastirmasi icin)
 	player.set_character("custom:f2c29b/4fa7d8/5b6b8c")
 	player.set_hair("kut", Color(0.35, 0.22, 0.12))
 	player.set_hat("yok")
-	cam_distance = 0.58  # yakin cekim: sac/yuz detayi gorunsun
-	cam_pitch = 37.0     # alcak aci: yuz onden gorunsun
-	_apply_camera_angle()
 	var timer := get_tree().create_timer(4.0)
 	timer.timeout.connect(func():
 		var img := get_viewport().get_texture().get_image()
@@ -665,7 +663,7 @@ func _water_material() -> ShaderMaterial:
 	shader.code = """
 shader_type spatial;
 // Opak su: seffaflik siralama sorunlari (beyaz ucgen artiklari) olmaz
-uniform vec4 col : source_color = vec4(0.24, 0.55, 0.86, 1.0);
+uniform vec4 col : source_color = vec4(0.17, 0.44, 0.74, 1.0);
 void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	VERTEX.y += sin(TIME * 1.6 + wp.x * 0.9 + wp.z * 0.7) * 0.05
@@ -733,7 +731,7 @@ func _build_trees(cells: Array[Vector2i]) -> void:
 		var model: String = models[absi(cell.x * 31 + cell.y * 57) % models.size()]
 		if not groups.has(model):
 			groups[model] = []
-		groups[model].append(Transform3D(_cell_variance(cell).scaled(Vector3(2.1, 2.1, 2.1)),
+		groups[model].append(Transform3D(_cell_variance(cell).scaled(Vector3(3.0, 3.0, 3.0)),
 				_cell_center(cell)))
 	for model in groups:
 		_keep(_make_model_multimesh(model, groups[model]))
