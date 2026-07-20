@@ -88,6 +88,25 @@ const FACE_OPTIONS := [
 	["Güneş Gözlüğü", "res://assets/models/characters/mini/aid-sunglasses.glb"],
 	["Maske", "res://assets/models/characters/mini/aid-mask.glb"],
 ]
+
+## Sac stilleri (kendi tasarimimiz, player3d insa eder) + renkler
+const HAIR_STYLES := [
+	["Model Saçı", ""],
+	["Küt", "kut"],
+	["Sivri", "sivri"],
+	["Topuz", "topuz"],
+	["Uzun", "uzun"],
+]
+const HAIR_COLORS := [
+	Color(0.13, 0.12, 0.14),  # siyah
+	Color(0.35, 0.22, 0.12),  # kahve
+	Color(0.55, 0.35, 0.18),  # kumral
+	Color(0.92, 0.78, 0.35),  # sari
+	Color(0.75, 0.30, 0.15),  # kizil
+	Color(0.92, 0.92, 0.95),  # beyaz
+	Color(0.95, 0.55, 0.75),  # pembe
+	Color(0.35, 0.55, 0.90),  # mavi
+]
 const STONE_MODELS: Array[String] = ["rock_largeA", "rock_tallA",
 		"stone_tallB", "rock_largeB"]
 const BUSH_FULL_MODEL := "plant_bushDetailed"
@@ -117,6 +136,8 @@ var character_path: String = "res://assets/models/characters/mini/character-male
 var forest_style: String = "karisik"
 var hat_id: String = "yok"
 var face_path: String = ""
+var hair_style: String = ""
+var hair_color: Color = Color(0.35, 0.22, 0.12)
 
 var player: Node3D
 var camera: Camera3D
@@ -143,6 +164,9 @@ func _ready() -> void:
 		_setup_screenshot(OS.get_environment("RABLE_SCREENSHOT"))
 
 func _setup_screenshot(save_path: String) -> void:
+	# Vitrin: yeni tasarimlar fotografta gorunsun diye ornek gorunum
+	player.set_hair("kut", Color(0.75, 0.30, 0.15))
+	player.set_hat("yok")
 	var timer := get_tree().create_timer(4.0)
 	timer.timeout.connect(func():
 		var img := get_viewport().get_texture().get_image()
@@ -204,13 +228,16 @@ func _load_settings() -> void:
 			forest_style = saved_forest
 		hat_id = String(parsed.get("hat", hat_id))
 		face_path = String(parsed.get("face", face_path))
+		hair_style = String(parsed.get("hair", hair_style))
+		hair_color = Color.from_string(String(parsed.get("hair_color", "")), hair_color)
 
 func _save_settings() -> void:
 	var file := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if file != null:
 		file.store_string(JSON.stringify({"zoom": cam_distance,
 				"pitch": cam_pitch, "character": character_path,
-				"forest": forest_style, "hat": hat_id, "face": face_path}))
+				"forest": forest_style, "hat": hat_id, "face": face_path,
+				"hair": hair_style, "hair_color": "#" + hair_color.to_html(false)}))
 
 # Iki parmakla yakinlastirma (pinch); oyuncu hareketi 1. parmakta kalir
 func _unhandled_input(event: InputEvent) -> void:
@@ -315,24 +342,26 @@ func _build_look_panel(layer: CanvasLayer, look_button: Button, cam_button: Butt
 		else:
 			_save_settings())
 
+	# Tum icerik tek kaydirilabilir kolonda (panel ekrana sigsin)
+	var outer := ScrollContainer.new()
+	outer.custom_minimum_size = Vector2(360, 560)
+	panel.add_child(outer)
 	var box := VBoxContainer.new()
+	box.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	box.add_theme_constant_override("separation", 6)
-	panel.add_child(box)
+	outer.add_child(box)
 
 	var char_label := Label.new()
 	char_label.text = "Karakter"
 	char_label.add_theme_font_size_override("font_size", 17)
 	box.add_child(char_label)
 
-	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 170)
-	box.add_child(scroll)
 	var grid := GridContainer.new()
 	grid.columns = 3
 	grid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	grid.add_theme_constant_override("h_separation", 6)
 	grid.add_theme_constant_override("v_separation", 6)
-	scroll.add_child(grid)
+	box.add_child(grid)
 
 	var char_group := ButtonGroup.new()
 	for option in CHARACTER_OPTIONS:
@@ -376,6 +405,60 @@ func _build_look_panel(layer: CanvasLayer, look_button: Button, cam_button: Butt
 				player.set_hat(hid)
 				_save_settings())
 		hat_grid.add_child(hb)
+
+	# Sac: stil + renk (kendi tasarimimiz; renk aninda uygulanir)
+	var hair_label := Label.new()
+	hair_label.text = "Saç"
+	hair_label.add_theme_font_size_override("font_size", 17)
+	box.add_child(hair_label)
+	var hair_grid := GridContainer.new()
+	hair_grid.columns = 3
+	hair_grid.add_theme_constant_override("h_separation", 6)
+	hair_grid.add_theme_constant_override("v_separation", 6)
+	box.add_child(hair_grid)
+	var hair_group := ButtonGroup.new()
+	for option in HAIR_STYLES:
+		var hsb := Button.new()
+		hsb.text = option[0]
+		hsb.toggle_mode = true
+		hsb.button_group = hair_group
+		hsb.add_theme_font_size_override("font_size", 13)
+		hsb.button_pressed = option[1] == hair_style
+		var style_id: String = option[1]
+		hsb.toggled.connect(func(pressed: bool):
+			if pressed:
+				hair_style = style_id
+				player.set_hair(hair_style, hair_color)
+				_save_settings())
+		hair_grid.add_child(hsb)
+	var color_row := HBoxContainer.new()
+	color_row.add_theme_constant_override("separation", 5)
+	box.add_child(color_row)
+	var color_group := ButtonGroup.new()
+	for c in HAIR_COLORS:
+		var cb := Button.new()
+		cb.toggle_mode = true
+		cb.button_group = color_group
+		cb.custom_minimum_size = Vector2(36, 36)
+		var swatch := StyleBoxFlat.new()
+		swatch.bg_color = c
+		swatch.set_corner_radius_all(8)
+		cb.add_theme_stylebox_override("normal", swatch)
+		var pressed_swatch := StyleBoxFlat.new()
+		pressed_swatch.bg_color = c
+		pressed_swatch.set_corner_radius_all(8)
+		pressed_swatch.border_color = Color.WHITE
+		pressed_swatch.set_border_width_all(3)
+		cb.add_theme_stylebox_override("pressed", pressed_swatch)
+		cb.add_theme_stylebox_override("hover", swatch)
+		cb.button_pressed = c.is_equal_approx(hair_color)
+		var picked: Color = c
+		cb.toggled.connect(func(pressed: bool):
+			if pressed:
+				hair_color = picked
+				player.set_hair(hair_style, hair_color)
+				_save_settings())
+		color_row.add_child(cb)
 
 	# Yuz aksesuari secimi
 	var face_label := Label.new()
@@ -748,6 +831,7 @@ func _spawn_player() -> void:
 	player.set_character(character_path)  # kayitli secim
 	player.set_hat(hat_id)
 	player.set_face(face_path)
+	player.set_hair(hair_style, hair_color)
 	player.world_tapped.connect(_on_world_tapped)
 	camera.position = player.position + _camera_offset()
 
