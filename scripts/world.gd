@@ -13,11 +13,11 @@ extends Node2D
 
 const TILE_SIZE: int = 32
 const MapData = preload("res://scripts/map_data.gd")
-const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const EnemyScript = preload("res://scripts/enemy.gd")
 const PARTICLE_TEX := preload("res://assets/ui/particle.png")
 const BuildPreviewScript = preload("res://scripts/build_preview.gd")
+const GroundItemScript = preload("res://scripts/ground_item.gd")
 
 const HARVEST_REACH_TILES: int = 1
 const REGROW_SECONDS: float = 60.0
@@ -31,9 +31,9 @@ const GROUND_DEFS: Dictionary = {
 	"s": {"texture": "res://assets/tiles/sand.png", "solid": false, "dig": {"kum": 1}},
 	"~": {"texture": "res://assets/tiles/water_anim.png", "solid": true},
 	"o": {"texture": "res://assets/tiles/cukur.png", "solid": true},
-	# Ahsap doseme: evin zemini; kazilirsa kalas iade, altindan toprak cikar
+	# Ahsap doseme: evin zemini; kazilirsa zemin esyasi iade edilir
 	"f": {"texture": "res://assets/tiles/zemin.png", "solid": false,
-			"dig": {"kalas": 1}, "dig_to": "d"},
+			"dig": {"zemin": 1}, "dig_to": "d"},
 }
 
 # Nesne tanimlari (hepsi engeldir).
@@ -46,27 +46,28 @@ const OBJECT_DEFS: Dictionary = {
 	"#": {"texture": "res://assets/tiles/stone.png",
 			"drops": {"tas": 2}, "hits": 4,
 			"tool": {"item": "kazma", "hits": 2}, "ground_becomes": "d"},
+	# Yapilar sokulunce kendi ESYASINI dusurur (tekrar yerlestirilebilir)
 	"W": {"texture": "res://assets/tiles/wood_wall.png",
-			"drops": {"kalas": 2}, "hits": 2},
+			"drops": {"ahsap_duvar": 1}, "hits": 2},
 	"K": {"texture": "res://assets/tiles/stone_wall.png",
-			"drops": {"tas": 2}, "hits": 3},
+			"drops": {"tas_duvar": 1}, "hits": 3},
 	"B": {"texture": "res://assets/tiles/tezgah.png",
-			"drops": {"kalas": 4, "cubuk": 2}, "hits": 2},
+			"drops": {"tezgah": 1}, "hits": 2},
 	"E": {"texture": "res://assets/tiles/ev.png",
-			"drops": {"kalas": 6, "ip": 2, "yaprak": 4}, "hits": 3},
+			"drops": {"kamp_evi": 1}, "hits": 3},
 	"m": {"texture": "res://assets/tiles/bush_full.png",
 			"drops": {"meyve": 2}, "hits": 1, "becomes_object": "n"},
 	"n": {"texture": "res://assets/tiles/bush_empty.png"},
 	"S": {"texture": "res://assets/tiles/sandik.png"},
 	# Diken tuzagi: carpismasiz (yaratiklar ustunden gecer ve hasar alir)
 	"Z": {"texture": "res://assets/tiles/tuzak.png", "no_collision": true,
-			"drops": {"cubuk": 2, "tas": 1}, "hits": 1},
+			"drops": {"tuzak": 1}, "hits": 1},
 	# Kapi: oyuncu gecer, yaratik gecemez (carpisma katmani 2)
 	"D": {"texture": "res://assets/tiles/kapi.png", "enemy_only_collision": true,
-			"drops": {"kalas": 3, "ip": 1}, "hits": 2},
+			"drops": {"kapi": 1}, "hits": 2},
 	# Yatak: yeniden dogma noktasi; gece dokununca sabaha uyunur
 	"Y": {"texture": "res://assets/tiles/yatak.png",
-			"drops": {"kalas": 4, "ip": 2, "yaprak": 2}, "hits": 2},
+			"drops": {"yatak": 1}, "hits": 2},
 	# Ekin asamalari (carpismasiz): c (filiz) -> g (gelisen) -> r (olgun)
 	# NOT: kayit formati hucre basina tek karakter kullanir
 	"c": {"texture": "res://assets/tiles/ekin1.png", "no_collision": true,
@@ -96,8 +97,7 @@ var _cell_damage: Dictionary = {}
 var _regrow: Dictionary = {}
 var _chests: Dictionary = {}
 var _open_chest: Vector2i = NO_CELL
-var _selected_recipe_id: String = ""
-var _held_item: String = ""       # oyuncunun eline aldigi alet
+var _held_item: String = ""       # oyuncunun eline aldigi esya
 var _move_mode: bool = false      # tasima modu (HUD'daki Tasi butonu)
 var _move_source: Vector2i = NO_CELL  # tasinmak uzere secilen yapinin hucresi
 var _respawn_cell: Vector2i = Vector2i.ZERO
@@ -108,15 +108,16 @@ var _enemies: Array = []           # sahnedeki yaratiklar
 var _trap_uses: Dictionary = {}    # tuzak hucresi -> kalan kullanim
 var _crops: Dictionary = {}        # ekin hucresi -> asamaya kalan sure
 var _night_tint: CanvasModulate
-var _preview: Node2D  # grid + yerlestirme onizlemesi
+var _preview: BuildPreviewScript  # grid + yerlestirme onizlemesi
+var _ground_items: Array = []  # yere birakilmis esyalar (Area2D)
 
 func _ready() -> void:
 	ground_tile_map.tile_set = _build_ground_tile_set()
 	_build_map_from_ascii()
 	_load_game()
 	player.world_tapped.connect(_on_player_world_tapped)
-	hud.build_toggled.connect(_on_build_toggled)
 	hud.action_pressed.connect(_on_action_pressed)
+	hud.drop_item_requested.connect(_on_drop_item_requested)
 	hud.chest_transfer_requested.connect(_on_chest_transfer)
 	hud.chest_dismantle_requested.connect(_on_chest_dismantle)
 	hud.chest_closed.connect(func(): _open_chest = NO_CELL)
@@ -150,6 +151,7 @@ func _process(delta: float) -> void:
 	_tick_regrow(delta)
 	_tick_crops(delta)
 	_tick_traps()
+	_tick_ground_items()
 	_save_timer += delta
 	if _save_timer >= SAVE_INTERVAL:
 		_save_timer = 0.0
@@ -292,9 +294,6 @@ func _tick_crops(delta: float) -> void:
 
 # --- Girdi isleme ------------------------------------------------------
 
-func _on_build_toggled(recipe_id: String) -> void:
-	_selected_recipe_id = recipe_id
-
 func _on_player_world_tapped(world_pos: Vector2) -> void:
 	var cell := ground_tile_map.local_to_map(ground_tile_map.to_local(world_pos))
 	var player_cell := _get_player_cell()
@@ -303,8 +302,6 @@ func _on_player_world_tapped(world_pos: Vector2) -> void:
 		return
 	if _move_mode:
 		_handle_move_tap(cell, player_cell)
-	elif _selected_recipe_id != "":
-		_try_place(cell, player_cell)
 	elif _object_char.get(cell, "") == "S":
 		_open_chest = cell
 		hud.show_chest(_chests.get(cell, {}))
@@ -312,6 +309,8 @@ func _on_player_world_tapped(world_pos: Vector2) -> void:
 		_try_sleep(cell)
 	elif _try_attack(world_pos):
 		pass  # yakindaki yaratiga vuruldu
+	elif _can_place_held(cell, player_cell):
+		_try_place_held(cell, player_cell)
 	elif _held_item == "kurek" and not _object_char.has(cell):
 		_try_dig(cell)
 	else:
@@ -329,8 +328,7 @@ func _on_action_pressed() -> void:
 		return
 	if _held_item == "kurek" and _try_dig(player_cell + facing_offset):
 		return
-	if _selected_recipe_id != "":
-		_try_place(player_cell + facing_offset, player_cell)
+	if _try_place_held(player_cell + facing_offset, player_cell):
 		return
 	var offsets: Array[Vector2i] = [facing_offset]
 	for oy in [-1, 0, 1]:
@@ -344,48 +342,43 @@ func _on_action_pressed() -> void:
 
 # --- Insa / toplama / kazma --------------------------------------------
 
-# Tarif bu hucreye yerlestirilebilir mi? (maliyet dahil tum kontroller)
-func _can_place(cell: Vector2i, player_cell: Vector2i, recipe: Dictionary) -> bool:
-	if not _is_editable_cell(cell):
+# Eldeki esya bu hucreye yerlestirilebilir/uygulanabilir mi?
+# Yapilar bos yurunebilir zemine; tohum topraga; toprak cukura.
+func _can_place_held(cell: Vector2i, player_cell: Vector2i) -> bool:
+	if _held_item == "" or Inventory.get_count(_held_item) <= 0:
 		return false
-	if cell == player_cell:
+	if not _is_editable_cell(cell) or cell == player_cell:
 		return false
 	var ground: String = _ground_char.get(cell, "")
-	if recipe.has("place_on"):
-		# Ozel hedefli tarif (Doldur: cukura, Ekin: topraga)
-		if ground != recipe["place_on"] or _object_char.has(cell):
-			return false
-	elif recipe.get("place_on_walkable", false):
-		# Zemin dosemesi: her yurunebilir zemine (ayni zemine tekrar olmaz)
-		if _object_char.has(cell):
-			return false
-		if ground == "" or GROUND_DEFS[ground]["solid"] or ground == recipe["tile"]:
-			return false
-	else:
-		# Normal yapi: bos, yurunebilir zemine
-		if _object_char.has(cell):
-			return false
-		if ground == "" or GROUND_DEFS[ground]["solid"]:
-			return false
-	for item_id in recipe["cost"]:
-		if Inventory.get_count(item_id) < recipe["cost"][item_id]:
-			return false
+	if _held_item == "tohum":
+		return ground == "d" and not _object_char.has(cell)
+	if _held_item == "toprak":
+		return ground == "o" and not _object_char.has(cell)
+	var tile: String = Items.PLACEABLE.get(_held_item, "")
+	if tile == "" or _object_char.has(cell):
+		return false
+	if ground == "" or GROUND_DEFS[ground]["solid"]:
+		return false
+	if tile == "f" and ground == "f":
+		return false  # ayni zemine tekrar doseme olmaz
 	return true
 
-func _try_place(cell: Vector2i, player_cell: Vector2i) -> bool:
-	var recipe: Dictionary = Recipes.BUILD_RECIPES[_selected_recipe_id]
-	if not _can_place(cell, player_cell, recipe):
+func _try_place_held(cell: Vector2i, player_cell: Vector2i) -> bool:
+	if not _can_place_held(cell, player_cell):
 		return false
-	var cost: Dictionary = recipe["cost"]
-	for item_id in cost:
-		Inventory.remove_item(item_id, cost[item_id])
-
-	# Tarifin urettigi sey zeminse zemini degistir, degilse nesne koy
-	if GROUND_DEFS.has(recipe["tile"]):
-		_set_ground(cell, recipe["tile"])
+	Inventory.remove_item(_held_item, 1)
+	if _held_item == "tohum":
+		_set_object(cell, "c")
+		return true
+	if _held_item == "toprak":
+		_set_ground(cell, "d")
+		return true
+	var tile: String = Items.PLACEABLE[_held_item]
+	if GROUND_DEFS.has(tile):
+		_set_ground(cell, tile)
 	else:
-		_set_object(cell, recipe["tile"])
-		if recipe["tile"] == "E" or recipe["tile"] == "Y":
+		_set_object(cell, tile)
+		if tile == "E" or tile == "Y":
 			_respawn_cell = cell
 			_spawn_floating_text(cell, "Yeniden dogma noktasi!", Color(0.75, 0.9, 1.0))
 	return true
@@ -509,16 +502,17 @@ func _can_drop_move(cell: Vector2i, player_cell: Vector2i) -> bool:
 # Grid ve hedef hucre onizlemesini gunceller (her kare).
 func _update_build_preview() -> void:
 	var player_cell := _get_player_cell()
-	var active := _move_mode or _selected_recipe_id != "" or _held_item == "kurek"
+	var placing := _is_holding_placeable()
+	var active := _move_mode or placing or _held_item == "kurek"
 	_preview.grid_visible = active
 	_preview.center_cell = player_cell
 	var facing_offset := Vector2i(player.facing.round())
 	if facing_offset == Vector2i.ZERO:
 		facing_offset = Vector2i(0, 1)
 	var target := player_cell + facing_offset
-	if _selected_recipe_id != "":
+	if placing:
 		_preview.preview_cell = target
-		_preview.preview_ok = _can_place(target, player_cell, Recipes.BUILD_RECIPES[_selected_recipe_id])
+		_preview.preview_ok = _can_place_held(target, player_cell)
 	elif _held_item == "kurek":
 		_preview.preview_cell = target
 		_preview.preview_ok = _can_dig(target)
@@ -528,6 +522,11 @@ func _update_build_preview() -> void:
 	else:
 		_preview.preview_cell = Vector2i(-999, -999)
 	_preview.queue_redraw()
+
+# Eldeki esya yerlestirilebilir bir sey mi? (yapi / tohum / toprak)
+func _is_holding_placeable() -> bool:
+	return _held_item != "" and (Items.PLACEABLE.has(_held_item)
+			or _held_item == "tohum" or _held_item == "toprak")
 
 # Tasima modunda dokunma: once yapiyi sec, sonra bos zemine birak.
 func _handle_move_tap(cell: Vector2i, player_cell: Vector2i) -> void:
@@ -703,13 +702,55 @@ func _on_chest_dismantle() -> void:
 		return
 	if not _chests.get(_open_chest, {}).is_empty():
 		return
+	if not Inventory.can_add("sandik", 1):
+		hud.show_chest({}, "Envanter dolu!")
+		return
 	var cell := _open_chest
 	_close_chest()
 	_chests.erase(cell)
-	var cost: Dictionary = Recipes.BUILD_RECIPES["sandik"]["cost"]
-	for item_id in cost:
-		Inventory.add_item(item_id, cost[item_id])
+	Inventory.add_item("sandik", 1)
 	_set_object(cell, "")
+
+# --- Yere birakilan esyalar ---------------------------------------------
+
+## HUD bildirir: envanter slotu panel disina suruklendi -> esya yere.
+func _on_drop_item_requested(slot_index: int) -> void:
+	var content: Dictionary = Inventory.clear_slot(slot_index)
+	if content.is_empty():
+		return
+	var facing := player.facing.normalized()
+	if facing == Vector2.ZERO:
+		facing = Vector2.DOWN
+	var pos := player.global_position + facing * 30.0
+	_spawn_ground_item(pos, content["id"], content["count"])
+	_spawn_floating_text(_get_player_cell(), "Yere birakildi", Color(0.9, 0.85, 0.7))
+
+func _spawn_ground_item(pos: Vector2, item_id: String, count: int) -> void:
+	var area = GroundItemScript.new()
+	area.position = pos
+	ysort.add_child(area)
+	area.setup(item_id, count, Items.ITEMS[item_id]["icon"])
+	area.retry_cooldown = 1.0  # yeni birakilan esya hemen geri toplanmasin
+	_ground_items.append(area)
+
+# Oyuncu yerdeki esyanin ustundeyse toplar (envanterde yer varsa).
+# Her kare cagrilir; envanter doluysa kisa araliklarla yeniden dener.
+func _tick_ground_items() -> void:
+	for area in _ground_items.duplicate():
+		if not is_instance_valid(area):
+			_ground_items.erase(area)
+			continue
+		if area.retry_cooldown > 0.0 or not area.overlaps_body(player):
+			continue
+		if not Inventory.can_add(area.item_id, area.count):
+			area.retry_cooldown = 1.5
+			_spawn_floating_text(_get_player_cell(), "Envanter dolu!", Color(1, 0.6, 0.6))
+			continue
+		Inventory.add_item(area.item_id, area.count)
+		_spawn_floating_text(_get_player_cell(), "+%d %s" % [area.count,
+				Items.display_name(area.item_id)], Color(0.7, 1.0, 0.7))
+		_ground_items.erase(area)
+		area.queue_free()
 
 # --- Yardimcilar -------------------------------------------------------
 
@@ -720,7 +761,7 @@ func _compute_action_state() -> String:
 		if is_instance_valid(enemy) \
 				and enemy.global_position.distance_to(player.global_position) <= ATTACK_RANGE:
 			return "attack_spear" if _held_item == "mizrak" else "attack"
-	if _selected_recipe_id != "":
+	if _is_holding_placeable():
 		return "build"
 	if _held_item == "kurek":
 		return "dig"
@@ -800,14 +841,22 @@ func _save_game() -> void:
 	for cell in _chests:
 		chest_data["%d,%d" % [cell.x, cell.y]] = _chests[cell]
 
+	var ground_item_data: Array = []
+	for area in _ground_items:
+		if is_instance_valid(area):
+			ground_item_data.append({"x": area.position.x, "y": area.position.y,
+					"id": area.item_id, "count": area.count})
+
 	SaveManager.save_data({
-		"version": 2,
+		"version": 3,
 		"w": _map_width,
 		"h": _map_height,
 		"ground_rows": ground_rows,
 		"object_rows": object_rows,
 		"chests": chest_data,
-		"inventory": Inventory.items,
+		"inventory_v3": Inventory.to_save(),
+		"craft_queue": Crafting.to_save(),
+		"ground_items": ground_item_data,
 		"hunger": Hunger.value,
 		"respawn": [_respawn_cell.x, _respawn_cell.y],
 		"player": [player.global_position.x, player.global_position.y],
@@ -870,7 +919,16 @@ func _load_game() -> void:
 			contents[item_id] = int(data["chests"][key][item_id])
 		_chests[Vector2i(int(parts[0]), int(parts[1]))] = contents
 
-	Inventory.set_items(data.get("inventory", {}))
+	if data.has("inventory_v3"):
+		Inventory.load_save(data["inventory_v3"])
+	else:
+		# Eski kayit: {"esya": adet} sozlugunden slotlari doldur
+		Inventory.load_from_dict(data.get("inventory", {}))
+	Crafting.load_save(data.get("craft_queue", []))
+	for entry in data.get("ground_items", []):
+		if entry is Dictionary and Items.ITEMS.has(entry.get("id", "")):
+			_spawn_ground_item(Vector2(float(entry["x"]), float(entry["y"])),
+					String(entry["id"]), int(entry["count"]))
 	Hunger.value = float(data.get("hunger", Hunger.MAX_VALUE))
 	Hunger.changed.emit()
 

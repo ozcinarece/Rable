@@ -1,12 +1,12 @@
 extends CanvasLayer
-## Oyun arayuzu:
-##   - Sol ust: dinamik envanter cubugu (sahip olunan esyalar otomatik)
-##   - Sol alt: "Uretim" butonu + tarif paneli
-##   - Alt orta: insa cubugu (BUILD_RECIPES'ten dinamik uretilir)
-##   - Sag alt: ikonlu aksiyon butonu (yumruk/balta/cekic)
-
-## Insa modu degistiginde yayinlanir; recipe_id bos ise mod kapali demektir.
-signal build_toggled(recipe_id: String)
+## Oyun arayuzu (Go-Go Town tarzi krem/pastel):
+##   - Sol ust: canta butonu (envanter paneli) + anahtar butonu (uretim)
+##   - Alt orta: 8 gozluk hizli erisim cubugu (dokun -> eline al)
+##   - Sag ust: aclik/can barlari, gun etiketi; sag alt: aksiyon + tasi
+##   - Envanter paneli: kare slotlar, surukle-birak, panel disina
+##     birakinca esya yere dusur
+##   - Uretim paneli: kategori sekmeleri + arama, kart izgarasi,
+##     sagda detay (adet sec + uret), zamanli uretim kuyrugu cubugu
 
 ## Sag alttaki aksiyon butonuna basilinca yayinlanir.
 signal action_pressed
@@ -15,7 +15,7 @@ signal action_pressed
 signal chest_transfer_requested(item_id: String, to_chest: bool)
 ## Bos sandigi sokme istegi
 signal chest_dismantle_requested
-## Panel Kapat butonuyla kapatildi (World acik sandik kaydini temizler)
+## Panel X ile kapatildi (World acik sandik kaydini temizler)
 signal chest_closed
 
 ## Tasima modu acildi/kapandi (Tasi butonu)
@@ -24,8 +24,12 @@ signal move_toggled(enabled: bool)
 ## Envanterden bir esyayi eline alma istegi (bos string = birak)
 signal hold_requested(item_id: String)
 
+## Envanter slotu panel disina suruklendi: esya yere birakilsin
+signal drop_item_requested(slot_index: int)
+
 const Items = preload("res://scripts/items.gd")
 const Recipes = preload("res://scripts/recipes.gd")
+const UiSlotScript = preload("res://scripts/ui_slot.gd")
 
 const ICON_FIST := preload("res://assets/ui/fist.png")
 const ICON_GATHER := preload("res://assets/ui/axe.png")
@@ -33,116 +37,240 @@ const ICON_BUILD := preload("res://assets/ui/hammer.png")
 const ICON_DIG := preload("res://assets/ui/shovel.png")
 const ICON_MOVE := preload("res://assets/ui/move.png")
 const ICON_SPEAR := preload("res://assets/ui/spear.png")
+const ICON_CLOSE := preload("res://assets/ui/close_x.png")
 
-@onready var inventory_box: HBoxContainer = $Panel/HBox
-@onready var build_box: HBoxContainer = $BuildBar/HBox
 @onready var action_button: Button = $ActionButton
-@onready var craft_button: Button = $CraftButton
-@onready var craft_panel: PanelContainer = $CraftPanel
-@onready var craft_rows: VBoxContainer = $CraftPanel/VBox/Rows
+@onready var move_button: Button = $MoveButton
+@onready var reset_button: Button = $ResetButton
 @onready var hunger_bar: ProgressBar = $HungerPanel/HBox/HungerBar
 @onready var eat_button: Button = $HungerPanel/HBox/EatButton
-@onready var reset_button: Button = $ResetButton
-@onready var chest_panel: PanelContainer = $ChestPanel
-@onready var chest_rows: VBoxContainer = $ChestPanel/VBox/Scroll/Rows
-@onready var chest_close_button: Button = $ChestPanel/VBox/TitleRow/CloseButton
-@onready var chest_dismantle_button: Button = $ChestPanel/VBox/DismantleButton
-@onready var move_button: Button = $MoveButton
-@onready var hold_button: Button = $InventoryPanel/VBox/HoldButton
-@onready var inventory_button: Button = $InventoryButton
-@onready var inventory_panel: PanelContainer = $InventoryPanel
-@onready var inventory_title: Label = $InventoryPanel/VBox/TitleRow/Title
-@onready var inventory_slots: GridContainer = $InventoryPanel/VBox/Slots
-@onready var inventory_detail: Label = $InventoryPanel/VBox/Detail
-@onready var panel_eat_button: Button = $InventoryPanel/VBox/PanelEatButton
-@onready var chest_title: Label = $ChestPanel/VBox/TitleRow/Title
 @onready var health_bar: ProgressBar = $HealthPanel/HBox/HealthBar
 @onready var day_label: Label = $DayLabel
 
-var _selected_item: String = ""
-var _held_item: String = ""  # World bildirir; detay butonunun metni icin
+@onready var inventory_button: Button = $InventoryButton
+@onready var inventory_panel: PanelContainer = $InventoryPanel
+@onready var inventory_title: Label = $InventoryPanel/VBox/TitleRow/Title
+@onready var inventory_close: Button = $InventoryPanel/VBox/TitleRow/CloseButton
+@onready var panel_hotbar_row: HBoxContainer = $InventoryPanel/VBox/HotbarRow
+@onready var inventory_grid: GridContainer = $InventoryPanel/VBox/Slots
+@onready var inventory_detail: Label = $InventoryPanel/VBox/Detail
+@onready var panel_eat_button: Button = $InventoryPanel/VBox/ButtonRow/PanelEatButton
+@onready var hold_button: Button = $InventoryPanel/VBox/ButtonRow/HoldButton
 
+@onready var hotbar_box: HBoxContainer = $HotBar
+
+@onready var craft_button: Button = $CraftButton
+@onready var craft_mini_bar: ProgressBar = $CraftMiniBar
+@onready var craft_panel: PanelContainer = $CraftPanel
+@onready var craft_close: Button = $CraftPanel/VBox/TitleRow/CloseButton
+@onready var cat_box: HBoxContainer = $CraftPanel/VBox/FilterRow/CatBox
+@onready var search_edit: LineEdit = $CraftPanel/VBox/FilterRow/Search
+@onready var cards_grid: GridContainer = $CraftPanel/VBox/Body/Scroll/Cards
+@onready var detail_box: VBoxContainer = $CraftPanel/VBox/Body/DetailBox
+@onready var queue_row: HBoxContainer = $CraftPanel/VBox/QueueRow
+@onready var queue_label: Label = $CraftPanel/VBox/QueueRow/QueueLabel
+@onready var queue_bar: ProgressBar = $CraftPanel/VBox/QueueRow/QueueBar
+
+@onready var chest_panel: PanelContainer = $ChestPanel
+@onready var chest_title: Label = $ChestPanel/VBox/TitleRow/Title
+@onready var chest_close_button: Button = $ChestPanel/VBox/TitleRow/CloseButton
+@onready var chest_rows: VBoxContainer = $ChestPanel/VBox/Scroll/Rows
+@onready var chest_dismantle_button: Button = $ChestPanel/VBox/DismantleButton
+
+var _selected_item: String = ""   # envanter panelinde secili esya
+var _held_item: String = ""       # World bildirir (vurgu + detay icin)
 var _action_state: String = "idle"
-var _craft_buttons: Dictionary = {}  # recipe_id -> Uret butonu
-var _build_buttons: Dictionary = {}  # recipe_id -> insa toggle butonu
+
+var _inv_slots: Array = []        # 16 UiSlot (envanter izgarasi)
+var _panel_hotbar_slots: Array = []  # paneldeki 8 hotbar gozu
+var _mini_hotbar_slots: Array = []   # ekran altindaki 8 hotbar gozu
+
+var _selected_recipe: String = "" # uretim panelinde secili tarif
+var _craft_qty: int = 1
+var _current_cat: String = "tumu"
+var _recipe_cards: Dictionary = {}  # recipe_id -> kart butonu
+var _cat_buttons: Dictionary = {}   # kategori -> buton
+
+# Uretim detay kutusu referanslari (bir kez kurulur)
+var _detail_icon: TextureRect
+var _detail_name: Label
+var _detail_desc: Label
+var _detail_station: Label
+var _detail_costs: VBoxContainer
+var _detail_time: Label
+var _qty_label: Label
+var _craft_go_button: Button
 
 func _ready() -> void:
 	Inventory.changed.connect(_refresh)
-	Crafting.station_changed.connect(_update_craft_buttons)
+	Crafting.station_changed.connect(_update_cards)
+	Crafting.queue_changed.connect(_update_cards)
 	Hunger.changed.connect(_update_hunger)
 	Health.changed.connect(_update_health)
 	DayNight.changed.connect(_update_day_label)
-	_update_health()
-	_update_day_label()
 	action_button.pressed.connect(func(): action_pressed.emit())
 	action_button.icon = ICON_FIST
-	craft_button.toggled.connect(func(pressed: bool): craft_panel.visible = pressed)
-	craft_panel.visible = false
+	move_button.icon = ICON_MOVE
+	move_button.toggled.connect(func(pressed: bool): move_toggled.emit(pressed))
 	eat_button.pressed.connect(_on_eat_pressed)
 	reset_button.pressed.connect(_on_reset_pressed)
+
+	inventory_button.toggled.connect(_on_inventory_toggled)
+	inventory_close.icon = ICON_CLOSE
+	inventory_close.pressed.connect(func(): inventory_button.button_pressed = false)
+	panel_eat_button.pressed.connect(_on_eat_pressed)
+	hold_button.pressed.connect(_on_hold_pressed)
+
+	craft_button.toggled.connect(_on_craft_toggled)
+	craft_close.icon = ICON_CLOSE
+	craft_close.pressed.connect(func(): craft_button.button_pressed = false)
+	search_edit.text_changed.connect(func(_t: String): _rebuild_cards())
+
+	chest_close_button.icon = ICON_CLOSE
 	chest_close_button.pressed.connect(func():
 		close_chest()
 		chest_closed.emit())
 	chest_dismantle_button.pressed.connect(func(): chest_dismantle_requested.emit())
 	chest_panel.visible = false
-	move_button.icon = ICON_MOVE
-	move_button.toggled.connect(_on_move_toggled)
-	hold_button.pressed.connect(_on_hold_pressed)
-	inventory_button.toggled.connect(func(pressed: bool):
-		inventory_panel.visible = pressed
-		if pressed:
-			_rebuild_inventory_panel())
-	$InventoryPanel/VBox/TitleRow/CloseButton.pressed.connect(func():
-		inventory_button.button_pressed = false)
-	panel_eat_button.pressed.connect(_on_eat_pressed)
+
 	_apply_ui_theme()
 	_setup_damage_flash()
-	_build_build_bar()
-	_build_craft_panel()
+	_build_slots()
+	_build_category_buttons()
+	_build_detail_box()
+	_rebuild_cards()
 	_refresh()
+	_update_health()
+	_update_day_label()
 	_update_hunger()
 
-# --- Envanter cubugu ----------------------------------------------------
+func _process(_delta: float) -> void:
+	# Uretim kuyrugu ilerlemesi (her kare akici dolsun)
+	var progress := Crafting.get_progress()
+	var busy := progress >= 0.0
+	craft_mini_bar.visible = busy
+	queue_row.visible = busy
+	if busy:
+		craft_mini_bar.value = progress
+		queue_bar.value = progress
+		var entry: Dictionary = Crafting.queue[0]
+		var text := "Üretiliyor: %s (%d kaldı)" % [
+			Items.display_name(entry["id"]), Crafting.get_total_remaining()]
+		if Crafting.blocked:
+			text = "Envanter dolu! Yer aç..."
+		queue_label.text = text
+
+# --- Paneller ac/kapat --------------------------------------------------
+
+func _on_inventory_toggled(pressed: bool) -> void:
+	inventory_panel.visible = pressed
+	if pressed:
+		craft_button.button_pressed = false
+		close_chest()
+		chest_closed.emit()
+		_refresh()
+
+func _on_craft_toggled(pressed: bool) -> void:
+	craft_panel.visible = pressed
+	if pressed:
+		inventory_button.button_pressed = false
+		close_chest()
+		chest_closed.emit()
+		_update_cards()
+
+# --- Slotlarin kurulumu -------------------------------------------------
+
+func _build_slots() -> void:
+	# Envanter izgarasi: 16 sabit slot (canta yoksa sondakiler kilitli)
+	for i in Inventory.TOTAL_SLOTS:
+		var slot := _make_slot("inv", i)
+		slot.dropped_to_ground.connect(_on_dropped_to_ground)
+		inventory_grid.add_child(slot)
+		_inv_slots.append(slot)
+	# Paneldeki hizli erisim sirasi
+	for i in Inventory.HOTBAR_SIZE:
+		var slot := _make_slot("hotbar", i)
+		panel_hotbar_row.add_child(slot)
+		_panel_hotbar_slots.append(slot)
+	# Ekran altindaki hizli erisim cubugu
+	for i in Inventory.HOTBAR_SIZE:
+		var slot := _make_slot("hotbar", i)
+		hotbar_box.add_child(slot)
+		_mini_hotbar_slots.append(slot)
+
+func _make_slot(kind: String, index: int) -> UiSlotScript:
+	var slot: UiSlotScript = UiSlotScript.new()
+	slot.kind = kind
+	slot.index = index
+	slot.pressed.connect(_on_slot_tapped.bind(slot))
+	slot.drop_received.connect(_on_slot_drop.bind(slot))
+	return slot
+
+# --- Slot etkilesimleri -------------------------------------------------
+
+func _on_slot_tapped(slot: UiSlotScript) -> void:
+	if slot.kind == "hotbar":
+		# Hizli erisim: dokununca eline al / birak
+		if slot.item_id == "" or slot.item_count <= 0:
+			return
+		hold_requested.emit("" if _held_item == slot.item_id else slot.item_id)
+	else:
+		if slot.item_id == "":
+			return
+		_selected_item = slot.item_id
+		_update_detail()
+
+func _on_slot_drop(data: Dictionary, target: UiSlotScript) -> void:
+	if target.kind == "inv":
+		if data["kind"] == "inv":
+			Inventory.move_slot(data["index"], target.index)
+		else:
+			# Hotbar atamasi envantere geri suruklendi: atamayi kaldir
+			Inventory.set_hotbar(data["index"], "")
+	else:
+		if data["kind"] == "inv":
+			Inventory.set_hotbar(target.index, data["id"])
+		else:
+			Inventory.swap_hotbar(data["index"], target.index)
+
+func _on_dropped_to_ground(data: Dictionary) -> void:
+	drop_item_requested.emit(data["index"])
+
+# --- Icerik yenileme ----------------------------------------------------
 
 func _refresh() -> void:
-	_rebuild_inventory_bar()
-	_update_craft_buttons()
+	var capacity := Inventory.get_slot_count()
+	for i in _inv_slots.size():
+		var slot: UiSlotScript = _inv_slots[i]
+		var content = Inventory.slots[i]
+		if content == null:
+			slot.set_content("", 0)
+			slot.set_locked(i >= capacity)
+		else:
+			slot.set_locked(false)
+			slot.set_content(content["id"], content["count"])
+	inventory_title.text = "Envanter (%d/%d)" % [Inventory.get_used_slots(), capacity]
+	_refresh_hotbar(_panel_hotbar_slots)
+	_refresh_hotbar(_mini_hotbar_slots)
+	_update_detail()
+	_update_cards()
 	_update_hunger()
-	if inventory_panel.visible:
-		_rebuild_inventory_panel()
 
-# --- Envanter paneli ----------------------------------------------------
-
-# Slot izgarasini yeniden kurar: dolu slotlar esya butonu, boslar gri kutu.
-func _rebuild_inventory_panel() -> void:
-	inventory_title.text = "Envanter (%d/%d slot)" % [Inventory.get_used_slots(), Inventory.get_slot_count()]
-	for child in inventory_slots.get_children():
-		child.queue_free()
-	for item_id in Items.ITEMS:
-		var count := Inventory.get_count(item_id)
-		if count <= 0:
+func _refresh_hotbar(slot_list: Array) -> void:
+	for i in slot_list.size():
+		var slot: UiSlotScript = slot_list[i]
+		if i >= Inventory.HOTBAR_UNLOCKED:
+			slot.set_locked(true)
 			continue
-		var slot := Button.new()
-		slot.icon = load(Items.ITEMS[item_id]["icon"])
-		slot.text = "x%d" % count
-		slot.custom_minimum_size = Vector2(120, 52)
-		slot.add_theme_font_size_override("font_size", 20)
-		slot.pressed.connect(_on_slot_pressed.bind(item_id))
-		inventory_slots.add_child(slot)
-	for i in Inventory.get_slot_count() - Inventory.get_used_slots():
-		var empty := Button.new()
-		empty.disabled = true
-		empty.custom_minimum_size = Vector2(120, 52)
-		inventory_slots.add_child(empty)
-	_update_detail()
-
-func _on_slot_pressed(item_id: String) -> void:
-	_selected_item = item_id
-	_update_detail()
+		slot.set_locked(false)
+		var id: String = Inventory.hotbar[i]
+		slot.set_content(id, Inventory.get_count(id) if id != "" else 0)
+		slot.selected = id != "" and id == _held_item
 
 func _update_detail() -> void:
 	if _selected_item == "" or Inventory.get_count(_selected_item) <= 0:
-		inventory_detail.text = "Bir esyaya dokun: detayi burada gorunur. Yigin limiti: %d." % Inventory.STACK_MAX
+		inventory_detail.text = "Bir esyaya dokun: detayi burada gorunur. " + \
+				"Esyalari surukleyip tasi; panel disina birakirsan yere duser."
 		panel_eat_button.visible = false
 		hold_button.visible = false
 		return
@@ -152,16 +280,26 @@ func _update_detail() -> void:
 		Items.description(_selected_item),
 	]
 	panel_eat_button.visible = _selected_item == "meyve"
-	hold_button.visible = Items.HOLDABLE.has(_selected_item)
+	hold_button.visible = true
 	hold_button.text = "Bırak" if _held_item == _selected_item else "Eline Al"
 
-# --- Aclik --------------------------------------------------------------
+func _on_hold_pressed() -> void:
+	if _selected_item == "":
+		return
+	hold_requested.emit("" if _held_item == _selected_item else _selected_item)
+
+## World bildirir: eldeki esya degisti (vurgu + buton metni guncellenir)
+func set_held_item(item_id: String) -> void:
+	_held_item = item_id
+	_refresh_hotbar(_panel_hotbar_slots)
+	_refresh_hotbar(_mini_hotbar_slots)
+	_update_detail()
+
+# --- Aclik / can / gun --------------------------------------------------
 
 func _update_hunger() -> void:
 	hunger_bar.value = Hunger.value
-	# Aclik kritik seviyedeyse bari kirmiziya bogar
 	hunger_bar.modulate = Color(1, 0.45, 0.45) if Hunger.value <= 25.0 else Color.WHITE
-	# Meyve varsa ve aclik tam degilse Ye butonu aktif
 	eat_button.disabled = Inventory.get_count("meyve") <= 0 or Hunger.value >= Hunger.MAX_VALUE
 
 func _on_eat_pressed() -> void:
@@ -172,16 +310,271 @@ func _on_eat_pressed() -> void:
 func _on_reset_pressed() -> void:
 	SaveManager.delete_save()
 	Inventory.reset()
+	Crafting.reset()
 	Hunger.reset()
 	Health.reset()
 	DayNight.reset()
 	get_tree().reload_current_scene()
 
+func _update_health() -> void:
+	health_bar.value = Health.value
+	if _damage_flash != null and Health.value < _prev_hp:
+		_damage_flash.color.a = 0.3
+		create_tween().tween_property(_damage_flash, "color:a", 0.0, 0.4)
+	_prev_hp = Health.value
+
+func _update_day_label() -> void:
+	if DayNight.is_night:
+		day_label.text = "Gün %d - GECE!" % DayNight.day
+		day_label.modulate = Color(1, 0.75, 1)
+	else:
+		day_label.text = "Gün %d - Gündüz" % DayNight.day
+		day_label.modulate = Color.WHITE
+
+# --- Uretim paneli ------------------------------------------------------
+
+func _build_category_buttons() -> void:
+	var group := ButtonGroup.new()
+	var cats := {"tumu": "Tümü"}
+	cats.merge(Recipes.CATEGORIES)
+	for cat_id in cats:
+		var button := Button.new()
+		button.text = cats[cat_id]
+		button.toggle_mode = true
+		button.button_group = group
+		button.add_theme_font_size_override("font_size", 17)
+		button.button_pressed = cat_id == _current_cat
+		button.toggled.connect(func(pressed: bool):
+			if pressed:
+				_current_cat = cat_id
+				_rebuild_cards())
+		cat_box.add_child(button)
+		_cat_buttons[cat_id] = button
+
+# Kart izgarasini filtreye gore yeniden kurar.
+func _rebuild_cards() -> void:
+	for child in cards_grid.get_children():
+		child.queue_free()
+	_recipe_cards.clear()
+	var group := ButtonGroup.new()
+	var query := search_edit.text.strip_edges().to_lower()
+	for recipe_id in Recipes.CRAFT_RECIPES:
+		var recipe: Dictionary = Recipes.CRAFT_RECIPES[recipe_id]
+		if _current_cat != "tumu" and recipe["category"] != _current_cat:
+			continue
+		if query != "" and not Items.display_name(recipe_id).to_lower().contains(query):
+			continue
+		var card := _make_recipe_card(recipe_id, recipe, group)
+		cards_grid.add_child(card)
+		_recipe_cards[recipe_id] = card
+	# Secili tarif filtreyle kaybolduysa secimi koru ama detayda goster
+	_update_cards()
+
+# Tek tarif karti: ikon + ad + maliyet ikonlari (dokun -> detay)
+func _make_recipe_card(recipe_id: String, recipe: Dictionary, group: ButtonGroup) -> Button:
+	var card := Button.new()
+	card.toggle_mode = true
+	card.button_group = group
+	card.custom_minimum_size = Vector2(128, 128)
+	card.button_pressed = recipe_id == _selected_recipe
+	card.toggled.connect(func(pressed: bool):
+		if pressed:
+			_select_recipe(recipe_id))
+
+	var box := VBoxContainer.new()
+	box.set_anchors_preset(Control.PRESET_FULL_RECT)
+	box.offset_top = 8
+	box.offset_bottom = -8
+	box.alignment = BoxContainer.ALIGNMENT_CENTER
+	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(box)
+
+	var icon := TextureRect.new()
+	icon.texture = load(Items.ITEMS[recipe_id]["icon"])
+	icon.custom_minimum_size = Vector2(0, 52)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(icon)
+
+	var name_label := Label.new()
+	name_label.text = Items.display_name(recipe_id)
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.add_theme_font_size_override("font_size", 16)
+	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	box.add_child(name_label)
+
+	var cost_row := HBoxContainer.new()
+	cost_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	cost_row.add_theme_constant_override("separation", 4)
+	cost_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	for item_id in recipe["cost"]:
+		var cost_icon := TextureRect.new()
+		cost_icon.texture = load(Items.ITEMS[item_id]["icon"])
+		cost_icon.custom_minimum_size = Vector2(18, 18)
+		cost_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		cost_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		cost_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cost_row.add_child(cost_icon)
+		var cost_label := Label.new()
+		cost_label.text = str(recipe["cost"][item_id])
+		cost_label.add_theme_font_size_override("font_size", 14)
+		cost_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		cost_row.add_child(cost_label)
+	box.add_child(cost_row)
+	return card
+
+# Sag detay kutusunu bir kez kurar.
+func _build_detail_box() -> void:
+	_detail_icon = TextureRect.new()
+	_detail_icon.custom_minimum_size = Vector2(0, 56)
+	_detail_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_detail_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	detail_box.add_child(_detail_icon)
+
+	_detail_name = Label.new()
+	_detail_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_detail_name.add_theme_font_size_override("font_size", 22)
+	detail_box.add_child(_detail_name)
+
+	_detail_desc = Label.new()
+	_detail_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_detail_desc.add_theme_font_size_override("font_size", 15)
+	detail_box.add_child(_detail_desc)
+
+	_detail_station = Label.new()
+	_detail_station.add_theme_font_size_override("font_size", 15)
+	detail_box.add_child(_detail_station)
+
+	_detail_costs = VBoxContainer.new()
+	_detail_costs.add_theme_constant_override("separation", 2)
+	detail_box.add_child(_detail_costs)
+
+	_detail_time = Label.new()
+	_detail_time.add_theme_font_size_override("font_size", 15)
+	detail_box.add_child(_detail_time)
+
+	# Adet secimi: [-] [x1] [+] [Max]
+	var qty_row := HBoxContainer.new()
+	qty_row.alignment = BoxContainer.ALIGNMENT_CENTER
+	qty_row.add_theme_constant_override("separation", 8)
+	var minus := Button.new()
+	minus.text = "-"
+	minus.custom_minimum_size = Vector2(44, 44)
+	minus.pressed.connect(func(): _set_qty(_craft_qty - 1))
+	qty_row.add_child(minus)
+	_qty_label = Label.new()
+	_qty_label.text = "x1"
+	_qty_label.custom_minimum_size = Vector2(50, 0)
+	_qty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_qty_label.add_theme_font_size_override("font_size", 22)
+	qty_row.add_child(_qty_label)
+	var plus := Button.new()
+	plus.text = "+"
+	plus.custom_minimum_size = Vector2(44, 44)
+	plus.pressed.connect(func(): _set_qty(_craft_qty + 1))
+	qty_row.add_child(plus)
+	var maxb := Button.new()
+	maxb.text = "Max"
+	maxb.custom_minimum_size = Vector2(0, 44)
+	maxb.pressed.connect(func():
+		if _selected_recipe != "":
+			_set_qty(Crafting.max_craftable(_selected_recipe)))
+	qty_row.add_child(maxb)
+	detail_box.add_child(qty_row)
+
+	_craft_go_button = Button.new()
+	_craft_go_button.text = "Üret"
+	_craft_go_button.custom_minimum_size = Vector2(0, 52)
+	_craft_go_button.add_theme_font_size_override("font_size", 22)
+	_craft_go_button.pressed.connect(_on_craft_go)
+	detail_box.add_child(_craft_go_button)
+
+	_update_detail_box()
+
+func _select_recipe(recipe_id: String) -> void:
+	_selected_recipe = recipe_id
+	_craft_qty = 1
+	_update_detail_box()
+
+func _set_qty(value: int) -> void:
+	var cap := 99
+	if _selected_recipe != "":
+		cap = maxi(1, Crafting.max_craftable(_selected_recipe))
+	_craft_qty = clampi(value, 1, cap)
+	_update_detail_box()
+
+func _on_craft_go() -> void:
+	if _selected_recipe == "":
+		return
+	if Crafting.enqueue(_selected_recipe, _craft_qty):
+		_craft_qty = 1
+	_update_detail_box()
+
+# Kart soluklugu (uretilemeyenler) + detay kutusunu gunceller.
+func _update_cards() -> void:
+	for recipe_id in _recipe_cards:
+		var can := Crafting.max_craftable(recipe_id) >= 1
+		_recipe_cards[recipe_id].modulate = Color.WHITE if can else Color(1, 1, 1, 0.55)
+	_update_detail_box()
+
+func _update_detail_box() -> void:
+	if _detail_name == null:
+		return
+	if _selected_recipe == "":
+		_detail_icon.texture = null
+		_detail_name.text = "Bir tarif seç"
+		_detail_desc.text = "Soldan bir karta dokun; adet seçip üretime başla."
+		_detail_station.text = ""
+		_detail_time.text = ""
+		_qty_label.text = ""
+		_craft_go_button.disabled = true
+		for child in _detail_costs.get_children():
+			child.queue_free()
+		return
+	var recipe: Dictionary = Recipes.CRAFT_RECIPES[_selected_recipe]
+	_detail_icon.texture = load(Items.ITEMS[_selected_recipe]["icon"])
+	var out_count: int = recipe["output"][_selected_recipe]
+	_detail_name.text = Items.display_name(_selected_recipe) + \
+			(" x%d" % out_count if out_count > 1 else "")
+	_detail_desc.text = Items.description(_selected_recipe)
+	if recipe["station"] != "":
+		_detail_station.text = "Tezgah gerekli" + \
+				("" if Crafting.near_station else " - yanında değilsin!")
+		_detail_station.add_theme_color_override("font_color",
+				Color(0.2, 0.55, 0.25) if Crafting.near_station else Color(0.8, 0.25, 0.2))
+	else:
+		_detail_station.text = ""
+	# Malzeme listesi: "ikon Ad  3/2" (eldeki/gereken)
+	for child in _detail_costs.get_children():
+		child.queue_free()
+	for item_id in recipe["cost"]:
+		var need: int = recipe["cost"][item_id] * _craft_qty
+		var have := Inventory.get_count(item_id)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		var icon := TextureRect.new()
+		icon.texture = load(Items.ITEMS[item_id]["icon"])
+		icon.custom_minimum_size = Vector2(22, 22)
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		row.add_child(icon)
+		var label := Label.new()
+		label.text = "%s  %d/%d" % [Items.display_name(item_id), have, need]
+		label.add_theme_font_size_override("font_size", 16)
+		if have < need:
+			label.add_theme_color_override("font_color", Color(0.8, 0.25, 0.2))
+		row.add_child(label)
+		_detail_costs.add_child(row)
+	_detail_time.text = "Süre: %.1f sn / adet" % float(recipe["time"])
+	_qty_label.text = "x%d" % _craft_qty
+	_craft_go_button.disabled = Crafting.max_craftable(_selected_recipe) < 1
+
 # --- Gorsel tema ----------------------------------------------------------
 
 # Go-Go Town tarzi krem/pastel tema: yuvarlak koseli krem kartlar,
 # koyu kahve yazi, turuncu vurgu. Tema ust seviye Control'lere atanir;
-# sonradan eklenen cocuklar (tarif satirlari, slotlar) otomatik miras alir.
+# sonradan eklenen cocuklar (kartlar, slotlar) otomatik miras alir.
 const COL_CREAM := Color(0.99, 0.96, 0.89)
 const COL_CREAM_LIGHT := Color(1.0, 0.99, 0.95)
 const COL_BROWN := Color(0.33, 0.24, 0.16)
@@ -238,23 +631,26 @@ func _apply_ui_theme() -> void:
 	theme.set_color("font_disabled_color", "Button", Color(0.33, 0.24, 0.16, 0.4))
 	theme.set_color("font_color", "Label", COL_BROWN)
 
-	# Hap seklinde bar govdesi (aclik/can ortak arka plan)
+	# Arama kutusu da krem gorunsun
+	var edit_style: StyleBoxFlat = button_style.duplicate()
+	edit_style.bg_color = Color.WHITE
+	edit_style.shadow_size = 0
+	theme.set_stylebox("normal", "LineEdit", edit_style)
+	theme.set_color("font_color", "LineEdit", COL_BROWN)
+
+	# Hap seklinde bar govdesi (aclik/can/uretim ortak arka plan)
 	var bar_bg := StyleBoxFlat.new()
 	bar_bg.bg_color = Color(0.88, 0.82, 0.71)
 	bar_bg.set_corner_radius_all(9)
 	bar_bg.border_color = COL_BROWN_SOFT
 	bar_bg.set_border_width_all(1)
 	theme.set_stylebox("background", "ProgressBar", bar_bg)
+	# Varsayilan bar dolgusu turuncu (uretim cubuklari)
+	theme.set_stylebox("fill", "ProgressBar", _make_bar_fill(COL_ORANGE))
 
 	for child in get_children():
 		if child is Control:
 			child.theme = theme
-
-	# Insa cubugu turuncu serit olsun (temadaki krem kartin ustune)
-	var build_style: StyleBoxFlat = panel_style.duplicate()
-	build_style.bg_color = COL_ORANGE
-	build_style.border_color = Color(0.85, 0.48, 0.12)
-	$BuildBar.add_theme_stylebox_override("panel", build_style)
 
 	# Bar dolgulari: aclik turuncu, can kirmizi (hap seklinde)
 	hunger_bar.add_theme_stylebox_override("fill", _make_bar_fill(Color(0.98, 0.65, 0.25)))
@@ -284,150 +680,6 @@ func _setup_damage_flash() -> void:
 	move_child(_damage_flash, 0)  # panellerin altinda kalsin
 	_prev_hp = Health.value
 
-# --- Can ve gun gostergesi ------------------------------------------------
-
-func _update_health() -> void:
-	health_bar.value = Health.value
-	if _damage_flash != null and Health.value < _prev_hp:
-		_damage_flash.color.a = 0.3
-		create_tween().tween_property(_damage_flash, "color:a", 0.0, 0.4)
-	_prev_hp = Health.value
-
-func _update_day_label() -> void:
-	if DayNight.is_night:
-		day_label.text = "Gün %d - GECE!" % DayNight.day
-		day_label.modulate = Color(1, 0.75, 1)
-	else:
-		day_label.text = "Gün %d - Gündüz" % DayNight.day
-		day_label.modulate = Color.WHITE
-
-# Sadece sahip olunan esyalari, items.gd'deki sirayla gosterir.
-func _rebuild_inventory_bar() -> void:
-	for child in inventory_box.get_children():
-		child.queue_free()
-	for item_id in Items.ITEMS:
-		var count := Inventory.get_count(item_id)
-		if count <= 0:
-			continue
-		var icon := TextureRect.new()
-		icon.texture = load(Items.ITEMS[item_id]["icon"])
-		icon.custom_minimum_size = Vector2(34, 34)
-		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		inventory_box.add_child(icon)
-		var label := Label.new()
-		label.text = str(count)
-		label.add_theme_font_size_override("font_size", 26)
-		inventory_box.add_child(label)
-		var spacer := Control.new()
-		spacer.custom_minimum_size = Vector2(10, 0)
-		inventory_box.add_child(spacer)
-
-# --- Insa cubugu (dinamik) ----------------------------------------------
-
-func _build_build_bar() -> void:
-	for recipe_id in Recipes.BUILD_RECIPES:
-		var recipe: Dictionary = Recipes.BUILD_RECIPES[recipe_id]
-		var button := Button.new()
-		button.toggle_mode = true
-		button.icon = load(recipe["icon"])
-		button.text = "%s (%s)" % [recipe["name"], _cost_text(recipe["cost"])]
-		button.add_theme_font_size_override("font_size", 18)
-		button.toggled.connect(_on_build_button_toggled.bind(recipe_id, button))
-		build_box.add_child(button)
-		_build_buttons[recipe_id] = button
-
-func _on_build_button_toggled(pressed: bool, recipe_id: String, button: Button) -> void:
-	if pressed:
-		# Ayni anda tek mod aktif olabilir: diger insa butonlarini ve
-		# kazma modunu sessizce kapat
-		for other_id in _build_buttons:
-			var other: Button = _build_buttons[other_id]
-			if other != button and other.button_pressed:
-				other.set_pressed_no_signal(false)
-		if move_button.button_pressed:
-			move_button.set_pressed_no_signal(false)
-			move_toggled.emit(false)
-		build_toggled.emit(recipe_id)
-	else:
-		build_toggled.emit("")
-
-# Tasima modu acilinca insa secimini kapat (tek mod aktif olabilir)
-func _on_move_toggled(pressed: bool) -> void:
-	if pressed:
-		for other_id in _build_buttons:
-			var other: Button = _build_buttons[other_id]
-			if other.button_pressed:
-				other.set_pressed_no_signal(false)
-		build_toggled.emit("")
-	move_toggled.emit(pressed)
-
-# --- Eline alma ---------------------------------------------------------
-
-func _on_hold_pressed() -> void:
-	if _selected_item == "":
-		return
-	# Zaten eldeyse birak, degilse eline al
-	hold_requested.emit("" if _held_item == _selected_item else _selected_item)
-
-## World bildirir: eldeki esya degisti (buton metni guncellenir)
-func set_held_item(item_id: String) -> void:
-	_held_item = item_id
-	_update_detail()
-
-# --- Uretim paneli ------------------------------------------------------
-
-# Panel satirlarini tariflerden bir kez kurar.
-func _build_craft_panel() -> void:
-	for recipe_id in Recipes.CRAFT_RECIPES:
-		var recipe: Dictionary = Recipes.CRAFT_RECIPES[recipe_id]
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 10)
-
-		var out_id: String = recipe["output"].keys()[0]
-		var icon := TextureRect.new()
-		icon.texture = load(Items.ITEMS[out_id]["icon"])
-		icon.custom_minimum_size = Vector2(34, 34)
-		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		row.add_child(icon)
-
-		var label := Label.new()
-		label.text = _recipe_text(recipe)
-		label.add_theme_font_size_override("font_size", 22)
-		label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		row.add_child(label)
-
-		var craft := Button.new()
-		craft.text = "Üret"
-		craft.add_theme_font_size_override("font_size", 22)
-		craft.pressed.connect(func(): Crafting.craft(recipe_id))
-		row.add_child(craft)
-		_craft_buttons[recipe_id] = craft
-
-		craft_rows.add_child(row)
-
-# "Balta x1  (2 Çubuk, 1 İp, 1 Taş) [Tezgah]" gibi bir tarif metni uretir.
-func _recipe_text(recipe: Dictionary) -> String:
-	var outs: PackedStringArray = []
-	for item_id in recipe["output"]:
-		outs.append("%s x%d" % [Items.display_name(item_id), recipe["output"][item_id]])
-	var text := "%s  (%s)" % [" ".join(outs), _cost_text(recipe["cost"])]
-	if recipe["station"] != "":
-		text += "  [Tezgah]"
-	return text
-
-func _cost_text(cost: Dictionary) -> String:
-	var costs: PackedStringArray = []
-	for item_id in cost:
-		costs.append("%d %s" % [cost[item_id], Items.display_name(item_id)])
-	return ", ".join(costs)
-
-# Uretilemeyen tariflerin (kaynak yok / tezgah uzak) butonunu pasif yapar.
-func _update_craft_buttons() -> void:
-	for recipe_id in _craft_buttons:
-		_craft_buttons[recipe_id].disabled = not Crafting.can_craft(recipe_id)
-
 # --- Sandik paneli ------------------------------------------------------
 
 ## World tarafindan cagrilir: paneli verilen icerikle (yeniden) cizer.
@@ -435,6 +687,8 @@ func _update_craft_buttons() -> void:
 func show_chest(contents: Dictionary, message: String = "") -> void:
 	chest_title.text = "Sandık" if message == "" else "Sandık - %s" % message
 	chest_panel.visible = true
+	inventory_button.button_pressed = false
+	craft_button.button_pressed = false
 	for child in chest_rows.get_children():
 		child.queue_free()
 
@@ -464,14 +718,14 @@ func _add_chest_section_title(text: String) -> void:
 	var label := Label.new()
 	label.text = text
 	label.add_theme_font_size_override("font_size", 22)
-	label.modulate = Color(1, 1, 0.75)
+	label.modulate = Color(0.85, 0.6, 0.3)
 	chest_rows.add_child(label)
 
 func _add_chest_note(text: String) -> void:
 	var label := Label.new()
 	label.text = text
 	label.add_theme_font_size_override("font_size", 20)
-	label.modulate = Color(0.8, 0.8, 0.8)
+	label.modulate = Color(0.6, 0.55, 0.5)
 	chest_rows.add_child(label)
 
 # Tek esya satiri: ikon + "Ad x adet" + tasima butonu (tum yigini tasir)

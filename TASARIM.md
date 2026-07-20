@@ -111,10 +111,24 @@ sistemler eklendikce guncellenir.
 | Sandik | 4 kalas + 1 ip | Depolama: dokununca panel acilir, yigin tasima; sadece bosken sokulur |
 
 ## Arayuz
-- Sol ust: dinamik envanter cubugu (sahip olunan kaynaklar otomatik listelenir)
-- Sol alt: "Uretim" butonu -> tarif paneli (ikon + maliyet + Uret)
-- Alt orta: insa cubugu (tariflerden dinamik)
-- Sag alt: baglamsal aksiyon butonu (yumruk / balta / cekic)
+- Sol ust: CANTA butonu -> envanter paneli; ANAHTAR butonu -> uretim paneli
+- Envanter paneli: 16 kare slot (8 acik + canta ile artar), surukle-birakla
+  yer degistirme/yigin birlestirme; panel DISINA birakinca esya yere duser
+  (yerde sallanan ikon; ustunden gecince geri toplanir)
+- Hizli erisim: 8 goz (ilk 4 acik, kalani seviyeyle); panelin ustunde ve
+  ekranin altinda ayni cubuk. Esya suruklenerek atanir; alttaki cubuktan
+  dokunarak eline alinir/birakilir (turuncu cerceve = elde)
+- Uretim paneli: kategori sekmeleri (Malzeme/Aletler/Savas&Av/Yapilar/
+  Tarim) + arama; kare tarif kartlari (ikon+ad+maliyet); sagda detay
+  (adet sec, Max, Uret); tum paneller X ile kapanir
+- ZAMANLI URETIM: her tarifin suresi var (basit 1 sn, karmasik 6 sn'e
+  kadar); coklu uretim kuyruga girer, maliyet pesin dusulur; ilerleme
+  cubugu panelde + anahtar butonunun altinda gorunur
+- INSA CUBUGU KALKTI: yapilar uretim menusunden ESYA olarak uretilir;
+  eline al -> gride yesil/kirmizi onizleme -> yere koy. Sokulen yapi
+  kendi esyasini dusurur. Tohum elde: topraga ekilir; toprak elde:
+  cukuru doldurur (ayri "Ekin/Doldur" tarifleri kalkti)
+- Sag alt: baglamsal aksiyon butonu (yumruk / balta / cekic / kurek)
 
 ## Kontroller
 - Surukle: hareket (sanal joystick), kisa dokunus: tile etkilesimi

@@ -55,7 +55,10 @@ func set_held_item(icon_path: String) -> void:
 	if icon_path == "":
 		_held_sprite.visible = false
 		return
-	_held_sprite.texture = load(icon_path)
+	var tex: Texture2D = load(icon_path)
+	_held_sprite.texture = tex
+	# Yapi gorselleri (32x64) elde kucuk gorunsun
+	_held_sprite.scale = Vector2(0.45, 0.45) if tex.get_height() > 40 else Vector2(0.8, 0.8)
 	_held_sprite.visible = true
 	_update_sprite()
 
