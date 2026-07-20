@@ -777,7 +777,11 @@ func _sample_terrain(x: float, z: float) -> Array:
 			col += Color(props[1]) * wgt
 	return [height, col]
 
+var _terrain_node: MeshInstance3D  # kazma sonrasi yeniden kurmak icin
+
 func _build_terrain() -> void:
+	if _terrain_node != null:
+		_terrain_node.queue_free()
 	var res := 4  # hucre basina 4x4 yama (0.25 m) - falez kenari keskin cikar
 	var vw := _map_w * res
 	var vh := _map_h * res
@@ -842,6 +846,7 @@ func _build_terrain() -> void:
 	material.uv1_scale = Vector3(0.5, 0.5, 0.5)
 	inst.material_override = material
 	add_child(inst)
+	_terrain_node = inst
 
 # Notr benek dokusu: koyu/acik gri noktalar, renkleri carparak dokular
 var _neutral_speckle: ImageTexture
@@ -865,18 +870,33 @@ func _make_neutral_speckle() -> ImageTexture:
 	return _neutral_speckle
 
 # Harita bir ada: cevresini ufka kadar dalgali deniz sarar.
+# Deniz 4 SERIT halinde sadece haritanin DISINI kaplar: harita icinde
+# su duzlemi olmadigi icin kazilan cukurlar denizle dolmaz (gollerin
+# kendi yuzeyi var). Seritler kiyi cizgisini kapatmak icin harita
+# sinirindan 1 hucre iceri tasar (kenar hucreleri kazilamaz zaten).
 func _build_sea() -> void:
-	var plane := PlaneMesh.new()
-	plane.size = Vector2(_map_w + 160, _map_h + 160)
-	plane.subdivide_width = 72
-	plane.subdivide_depth = 72
-	var sea := MeshInstance3D.new()
-	sea.mesh = plane
-	sea.material_override = _water_material()
-	# Golun ust yuzeyinden (-0.14) biraz asagida: ayni duzlemde
-	# cakisma (z-fighting) olmasin
-	sea.position = Vector3(_map_w / 2.0, -0.17, _map_h / 2.0)
-	add_child(sea)
+	var m := 160.0
+	var strips := [
+		# [boyut, merkez]  kuzey / guney / bati / dogu
+		[Vector2(_map_w + 2.0 * m, m + 1.0),
+				Vector3(_map_w / 2.0, -0.17, (1.0 - m) / 2.0)],
+		[Vector2(_map_w + 2.0 * m, m + 1.0),
+				Vector3(_map_w / 2.0, -0.17, _map_h + (m - 1.0) / 2.0)],
+		[Vector2(m + 1.0, _map_h - 2.0),
+				Vector3((1.0 - m) / 2.0, -0.17, _map_h / 2.0)],
+		[Vector2(m + 1.0, _map_h - 2.0),
+				Vector3(_map_w + (m - 1.0) / 2.0, -0.17, _map_h / 2.0)],
+	]
+	for s in strips:
+		var plane := PlaneMesh.new()
+		plane.size = s[0]
+		plane.subdivide_width = maxi(8, int(s[0].x / 4.0))
+		plane.subdivide_depth = maxi(8, int(s[0].y / 4.0))
+		var sea := MeshInstance3D.new()
+		sea.mesh = plane
+		sea.material_override = _water_material()
+		sea.position = s[1]
+		add_child(sea)
 
 # Dalgali su malzemesi (deniz + harita ici su ayni gorunum)
 var _water_mat: ShaderMaterial
@@ -1017,12 +1037,21 @@ void fragment() {
 	return _lake_mat
 
 # Bos cim hucrelerinin bir kismina sus otu serpistirir (toplanmaz).
+var _decor_nodes: Array = []
+var _decor_cells: Array = []
+
 func _build_decor(grass_cells: Array) -> void:
+	for node in _decor_nodes:
+		node.queue_free()
+	_decor_nodes.clear()
+	_decor_cells = grass_cells
 	var pool := _model_pool("quat2_grass01", 0.30)
 	var groups: Dictionary = {}  # havuz indeksi -> Array[Transform3D]
 	for cell in grass_cells:
 		if _objects.has(cell) or cell == _spawn_cell:
 			continue
+		if _ground_char.get(cell, ".") == "o":
+			continue  # kazilmis cukurda sus otu olmaz
 		var h := absi(cell.x * 92821 + cell.y * 68917) % 100
 		if h >= 20:
 			continue  # ~her 5 hucreden biri suslenir
@@ -1033,7 +1062,9 @@ func _build_decor(grass_cells: Array) -> void:
 		var off := Vector3(sin(cell.x * 12.9) * 0.25, 0, cos(cell.y * 7.7) * 0.25)
 		groups[idx].append(Transform3D(_cell_variance(cell), _cell_center(cell) + off))
 	for idx in groups:
-		add_child(_make_mesh_multimesh(pool[idx], groups[idx], false))
+		var node := _make_mesh_multimesh(pool[idx], groups[idx], false)
+		add_child(node)
+		_decor_nodes.append(node)
 
 ## Bir dunya noktasindaki arazi yuksekligi (oyuncu ve nesneler icin)
 func ground_height(x: float, z: float) -> float:
@@ -1072,10 +1103,10 @@ func _rebuild_objects() -> void:
 	_build_pickups(flowers, "cicek")
 	_build_pickups(mushrooms, "mantar")
 
-# Agaclar: A1 paketindeki her agac ayri varyant, hucreye gore
-# deterministik secilir. Boylar normalize (TREE_HEIGHT).
+# Agaclar: tree02 cam paketi (kullanici secimi) - hafif, duz renkli
+# modeller; paketteki her cam ayri varyant. Boylar normalize.
 func _tree_pool() -> Array:
-	return _model_pool("quat2_tree01", TREE_HEIGHT)
+	return _model_pool("quat2_tree02", TREE_HEIGHT)
 
 func _build_trees(cells: Array[Vector2i]) -> void:
 	var pool := _tree_pool()
@@ -1372,7 +1403,52 @@ func _on_world_tapped(screen_pos: Vector2) -> void:
 		Thirst.drink()
 		_spawn_floating_text(cell, "Su içtin!", Color(0.6, 0.85, 1.0))
 		return
+	# Kurek eldeyken bos zemine dokun: cukur kaz (stratejik engel + toprak)
+	if _held_item == "kurek" and _can_dig(cell):
+		_dig_pit(cell)
+		return
+	# Toprak eldeyken cukura dokun: doldur
+	if _held_item == "toprak" and _ground_char.get(cell, "") == "o":
+		_fill_pit(cell)
+		return
 	_try_harvest(cell)
+
+# --- Cukur kazma / doldurma ----------------------------------------------
+# Cukur ("o") gecilmez: oyuncu ve (B3'te gelecek) yaratiklar uzerinden
+# yuruyemez. Kazi toprak verir; toprakla geri doldurulur.
+
+func _can_dig(cell: Vector2i) -> bool:
+	if cell == _player_cell() or cell == _spawn_cell:
+		return false
+	if _objects.has(cell):
+		return false
+	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
+		return false
+	return _ground_char.get(cell, "") in [".", "d", "s"]
+
+func _dig_pit(cell: Vector2i) -> void:
+	if not Inventory.can_add_all({"toprak": 1}):
+		_spawn_floating_text(cell, "Envanter dolu!", Color(1, 0.6, 0.6))
+		return
+	_ground_char[cell] = "o"
+	_solid_cells[cell] = true
+	Inventory.add_item("toprak", 1)
+	_spawn_floating_text(cell, "+1 Toprak", Color(0.9, 0.75, 0.55))
+	_refresh_terrain()
+
+func _fill_pit(cell: Vector2i) -> void:
+	if not Inventory.remove_item("toprak", 1):
+		return
+	_ground_char[cell] = "."
+	_solid_cells.erase(cell)
+	_spawn_floating_text(cell, "Çukur dolduruldu", Color(0.8, 1.0, 0.8))
+	_refresh_terrain()
+
+# Zemin degisince arazi ortusu, susler ve nesne yukseklikleri tazelenir
+func _refresh_terrain() -> void:
+	_build_terrain()
+	_build_decor(_decor_cells)
+	_rebuild_objects()
 
 func _on_action_pressed() -> void:
 	var pc := _player_cell()
