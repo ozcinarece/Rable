@@ -29,33 +29,34 @@ const GROUND_DEFS := {
 	"h": {"color": Color(0.31, 0.55, 0.23), "top": 1.1, "solid": true},
 }
 
-## Toplanabilir nesneler (2D'deki degerlerle ayni)
+## Toplanabilir nesneler (2D'deki degerlerle ayni).
+## "vanish_regrow": toplaninca kaybolur, bir sure sonra ayni yerde biter.
 const OBJECT_DEFS := {
 	"T": {"drops": {"odun": 3, "yaprak": 2}, "hits": 3,
 			"tool": {"item": "balta", "hits": 1}},
 	"#": {"drops": {"tas": 2}, "hits": 4,
 			"tool": {"item": "kazma", "hits": 2}},
 	"m": {"drops": {"meyve": 2}, "hits": 1, "becomes": "n"},
+	"cicek": {"drops": {"cicek": 1}, "hits": 1, "vanish_regrow": true},
+	"mantar": {"drops": {"mantar": 1}, "hits": 1, "vanish_regrow": true},
 }
+
+## Tas turleri (kullanici secimi): normal / komurlu / altinli.
+## Hucreye gore deterministik dagilir; kazma hepsinde 2 vurusa dusurur.
+const STONE_VARIANTS := [
+	{"model": "quat2_rock05", "h": 0.95, "drops": {"tas": 2}, "hits": 4},
+	{"model": "quat2_rock03", "h": 0.80, "drops": {"tas": 1, "komur": 2}, "hits": 4},
+	{"model": "quat2_rock07", "h": 0.90, "drops": {"tas": 1, "altin": 1}, "hits": 5},
+]
 const REGROW_SECONDS := 60.0
 const CAM_BASE_DIST := 12.5  # genis bakis (Longvinter benzeri olcek)
 const SETTINGS_PATH := "user://cam3d.json"
 
-# Kenney Nature Kit modelleri (CC0). Hucreye gore deterministik secilir:
+# Doga modelleri (CC0, Quaternius). Hucreye gore deterministik secilir:
 # orman cesitli ama her acilista ayni gorunur.
 const NATURE_PATH := "res://assets/models/nature/%s.glb"
-## Orman stilleri: Gorunum panelinden secilir, aninda uygulanir
-const FOREST_STYLES := {
-	"karisik": {"label": "Karışık", "models": ["tree_default", "tree_oak",
-			"tree_fat", "tree_pineRoundA", "tree_pineRoundC", "tree_simple"]},
-	"cam": {"label": "Çam Ormanı", "models": ["tree_pineRoundA",
-			"tree_pineRoundB", "tree_pineRoundC", "tree_pineRoundD",
-			"tree_pineTallA", "tree_pineTallB"]},
-	"yaprakli": {"label": "Yapraklı", "models": ["tree_detailed", "tree_oak",
-			"tree_default", "tree_thin"]},
-	"ince": {"label": "İnce Uzun", "models": ["tree_thin", "tree_tall",
-			"tree_pineTallA_detailed", "tree_pineTallB_detailed"]},
-}
+## Orman: kullanici secimi - akcaagac paketi + sonbahar agaci (kizil orman)
+const TREE_HEIGHT := 3.1
 ## Karakter secenekleri (Gorunum paneli).
 ## "Yuvarlak" olanlar kendi tasarimimiz (kod ile insa: kose yok,
 ## kure kafa + kapsul govde; spec = ten/tisort/pantolon renkleri).
@@ -118,18 +119,14 @@ const HAIR_COLORS := [
 	Color(0.95, 0.55, 0.75),  # pembe
 	Color(0.35, 0.55, 0.90),  # mavi
 ]
-const STONE_MODELS: Array[String] = ["rock_largeA", "rock_tallA",
-		"stone_tallB", "rock_largeB"]
-# Cim hucrelerine serpistirilen susler (engel degil, toplanmaz).
-# Ot modelleri listede birkac kez: cimenlik agirlikli olsun
-const DECOR_MODELS: Array[String] = ["grass_leafs", "grass_large",
-		"grass_leafsLarge", "grass_leafs", "flower_redA", "flower_yellowA",
-		"grass_large", "flower_purpleA", "grass_leafs", "mushroom_red"]
+# Cim hucrelerine serpistirilen sus otlari (engel degil, toplanmaz):
+# Quaternius ot paketi (quat2_grass01), cocuklari ayri varyantlardir
 
 var _ground_char: Dictionary = {}  # hucre -> zemin karakteri
 var _objects: Dictionary = {}      # hucre -> "T"/"#"/"m"/"n"
 var _object_hits: Dictionary = {}  # hucre -> alinan vurus
-var _regrow: Dictionary = {}       # bos cali -> kalan sure
+var _regrow: Dictionary = {}       # hucre -> yeniden bitmeye kalan sure
+var _regrow_type: Dictionary = {}  # hucre -> bitince donusecegi nesne
 var _object_nodes: Array = []      # nesne MultiMesh dugumleri (rebuild icin)
 var _mesh_cache: Dictionary = {}   # model adi -> Mesh (GLB'den bir kez cikarilir)
 var _solid_cells: Dictionary = {}
@@ -142,7 +139,6 @@ var _held_item: String = ""
 var cam_distance: float = 1.0  # yakinlik carpani
 var cam_pitch: float = 52.0    # bakis acisi (derece)
 var character_path: String = "custom:f2c29b/4fa7d8/5b6b8c"  # varsayilan: yuvarlak
-var forest_style: String = "cam"  # referans gorunum: cam ormani
 var hat_id: String = "yok"
 var face_path: String = ""
 var hair_style: String = ""
@@ -346,9 +342,6 @@ func _load_settings() -> void:
 		var saved_char := String(parsed.get("character", character_path))
 		if saved_char.begins_with("custom:") or ResourceLoader.exists(saved_char):
 			character_path = saved_char
-		var saved_forest := String(parsed.get("forest", forest_style))
-		if FOREST_STYLES.has(saved_forest):
-			forest_style = saved_forest
 		hat_id = String(parsed.get("hat", hat_id))
 		face_path = String(parsed.get("face", face_path))
 		hair_style = String(parsed.get("hair", hair_style))
@@ -359,7 +352,7 @@ func _save_settings() -> void:
 	if file != null:
 		file.store_string(JSON.stringify({"zoom": cam_distance,
 				"pitch": cam_pitch, "character": character_path,
-				"forest": forest_style, "hat": hat_id, "face": face_path,
+				"hat": hat_id, "face": face_path,
 				"hair": hair_style, "hair_color": "#" + hair_color.to_html(false)}))
 
 # Iki parmakla yakinlastirma (pinch); oyuncu hareketi 1. parmakta kalir
@@ -608,30 +601,6 @@ func _build_look_panel(layer: CanvasLayer, look_button: Button, cam_button: Butt
 				_save_settings())
 		face_row.add_child(fb2)
 
-	var forest_label := Label.new()
-	forest_label.text = "Orman Stili"
-	forest_label.add_theme_font_size_override("font_size", 17)
-	box.add_child(forest_label)
-
-	var forest_row := HBoxContainer.new()
-	forest_row.add_theme_constant_override("separation", 6)
-	box.add_child(forest_row)
-	var forest_group := ButtonGroup.new()
-	for style_id in FOREST_STYLES:
-		var fb := Button.new()
-		fb.text = FOREST_STYLES[style_id]["label"]
-		fb.toggle_mode = true
-		fb.button_group = forest_group
-		fb.add_theme_font_size_override("font_size", 14)
-		fb.button_pressed = style_id == forest_style
-		var sid: String = style_id
-		fb.toggled.connect(func(pressed: bool):
-			if pressed:
-				forest_style = sid
-				_rebuild_objects()
-				_save_settings())
-		forest_row.add_child(fb)
-
 # --- Ortam: gokyuzu + gunes ---------------------------------------------
 
 func _build_environment() -> void:
@@ -692,6 +661,17 @@ func _build_world() -> void:
 			if GROUND_DEFS[ground]["solid"]:
 				_solid_cells[cell] = true
 			ground_cells[ground].append(cell)
+
+	# Toplanabilir cicek ve mantarlar: bos cim hucrelerine serpistirilir
+	# (dekordan ONCE atanir ki dekor dolu hucreleri atlasin)
+	for cell in ground_cells["."]:
+		if _objects.has(cell) or cell == _spawn_cell:
+			continue
+		var h := absi(cell.x * 57731 + cell.y * 86243) % 100
+		if h < 4:
+			_objects[cell] = "cicek"
+		elif h < 7:
+			_objects[cell] = "mantar"
 
 	_build_terrain()
 	_build_sea()
@@ -985,23 +965,24 @@ void fragment() {
 	_lake_mat.shader = shader
 	return _lake_mat
 
-# Bos cim hucrelerinin bir kismina cicek/ot/mantar serpistirir (sus).
+# Bos cim hucrelerinin bir kismina sus otu serpistirir (toplanmaz).
 func _build_decor(grass_cells: Array) -> void:
-	var groups: Dictionary = {}  # model -> Array[Transform3D]
+	var pool := _model_pool("quat2_grass01", 0.30)
+	var groups: Dictionary = {}  # havuz indeksi -> Array[Transform3D]
 	for cell in grass_cells:
 		if _objects.has(cell) or cell == _spawn_cell:
 			continue
 		var h := absi(cell.x * 92821 + cell.y * 68917) % 100
-		if h >= 18:
-			continue  # ~her 6 hucreden biri suslenir
-		var model: String = DECOR_MODELS[h % DECOR_MODELS.size()]
-		if not groups.has(model):
-			groups[model] = []
+		if h >= 20:
+			continue  # ~her 5 hucreden biri suslenir
+		var idx := h % pool.size()
+		if not groups.has(idx):
+			groups[idx] = []
 		# Hucre icinde hafif kaydirma: izgara hissi kirilsin
 		var off := Vector3(sin(cell.x * 12.9) * 0.25, 0, cos(cell.y * 7.7) * 0.25)
-		groups[model].append(Transform3D(_cell_variance(cell), _cell_center(cell) + off))
-	for model in groups:
-		add_child(_make_model_multimesh(model, groups[model]))
+		groups[idx].append(Transform3D(_cell_variance(cell), _cell_center(cell) + off))
+	for idx in groups:
+		add_child(_make_mesh_multimesh(pool[idx], groups[idx]))
 
 ## Bir dunya noktasindaki arazi yuksekligi (oyuncu ve nesneler icin)
 func ground_height(x: float, z: float) -> float:
@@ -1023,40 +1004,80 @@ func _rebuild_objects() -> void:
 	var stones: Array[Vector2i] = []
 	var bushes_full: Array[Vector2i] = []
 	var bushes_empty: Array[Vector2i] = []
+	var flowers: Array[Vector2i] = []
+	var mushrooms: Array[Vector2i] = []
 	for cell in _objects:
 		match _objects[cell]:
 			"T": trees.append(cell)
 			"#": stones.append(cell)
 			"m": bushes_full.append(cell)
 			"n": bushes_empty.append(cell)
+			"cicek": flowers.append(cell)
+			"mantar": mushrooms.append(cell)
 
 	_build_trees(trees)
 	_build_stones(stones)
 	_build_bushes(bushes_full, bushes_empty)
+	_build_pickups(flowers, "cicek")
+	_build_pickups(mushrooms, "mantar")
 
-# Agaclar: hucreye gore model secilir (secili orman stilinden),
-# model basina tek MultiMesh. Olcek buyuk: insanin 2-2.5 kati boy
+# Agaclar: akcaagac paketinin her agaci + sonbahar agaci tek havuzda,
+# hucreye gore deterministik secilir. Boylar normalize (TREE_HEIGHT).
+func _tree_pool() -> Array:
+	var pool: Array = []
+	pool += _model_pool("quat2_tree10", TREE_HEIGHT)
+	pool += _model_pool("quat2_tree12", TREE_HEIGHT * 0.9)
+	return pool
+
 func _build_trees(cells: Array[Vector2i]) -> void:
-	var models: Array = FOREST_STYLES[forest_style]["models"]
+	var pool := _tree_pool()
 	var groups: Dictionary = {}
 	for cell in cells:
-		var model: String = models[absi(cell.x * 31 + cell.y * 57) % models.size()]
-		if not groups.has(model):
-			groups[model] = []
-		groups[model].append(Transform3D(_cell_variance(cell).scaled(Vector3(3.0, 3.0, 3.0)),
-				_cell_center(cell)))
-	for model in groups:
-		_keep(_make_model_multimesh(model, groups[model]))
+		var idx := absi(cell.x * 31 + cell.y * 57) % pool.size()
+		if not groups.has(idx):
+			groups[idx] = []
+		groups[idx].append(Transform3D(_cell_variance(cell), _cell_center(cell)))
+	for idx in groups:
+		_keep(_make_mesh_multimesh(pool[idx], groups[idx]))
+
+# Hucrenin tas turu: %60 normal, %30 komur, %10 altin
+func _stone_variant(cell: Vector2i) -> int:
+	var h := absi(cell.x * 41 + cell.y * 89) % 10
+	if h < 6:
+		return 0
+	return 1 if h < 9 else 2
 
 func _build_stones(cells: Array[Vector2i]) -> void:
+	var groups: Dictionary = {}  # Vector2i(tur, havuz indeksi) -> transformlar
+	for cell in cells:
+		var v := _stone_variant(cell)
+		var pool: Array = _model_pool(STONE_VARIANTS[v]["model"], STONE_VARIANTS[v]["h"])
+		var key := Vector2i(v, absi(cell.x * 17 + cell.y * 43) % pool.size())
+		if not groups.has(key):
+			groups[key] = []
+		groups[key].append(Transform3D(_cell_variance(cell), _cell_center(cell)))
+	for key in groups:
+		var pool: Array = _model_pool(STONE_VARIANTS[key.x]["model"], STONE_VARIANTS[key.x]["h"])
+		_keep(_make_mesh_multimesh(pool[key.y], groups[key]))
+
+# Toplanabilir cicek/mantar gorselleri
+func _pickup_pool(kind: String) -> Array:
+	if kind == "cicek":
+		return _model_pool("quat2_flower02", 0.45) + _model_pool("quat2_flower01", 0.35)
+	return _model_pool("quat2_mush02", 0.35)
+
+func _build_pickups(cells: Array[Vector2i], kind: String) -> void:
+	if cells.is_empty():
+		return
+	var pool := _pickup_pool(kind)
 	var groups: Dictionary = {}
 	for cell in cells:
-		var model: String = STONE_MODELS[absi(cell.x * 17 + cell.y * 43) % STONE_MODELS.size()]
-		if not groups.has(model):
-			groups[model] = []
-		groups[model].append(Transform3D(_cell_variance(cell), _cell_center(cell)))
-	for model in groups:
-		_keep(_make_model_multimesh(model, groups[model]))
+		var idx := absi(cell.x * 23 + cell.y * 71) % pool.size()
+		if not groups.has(idx):
+			groups[idx] = []
+		groups[idx].append(Transform3D(_cell_variance(cell), _cell_center(cell)))
+	for idx in groups:
+		_keep(_make_mesh_multimesh(pool[idx], groups[idx]))
 
 func _build_bushes(full: Array[Vector2i], empty: Array[Vector2i]) -> void:
 	for v in BUSH_VARIANTS.size():
@@ -1113,15 +1134,43 @@ func _bush_game_mesh(variant: int, full: bool) -> ArrayMesh:
 # Sonuc normalize: taban y=0, yukseklik target_h, yatayda merkezli.
 func _merged_scene_mesh(path: String, target_h: float) -> ArrayMesh:
 	var scene: Node3D = load(path).instantiate()
-	var aabb := _scene_aabb(scene)
+	var mesh := _merged_node_mesh(scene, target_h)
+	scene.free()
+	return mesh
+
+func _merged_node_mesh(node: Node, target_h: float) -> ArrayMesh:
+	var aabb := _scene_aabb(node)
 	var s := target_h / maxf(aabb.size.y, 0.01)
 	var norm := Transform3D(Basis.IDENTITY.scaled(Vector3(s, s, s)),
 			Vector3(-aabb.get_center().x * s, -aabb.position.y * s,
 					-aabb.get_center().z * s))
 	var result := ArrayMesh.new()
-	_merge_into(scene, norm, result)
-	scene.free()
+	_merge_into(node, norm, result)
 	return result
+
+# "Paket" GLB'ler (tek dosyada birden cok agac/kaya) icin varyant havuzu:
+# mesh tasiyan her ust duzey cocuk ayri, normalize edilmis bir mesh olur.
+# Tek parcali modellerde havuz tek elemanlidir.
+var _pool_cache: Dictionary = {}
+
+func _model_pool(model: String, target_h: float) -> Array:
+	var key := model + ":" + str(target_h)
+	if _pool_cache.has(key):
+		return _pool_cache[key]
+	var scene: Node3D = load(NATURE_PATH % model).instantiate()
+	var parts: Array = []
+	for child in scene.get_children():
+		if _scene_aabb(child).size.y > 0.001:
+			parts.append(child)
+	var pool: Array = []
+	if parts.size() <= 1:
+		pool.append(_merged_node_mesh(scene, target_h))
+	else:
+		for part in parts:
+			pool.append(_merged_node_mesh(part, target_h))
+	scene.free()
+	_pool_cache[key] = pool
+	return pool
 
 func _merge_into(node: Node, xform: Transform3D, result: ArrayMesh) -> void:
 	var t := xform
@@ -1291,6 +1340,11 @@ func _try_harvest(cell: Vector2i) -> bool:
 	if ch == "" or not OBJECT_DEFS.has(ch):
 		return false
 	var def: Dictionary = OBJECT_DEFS[ch]
+	if ch == "#":
+		# Tas turune gore dusen esya degisir (normal/komur/altin)
+		var v := _stone_variant(cell)
+		def = {"drops": STONE_VARIANTS[v]["drops"], "hits": STONE_VARIANTS[v]["hits"],
+				"tool": {"item": "kazma", "hits": 2}}
 	var hits_needed: int = def.get("hits", 1)
 	if def.has("tool") and _held_item == def["tool"]["item"]:
 		hits_needed = def["tool"]["hits"]
@@ -1311,6 +1365,12 @@ func _try_harvest(cell: Vector2i) -> bool:
 	if def.has("becomes"):
 		_objects[cell] = def["becomes"]
 		_regrow[cell] = REGROW_SECONDS
+		_regrow_type[cell] = ch
+	elif def.get("vanish_regrow", false):
+		# Cicek/mantar: kaybolur, bir sure sonra ayni yerde yeniden biter
+		_objects.erase(cell)
+		_regrow[cell] = REGROW_SECONDS * 2.0
+		_regrow_type[cell] = ch
 	else:
 		_objects.erase(cell)
 		_solid_cells.erase(cell)
@@ -1327,7 +1387,8 @@ func _tick_regrow(delta: float) -> void:
 		return
 	for cell in ready_cells:
 		_regrow.erase(cell)
-		_objects[cell] = "m"
+		_objects[cell] = _regrow_type.get(cell, "m")
+		_regrow_type.erase(cell)
 	_rebuild_objects()
 
 ## Eline alinan aletin 3D modeli (Kenney Survival Kit)

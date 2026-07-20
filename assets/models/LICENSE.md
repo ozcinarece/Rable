@@ -9,5 +9,5 @@ atif gerekmez (yine de tesekkurler!).
   https://kaylousberg.itch.io/ (github.com/KayKit-Game-Assets)
 - tools/: Kenney Survival Kit - https://kenney.nl/assets/survival-kit
 
-- nature/quat_*.glb: Quaternius nature paketleri (poly.pizza uzerinden) -
+- nature/quat_*.glb ve quat2_*.glb: Quaternius nature paketleri (poly.pizza) -
   https://quaternius.com - CC0

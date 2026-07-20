@@ -288,7 +288,7 @@ func _update_detail() -> void:
 		Inventory.get_count(_selected_item),
 		Items.description(_selected_item),
 	]
-	panel_eat_button.visible = _selected_item == "meyve"
+	panel_eat_button.visible = _selected_item == "meyve" or _selected_item == "mantar"
 	hold_button.visible = true
 	hold_button.text = "Bırak" if _held_item == _selected_item else "Eline Al"
 
@@ -355,7 +355,8 @@ func _update_hunger() -> void:
 		return
 	_stomach_bar.value = Hunger.value
 	_stomach_label.text = "%d/100" % int(Hunger.value)
-	eat_button.disabled = Inventory.get_count("meyve") <= 0 or Hunger.value >= Hunger.MAX_VALUE
+	eat_button.disabled = (Inventory.get_count("meyve") <= 0
+			and Inventory.get_count("mantar") <= 0) or Hunger.value >= Hunger.MAX_VALUE
 
 func _update_thirst() -> void:
 	if _drop_bar == null:
@@ -364,8 +365,14 @@ func _update_thirst() -> void:
 	_drop_label.text = "%d/100" % int(Thirst.value)
 
 func _on_eat_pressed() -> void:
-	if Inventory.remove_item("meyve", 1):
-		Hunger.eat(25.0)
+	# Panelde mantar seciliyken mantar yenir; hizli butonda once meyve
+	var order: Array[String] = ["meyve", "mantar"]
+	if _selected_item == "mantar":
+		order = ["mantar", "meyve"]
+	for food in order:
+		if Inventory.get_count(food) > 0 and Inventory.remove_item(food, 1):
+			Hunger.eat(25.0 if food == "meyve" else 15.0)
+			return
 
 # Kayitli oyunu silip sifirdan baslar.
 func _on_reset_pressed() -> void:
