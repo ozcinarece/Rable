@@ -722,10 +722,10 @@ func _on_drop_item_requested(slot_index: int) -> void:
 	var content: Dictionary = Inventory.clear_slot(slot_index)
 	if content.is_empty():
 		return
-	var facing := player.facing.normalized()
+	var facing: Vector2 = player.facing.normalized()
 	if facing == Vector2.ZERO:
 		facing = Vector2.DOWN
-	var pos := player.global_position + facing * 30.0
+	var pos: Vector2 = player.global_position + facing * 30.0
 	_spawn_ground_item(pos, content["id"], content["count"])
 	_spawn_floating_text(_get_player_cell(), "Yere birakildi", Color(0.9, 0.85, 0.7))
 
