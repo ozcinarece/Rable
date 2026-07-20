@@ -1,14 +1,16 @@
 name: Web build ve GitHub Pages yayini
 
-# Her main'e push'ta Godot Web (HTML5) build'i uretir ve GitHub Pages'e
-# yayinlar. Boylece telefonun tarayicisindan sabit bir link ile oyun
-# test edilebilir. Not: preset'te thread_support=false olmali, cunku
-# GitHub Pages SharedArrayBuffer icin gereken COOP/COEP basliklarini
-# gondermez; thread'siz build bu basliklar olmadan calisir.
+# Iki oyunu birden yayinlar:
+#   /      -> 2D ana oyun (main dali)
+#   /3d/   -> 3D deneme (3d dali, her zaman son hali)
+# main VEYA 3d dalina her push'ta iki dal da bastan derlenir; boylece
+# site hep iki dalin da guncel halini tasir.
+# Not: preset'te thread_support=false olmali, cunku GitHub Pages
+# SharedArrayBuffer icin gereken COOP/COEP basliklarini gondermez.
 
 on:
   push:
-    branches: [main]
+    branches: [main, 3d]
   workflow_dispatch: {}
 
 env:
@@ -29,8 +31,17 @@ jobs:
   build-web:
     runs-on: ubuntu-latest
     steps:
-      - name: Repoyu al
+      - name: main dalini al (2D)
         uses: actions/checkout@v4
+        with:
+          ref: main
+          path: src-main
+
+      - name: 3d dalini al (3D deneme)
+        uses: actions/checkout@v4
+        with:
+          ref: 3d
+          path: src-3d
 
       - name: Godot editor + export template'lerini indir
         run: |
@@ -52,18 +63,20 @@ jobs:
           mkdir -p "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}"
           cp -r "$TEMPLATES_SRC"/* "$HOME/.local/share/godot/export_templates/${GODOT_TEMPLATE_VERSION}/"
 
-      - name: Web build olustur
+      - name: Web build olustur (2D kok dizine, 3D /3d altina)
         run: |
           set -e
-          mkdir -p builds/web
-          /opt/godot/godot --headless --path "$GITHUB_WORKSPACE" \
-            --export-release "Web" builds/web/index.html
-          ls -la builds/web
+          mkdir -p site/3d
+          /opt/godot/godot --headless --path "$GITHUB_WORKSPACE/src-main" \
+            --export-release "Web" "$GITHUB_WORKSPACE/site/index.html"
+          /opt/godot/godot --headless --path "$GITHUB_WORKSPACE/src-3d" \
+            --export-release "Web" "$GITHUB_WORKSPACE/site/3d/index.html"
+          ls -la site site/3d
 
       - name: Pages artifact'i olarak yukle
         uses: actions/upload-pages-artifact@v3
         with:
-          path: builds/web
+          path: site
 
   deploy:
     needs: build-web
@@ -72,6 +85,12 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # Repo public oldugunda Pages'i otomatik aktive eder
+      - name: Pages'i yapilandir (gerekirse aktive et)
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
       - name: GitHub Pages'e yayinla
         id: deployment
         uses: actions/deploy-pages@v4
