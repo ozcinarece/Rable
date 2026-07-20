@@ -679,9 +679,10 @@ func _build_terrain() -> void:
 					absf(float(_sample_terrain(x, z + 0.5)[0]) - height))
 			steep = maxf(steep, absf(float(_sample_terrain(x - 0.5, z)[0]) - height))
 			steep = maxf(steep, absf(float(_sample_terrain(x, z - 0.5)[0]) - height))
-			if steep > 0.34:
+			if steep > 0.40:
+				# Koyu katmanli kaya (parlak isikta bile bej-gri kalir)
 				var band := 0.5 + 0.5 * sin(height * 9.0)
-				c = Color(0.58, 0.53, 0.46).lerp(Color(0.72, 0.66, 0.56), band)
+				c = Color(0.38, 0.33, 0.28).lerp(Color(0.52, 0.46, 0.38), band)
 			# Organik his: renkte deterministik minik oynama
 			var n := sin(float(i) * 12.9898 + float(j) * 78.233) * 0.035
 			row_p.append(Vector3(x, height, z))
