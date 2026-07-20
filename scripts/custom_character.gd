@@ -73,21 +73,36 @@ func _build(skin: Color, shirt: Color, pants: Color) -> void:
 	head_inst.material_override = _mat(skin)
 	_head.add_child(head_inst)
 
-	# Yuz: iki goz + yanak pembesi + minik gulumseme
+	# Yuz: iri parlak gozler + pembe yanaklar + gulen acik agiz
 	# (gozler percemin ALTINDA kalacak yukseklikte - yuz hep okunur)
 	for side in [-1.0, 1.0]:
-		_add_ball(_head, Vector3(side * 0.055, 0.10, 0.142), 0.02, Color(0.15, 0.13, 0.14))
-		_add_ball(_head, Vector3(side * 0.105, 0.06, 0.112), 0.022, Color(0.98, 0.62, 0.58, 1.0))
-	var smile := MeshInstance3D.new()
-	var smile_mesh := TorusMesh.new()
-	smile_mesh.inner_radius = 0.015
-	smile_mesh.outer_radius = 0.03
-	smile.mesh = smile_mesh
-	smile.position = Vector3(0, 0.045, 0.138)
-	smile.rotation_degrees = Vector3(65, 0, 0)
-	smile.scale = Vector3(1, 1, 0.5)
-	smile.material_override = _mat(Color(0.62, 0.32, 0.28))
-	_head.add_child(smile)
+		# Goz: dikey oval, koyu
+		var eye := SphereMesh.new()
+		eye.radius = 0.023
+		eye.height = 0.06
+		var eye_inst := MeshInstance3D.new()
+		eye_inst.mesh = eye
+		eye_inst.position = Vector3(side * 0.056, 0.10, 0.142)
+		eye_inst.material_override = _mat(Color(0.14, 0.12, 0.13))
+		_head.add_child(eye_inst)
+		# Goz parlamasi: minik beyaz nokta (canlilik verir)
+		_add_ball(_head, Vector3(side * 0.056 + 0.009, 0.115, 0.161),
+				0.0075, Color(0.99, 0.99, 0.99))
+		# Yanak pembesi
+		_add_ball(_head, Vector3(side * 0.098, 0.062, 0.118),
+				0.024, Color(0.99, 0.66, 0.62))
+	# Agiz: gulumseyen kucuk acik agiz (yassi oval)
+	var mouth := SphereMesh.new()
+	mouth.radius = 0.024
+	mouth.height = 0.032
+	var mouth_inst := MeshInstance3D.new()
+	mouth_inst.mesh = mouth
+	mouth_inst.position = Vector3(0, 0.052, 0.144)
+	mouth_inst.scale = Vector3(1.15, 1.0, 0.45)
+	mouth_inst.material_override = _mat(Color(0.52, 0.23, 0.20))
+	_head.add_child(mouth_inst)
+	# Dil: agzin icinde minik pembe detay
+	_add_ball(_head, Vector3(0, 0.044, 0.152), 0.011, Color(0.95, 0.55, 0.55))
 
 	# Sapka/sac/gozluk noktasi: kafa tabaninda (mini ile ayni cerceve)
 	head_attach = Node3D.new()
