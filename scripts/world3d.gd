@@ -53,9 +53,17 @@ const FOREST_STYLES := {
 	"ince": {"label": "İnce Uzun", "models": ["tree_thin", "tree_tall",
 			"tree_pineTallA_detailed", "tree_pineTallB_detailed"]},
 }
-## Karakter secenekleri (Gorunum paneli): Mini ailesi - 12 govde/kiyafet.
-## Tek govde tipi = tum aksesuarlar herkese tam oturur.
+## Karakter secenekleri (Gorunum paneli).
+## "Yuvarlak" olanlar kendi tasarimimiz (kod ile insa: kose yok,
+## kure kafa + kapsul govde; spec = ten/tisort/pantolon renkleri).
+## Mini'ler Kenney paketi (blok stil). Ayni olcek = aksesuarlar ortak.
 const CHARACTER_OPTIONS := [
+	["Yuvarlak Mavi", "custom:f2c29b/4fa7d8/5b6b8c"],
+	["Yuvarlak Yeşil", "custom:e8b48d/6abf69/6b5b4a"],
+	["Yuvarlak Pembe", "custom:f5cba7/ef8fb0/7a6f8f"],
+	["Yuvarlak Sarı", "custom:d9a06b/f2c14e/4f5d75"],
+	["Yuvarlak Kırmızı", "custom:c98a5e/d95f5f/3f4a5f"],
+	["Yuvarlak Mor", "custom:f2c29b/9b7fd4/44506b"],
 	["Erkek A", "res://assets/models/characters/mini/character-male-a.glb"],
 	["Erkek B", "res://assets/models/characters/mini/character-male-b.glb"],
 	["Erkek C", "res://assets/models/characters/mini/character-male-c.glb"],
@@ -132,7 +140,7 @@ var _held_item: String = ""
 # Kamera + gorunum ayarlari (kaydedilir)
 var cam_distance: float = 1.0  # yakinlik carpani
 var cam_pitch: float = 52.0    # bakis acisi (derece)
-var character_path: String = "res://assets/models/characters/mini/character-male-a.glb"
+var character_path: String = "custom:f2c29b/4fa7d8/5b6b8c"  # varsayilan: yuvarlak
 var forest_style: String = "karisik"
 var hat_id: String = "yok"
 var face_path: String = ""
@@ -165,6 +173,7 @@ func _ready() -> void:
 
 func _setup_screenshot(save_path: String) -> void:
 	# Vitrin: yeni tasarimlar fotografta gorunsun diye ornek gorunum
+	player.set_character("custom:f2c29b/4fa7d8/5b6b8c")
 	player.set_hair("kut", Color(0.75, 0.30, 0.15))
 	player.set_hat("yok")
 	var timer := get_tree().create_timer(4.0)
@@ -221,7 +230,7 @@ func _load_settings() -> void:
 		cam_distance = clampf(float(parsed.get("zoom", 1.0)), 0.55, 1.7)
 		cam_pitch = clampf(float(parsed.get("pitch", 52.0)), 35.0, 68.0)
 		var saved_char := String(parsed.get("character", character_path))
-		if ResourceLoader.exists(saved_char):
+		if saved_char.begins_with("custom:") or ResourceLoader.exists(saved_char):
 			character_path = saved_char
 		var saved_forest := String(parsed.get("forest", forest_style))
 		if FOREST_STYLES.has(saved_forest):

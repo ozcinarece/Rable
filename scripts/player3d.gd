@@ -35,7 +35,10 @@ const EMBEDDED_WEAPONS: Array[String] = ["Knife", "Knife_Offhand",
 		"Round_Shield", "Rectangle_Shield", "Spike_Shield", "1H_Axe",
 		"2H_Axe", "Mug", "Mage_Hat", "Spellbook", "Spellbook_open"]
 
+const CustomCharScript = preload("res://scripts/custom_character.gd")
+
 var _anim: AnimationPlayer
+var _custom_char: CustomCharScript  # "custom:" karakterlerde dolu
 var _current_anim: String = ""
 var _model_scale: float = 1.0
 var _raw_height: float = 0.67  # modelin ham boyu (aksesuar olcek referansi)
@@ -58,16 +61,39 @@ func _ready() -> void:
 	set_character(DEFAULT_MODEL)
 
 ## Karakter modelini degistirir (Gorunum panelinden secilir).
-## Her paketi otomatik tanir: olcek, animasyon adlari, el kemigi.
+## "custom:ten/tisort/pantolon" = kendi yuvarlak karakterimiz;
+## diger yollar GLB modeli (olcek/animasyon/el kemigi otomatik tanir).
 func set_character(model_path: String) -> void:
-	if not ResourceLoader.exists(model_path):
+	if not model_path.begins_with("custom:") and not ResourceLoader.exists(model_path):
 		return
 	if _model_root != null:
 		_model_root.queue_free()
 		_model_root = null
 	_tool_attach = null
+	_head_attach = null
 	_anim = null
+	_custom_char = null
 	_current_anim = ""
+
+	if model_path.begins_with("custom:"):
+		var custom: CustomCharScript = CustomCharScript.new()
+		custom.setup_from_spec(model_path.substr(7))
+		_visual.add_child(custom)
+		_model_root = custom
+		_custom_char = custom
+		_raw_height = 0.67  # mini olcekte insa edildi (aksesuar uyumu)
+		_model_scale = TARGET_HEIGHT / _raw_height
+		custom.scale = Vector3(_model_scale, _model_scale, _model_scale)
+		_tool_attach = custom.hand_attach
+		_head_attach = custom.head_attach
+		_anim_idle = "idle"
+		_anim_walk = "walk"
+		_anim_run = "run"
+		set_held_tool(_held_tool_path)
+		set_hat(_hat_id)
+		set_face(_face_path)
+		set_hair(_hair_style, _hair_color)
+		return
 
 	var model: Node3D = load(model_path).instantiate()
 	_visual.add_child(model)
@@ -410,9 +436,13 @@ func _make_spear() -> Node3D:
 	return spear
 
 func _play(anim_name: String) -> void:
-	if _anim == null or anim_name == "" or _current_anim == anim_name:
+	if anim_name == "" or _current_anim == anim_name:
 		return
-	if not _anim.has_animation(anim_name):
+	if _custom_char != null:
+		_current_anim = anim_name
+		_custom_char.motion = anim_name  # prosedurel animasyon
+		return
+	if _anim == null or not _anim.has_animation(anim_name):
 		return
 	_current_anim = anim_name
 	_anim.play(anim_name, 0.2)  # 0.2 sn yumusak gecis
