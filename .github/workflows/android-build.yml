@@ -1,4 +1,4 @@
-name: Android APK build
+name: Android APK build (3D deneme)
 
 # Her main'e push'ta ve istersen elle (Actions sekmesinden "Run workflow")
 # tetiklenir. Godot'u ve Android export template'lerini indirip
@@ -9,7 +9,7 @@ name: Android APK build
 
 on:
   push:
-    branches: [main]
+    branches: [3d]
   workflow_dispatch: {}
 
 env:
@@ -84,20 +84,20 @@ jobs:
           echo "ANDROID_HOME=$ANDROID_HOME"
           mkdir -p builds
           /opt/godot/godot --headless --verbose --path "$GITHUB_WORKSPACE" \
-            --export-debug "Android" builds/survival-sandbox-debug.apk
+            --export-debug "Android" builds/survival-3d-debug.apk
           ls -la builds
 
       - name: APK'yi is ciktisi olarak yukle
         uses: actions/upload-artifact@v4
         with:
-          name: survival-sandbox-debug-apk
-          path: builds/survival-sandbox-debug.apk
+          name: survival-3d-debug-apk
+          path: builds/survival-3d-debug.apk
 
       - name: latest-apk release'ini guncelle
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: latest-apk
-          name: "Son Android build (debug)"
-          body: "Otomatik olusturulan en guncel debug APK. Telefonda 'bilinmeyen kaynaklardan yukleme' izniyle kurabilirsin."
-          make_latest: true
-          files: builds/survival-sandbox-debug.apk
+          tag_name: 3d-apk
+          name: "3D deneme build (Asama B)"
+          body: "3D deneme surumu (ayri uygulama olarak kurulur, ana oyunu etkilemez)."
+          make_latest: false
+          files: builds/survival-3d-debug.apk

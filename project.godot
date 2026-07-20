@@ -6,9 +6,9 @@ config_version=5
 
 [application]
 
-config/name="Survival Sandbox"
-config/description="2D top-down survival sandbox oyunu - Milestone 1: tile tabanli dunya + oyuncu hareketi"
-run/main_scene="res://scenes/World.tscn"
+config/name="Survival Sandbox 3D"
+config/description="Survival sandbox - 3D deneme dali (Asama B: Go-Go Town / Animal Crossing gorunumu)"
+run/main_scene="res://scenes/World3D.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 
 [autoload]
