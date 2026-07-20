@@ -1,9 +1,8 @@
 extends Node3D
-## 3D oyuncu - Asama B1 yer tutucusu: sevimli kapsul + sapka.
+## 3D oyuncu - KayKit Sovalye modeli (CC0), yurume/bekleme animasyonlu.
 ## Hareket ayni 2D'deki gibi: parmagi basip surukle (sanal joystick)
 ## veya klavye (WASD/ok). Carpisma, fizik motoru yerine dunyanin
 ## izgara kontroluyle yapilir (basit ve mobilde ucuz).
-## B4'te yerini animasyonlu gercek karakter modeli alacak.
 
 ## Kisa dokunusta ekran konumuyla yayinlanir (World hucreye cevirir)
 signal world_tapped(screen_pos: Vector2)
@@ -23,52 +22,60 @@ var _touch_start := Vector2.ZERO
 var _touch_current := Vector2.ZERO
 var _touch_start_time := 0.0
 
+const MODEL_PATH := "res://assets/models/characters/Knight.glb"
+const TARGET_HEIGHT: float = 1.35  # karakterin dunya icindeki boyu (metre)
+
+var _anim: AnimationPlayer
+var _current_anim: String = ""
+
 func _ready() -> void:
 	_visual = Node3D.new()
 	add_child(_visual)
 
-	var body := MeshInstance3D.new()
-	var capsule := CapsuleMesh.new()
-	capsule.radius = 0.24
-	capsule.height = 0.85
-	body.mesh = capsule
-	body.position = Vector3(0, 0.46, 0)
-	body.material_override = _flat_material(Color(0.93, 0.52, 0.40))
-	_visual.add_child(body)
+	var model: Node3D = load(MODEL_PATH).instantiate()
+	_visual.add_child(model)
+	# Model hangi olcekte gelirse gelsin boyunu TARGET_HEIGHT'a getir
+	var mesh_node := _find_mesh_instance(model)
+	if mesh_node != null:
+		var height: float = mesh_node.get_aabb().size.y
+		if height > 0.01:
+			var s := TARGET_HEIGHT / height
+			model.scale = Vector3(s, s, s)
+	# Animasyonlar gltf'ten donguye alinmadan gelir; elle donguletiyoruz
+	_anim = model.find_child("AnimationPlayer", true, false)
+	if _anim != null:
+		for anim_name in ["Idle", "Walking_A", "Running_A"]:
+			if _anim.has_animation(anim_name):
+				_anim.get_animation(anim_name).loop_mode = Animation.LOOP_LINEAR
+		_play("Idle")
 
-	var head := MeshInstance3D.new()
-	var head_mesh := SphereMesh.new()
-	head_mesh.radius = 0.19
-	head_mesh.height = 0.38
-	head.mesh = head_mesh
-	head.position = Vector3(0, 0.98, 0)
-	head.material_override = _flat_material(Color(0.98, 0.85, 0.70))
-	_visual.add_child(head)
+func _play(anim_name: String) -> void:
+	if _anim == null or _current_anim == anim_name:
+		return
+	if not _anim.has_animation(anim_name):
+		return
+	_current_anim = anim_name
+	_anim.play(anim_name, 0.2)  # 0.2 sn yumusak gecis
 
-	var hat := MeshInstance3D.new()
-	var cone := CylinderMesh.new()
-	cone.top_radius = 0.02
-	cone.bottom_radius = 0.16
-	cone.height = 0.24
-	hat.mesh = cone
-	hat.position = Vector3(0, 1.2, 0)
-	hat.material_override = _flat_material(Color(0.98, 0.62, 0.22))
-	_visual.add_child(hat)
-
-func _flat_material(color: Color) -> StandardMaterial3D:
-	var material := StandardMaterial3D.new()
-	material.albedo_color = color
-	material.roughness = 1.0
-	return material
+func _find_mesh_instance(node: Node) -> MeshInstance3D:
+	if node is MeshInstance3D:
+		return node as MeshInstance3D
+	for child in node.get_children():
+		var found := _find_mesh_instance(child)
+		if found != null:
+			return found
+	return null
 
 func _physics_process(delta: float) -> void:
 	var dir := _get_input_direction()
 	if dir == Vector2.ZERO:
+		_play("Idle")
 		return
 	facing = dir
+	_play("Walking_A")
 	_try_move(Vector3(dir.x, 0, dir.y) * SPEED * delta)
-	# Yuruyus yonune yumusakca don
-	var target_angle := atan2(-dir.x, -dir.y)
+	# Yuruyus yonune yumusakca don (model +Z yonune bakar)
+	var target_angle := atan2(dir.x, dir.y)
 	_visual.rotation.y = lerp_angle(_visual.rotation.y, target_angle, 12.0 * delta)
 
 # Eksenleri ayri dener: duvara surtununce diger eksende kaymaya devam

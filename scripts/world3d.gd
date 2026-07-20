@@ -36,11 +36,25 @@ const REGROW_SECONDS := 60.0
 const CAM_BASE_DIST := 9.2
 const SETTINGS_PATH := "user://cam3d.json"
 
+# Kenney Nature Kit modelleri (CC0). Hucreye gore deterministik secilir:
+# orman cesitli ama her acilista ayni gorunur.
+const NATURE_PATH := "res://assets/models/nature/%s.glb"
+const TREE_MODELS: Array[String] = ["tree_default", "tree_oak", "tree_fat",
+		"tree_pineRoundA", "tree_pineRoundC", "tree_simple"]
+const STONE_MODELS: Array[String] = ["rock_largeA", "rock_tallA",
+		"stone_tallB", "rock_largeB"]
+const BUSH_FULL_MODEL := "plant_bushDetailed"
+const BUSH_EMPTY_MODEL := "plant_bushSmall"
+# Cim hucrelerine serpistirilen susler (engel degil, toplanmaz)
+const DECOR_MODELS: Array[String] = ["flower_redA", "flower_yellowA",
+		"flower_purpleA", "grass_leafs", "mushroom_red", "grass_large"]
+
 var _ground_char: Dictionary = {}  # hucre -> zemin karakteri
 var _objects: Dictionary = {}      # hucre -> "T"/"#"/"m"/"n"
 var _object_hits: Dictionary = {}  # hucre -> alinan vurus
 var _regrow: Dictionary = {}       # bos cali -> kalan sure
 var _object_nodes: Array = []      # nesne MultiMesh dugumleri (rebuild icin)
+var _mesh_cache: Dictionary = {}   # model adi -> Mesh (GLB'den bir kez cikarilir)
 var _solid_cells: Dictionary = {}
 var _map_w: int = 0
 var _map_h: int = 0
@@ -263,7 +277,26 @@ func _build_world() -> void:
 					_cell_center(cell) + Vector3(0, float(def["top"]) - 0.25, 0)))
 		add_child(_make_multimesh(box, def["color"], transforms, ch == "~"))
 
+	_build_decor(ground_cells["."])
 	_rebuild_objects()
+
+# Bos cim hucrelerinin bir kismina cicek/ot/mantar serpistirir (sus).
+func _build_decor(grass_cells: Array) -> void:
+	var groups: Dictionary = {}  # model -> Array[Transform3D]
+	for cell in grass_cells:
+		if _objects.has(cell) or cell == _spawn_cell:
+			continue
+		var h := absi(cell.x * 92821 + cell.y * 68917) % 100
+		if h >= 18:
+			continue  # ~her 6 hucreden biri suslenir
+		var model: String = DECOR_MODELS[h % DECOR_MODELS.size()]
+		if not groups.has(model):
+			groups[model] = []
+		# Hucre icinde hafif kaydirma: izgara hissi kirilsin
+		var off := Vector3(sin(cell.x * 12.9) * 0.25, 0, cos(cell.y * 7.7) * 0.25)
+		groups[model].append(Transform3D(_cell_variance(cell), _cell_center(cell) + off))
+	for model in groups:
+		add_child(_make_model_multimesh(model, groups[model]))
 
 func _cell_center(cell: Vector2i) -> Vector3:
 	return Vector3(cell.x + 0.5, 0, cell.y + 0.5)
@@ -290,74 +323,85 @@ func _rebuild_objects() -> void:
 	_build_stones(stones)
 	_build_bushes(bushes_full, bushes_empty)
 
+# Agaclar: hucreye gore Kenney modeli secilir, model basina tek MultiMesh
 func _build_trees(cells: Array[Vector2i]) -> void:
-	if cells.is_empty():
-		return
-	var trunk := CylinderMesh.new()
-	trunk.top_radius = 0.11
-	trunk.bottom_radius = 0.14
-	trunk.height = 0.6
-	var leaf_low := SphereMesh.new()
-	leaf_low.radius = 0.48
-	leaf_low.height = 0.8
-	var leaf_top := SphereMesh.new()
-	leaf_top.radius = 0.32
-	leaf_top.height = 0.55
-
-	var trunk_t: Array[Transform3D] = []
-	var low_t: Array[Transform3D] = []
-	var top_t: Array[Transform3D] = []
+	var groups: Dictionary = {}
 	for cell in cells:
-		var base := _cell_center(cell)
-		var rot := _cell_variance(cell)
-		trunk_t.append(Transform3D(rot, base + Vector3(0, 0.3, 0)))
-		low_t.append(Transform3D(rot, base + Vector3(0, 0.85, 0)))
-		top_t.append(Transform3D(rot, base + Vector3(0, 1.25, 0)))
-	_keep(_make_multimesh(trunk, Color(0.48, 0.34, 0.22), trunk_t))
-	_keep(_make_multimesh(leaf_low, Color(0.36, 0.65, 0.33), low_t))
-	_keep(_make_multimesh(leaf_top, Color(0.45, 0.74, 0.38), top_t))
+		var model: String = TREE_MODELS[absi(cell.x * 31 + cell.y * 57) % TREE_MODELS.size()]
+		if not groups.has(model):
+			groups[model] = []
+		groups[model].append(Transform3D(_cell_variance(cell).scaled(Vector3(1.25, 1.25, 1.25)),
+				_cell_center(cell)))
+	for model in groups:
+		_keep(_make_model_multimesh(model, groups[model]))
 
 func _build_stones(cells: Array[Vector2i]) -> void:
-	if cells.is_empty():
-		return
-	var rock := SphereMesh.new()
-	rock.radius = 0.42
-	rock.height = 0.55
-	var transforms: Array[Transform3D] = []
+	var groups: Dictionary = {}
 	for cell in cells:
-		transforms.append(Transform3D(_cell_variance(cell),
-				_cell_center(cell) + Vector3(0, 0.16, 0)))
-	_keep(_make_multimesh(rock, Color(0.62, 0.63, 0.66), transforms))
+		var model: String = STONE_MODELS[absi(cell.x * 17 + cell.y * 43) % STONE_MODELS.size()]
+		if not groups.has(model):
+			groups[model] = []
+		groups[model].append(Transform3D(_cell_variance(cell), _cell_center(cell)))
+	for model in groups:
+		_keep(_make_model_multimesh(model, groups[model]))
 
 func _build_bushes(full: Array[Vector2i], empty: Array[Vector2i]) -> void:
 	if not full.is_empty():
-		var bush := SphereMesh.new()
-		bush.radius = 0.36
-		bush.height = 0.55
-		var berry := SphereMesh.new()
-		berry.radius = 0.06
-		berry.height = 0.12
 		var bush_t: Array[Transform3D] = []
 		var berry_t: Array[Transform3D] = []
+		var berry := SphereMesh.new()
+		berry.radius = 0.05
+		berry.height = 0.1
 		for cell in full:
 			var base := _cell_center(cell)
-			bush_t.append(Transform3D(_cell_variance(cell), base + Vector3(0, 0.2, 0)))
-			berry_t.append(Transform3D(Basis.IDENTITY, base + Vector3(0.14, 0.38, 0.12)))
-			berry_t.append(Transform3D(Basis.IDENTITY, base + Vector3(-0.12, 0.32, -0.08)))
-		_keep(_make_multimesh(bush, Color(0.32, 0.60, 0.30), bush_t))
-		_keep(_make_multimesh(berry, Color(0.90, 0.30, 0.35), berry_t))
+			bush_t.append(Transform3D(_cell_variance(cell).scaled(Vector3(1.3, 1.3, 1.3)), base))
+			# Meyveler: cali ustunde iki kirmizi minik kure (dolu isareti)
+			berry_t.append(Transform3D(Basis.IDENTITY, base + Vector3(0.13, 0.42, 0.10)))
+			berry_t.append(Transform3D(Basis.IDENTITY, base + Vector3(-0.11, 0.36, -0.07)))
+		_keep(_make_model_multimesh(BUSH_FULL_MODEL, bush_t))
+		_keep(_make_multimesh(berry, Color(0.90, 0.28, 0.33), berry_t))
 	if not empty.is_empty():
-		var bush2 := SphereMesh.new()
-		bush2.radius = 0.28
-		bush2.height = 0.42
 		var t2: Array[Transform3D] = []
 		for cell in empty:
-			t2.append(Transform3D(_cell_variance(cell), _cell_center(cell) + Vector3(0, 0.16, 0)))
-		_keep(_make_multimesh(bush2, Color(0.30, 0.45, 0.26), t2))
+			t2.append(Transform3D(_cell_variance(cell), _cell_center(cell)))
+		_keep(_make_model_multimesh(BUSH_EMPTY_MODEL, t2))
 
 func _keep(node: MultiMeshInstance3D) -> void:
 	add_child(node)
 	_object_nodes.append(node)
+
+# GLB modelinden Mesh cikarir (bir kez; sonrasi onbellekten).
+# Kenney doga modelleri tek mesh'tir; materyaller mesh'in icinde gelir.
+func _find_mesh(node: Node) -> Mesh:
+	if node is MeshInstance3D:
+		var mi := node as MeshInstance3D
+		if mi.mesh != null:
+			return mi.mesh
+	for child in node.get_children():
+		var found := _find_mesh(child)
+		if found != null:
+			return found
+	return null
+
+func _model_mesh(model: String) -> Mesh:
+	if _mesh_cache.has(model):
+		return _mesh_cache[model]
+	var scene: Node = load(NATURE_PATH % model).instantiate()
+	var mesh := _find_mesh(scene)
+	scene.free()
+	_mesh_cache[model] = mesh
+	return mesh
+
+func _make_model_multimesh(model: String, transforms: Array) -> MultiMeshInstance3D:
+	var multi := MultiMesh.new()
+	multi.transform_format = MultiMesh.TRANSFORM_3D
+	multi.mesh = _model_mesh(model)
+	multi.instance_count = transforms.size()
+	for i in transforms.size():
+		multi.set_instance_transform(i, transforms[i])
+	var node := MultiMeshInstance3D.new()
+	node.multimesh = multi
+	return node
 
 # Hucreye bagli deterministik minik dondurme/olcek farki (organik gorunum)
 func _cell_variance(cell: Vector2i) -> Basis:
