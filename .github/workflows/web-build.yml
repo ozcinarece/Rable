@@ -72,6 +72,13 @@ jobs:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      # Repo public oldugunda Pages'i otomatik aktive eder; private iken
+      # bu adim hata verir (bilinen durum, repo public olunca duzelir)
+      - name: Pages'i yapilandir (gerekirse aktive et)
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
       - name: GitHub Pages'e yayinla
         id: deployment
         uses: actions/deploy-pages@v4
