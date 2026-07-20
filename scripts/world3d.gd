@@ -896,7 +896,7 @@ func _build_lake_surface() -> void:
 		return
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var res := 2  # 0.5 m karolar: dalga icin yeterli siklikta kose noktasi
+	var res := 4  # 0.25 m karolar: kiyi kopugu bandi puruzsuz olsun
 	var step := 1.0 / float(res)
 	var quads := 0
 	for j in _map_h * res:
@@ -909,6 +909,10 @@ func _build_lake_surface() -> void:
 					[Vector2(x0 + step, z0), Vector2(x0 + step, z0 + step), Vector2(x0, z0 + step)]]:
 				for p: Vector2 in tri:
 					st.set_normal(Vector3.UP)
+					# Kiyiya uzaklik kose rengine islenir: shader bununla
+					# sig/derin rengi ve kiyi kopugunu cizer (derinlik
+					# dokusu gerektirmez - telefon GL'inde garantili)
+					st.set_color(Color(_shore_depth(lake_cells, p.x, p.y), 0, 0))
 					st.add_vertex(Vector3(p.x, LAKE_Y, p.y))
 			quads += 1
 	if quads == 0:
@@ -917,6 +921,22 @@ func _build_lake_surface() -> void:
 	inst.mesh = st.commit()
 	inst.material_override = _lake_material()
 	add_child(inst)
+
+# Noktanin gol kiyisina uzakligi, 0 (kiyi) .. 1 (>=1.2 m iceride)
+func _shore_depth(lake_cells: Dictionary, x: float, z: float) -> float:
+	var ci := floori(x)
+	var cj := floori(z)
+	var nearest := 9.0
+	for dj in range(-2, 3):
+		for di in range(-2, 3):
+			var cell := Vector2i(ci + di, cj + dj)
+			if lake_cells.has(cell):
+				continue
+			# Gol olmayan hucrenin dikdortgenine uzaklik
+			var nx := clampf(x, float(cell.x), float(cell.x) + 1.0)
+			var nz := clampf(z, float(cell.y), float(cell.y) + 1.0)
+			nearest = minf(nearest, Vector2(x - nx, z - nz).length())
+	return clampf(nearest / 1.2, 0.0, 1.0)
 
 # Nokta bir gol hucresine (kiyi payi dahil) yakin mi? Su yuzeyi kiyida
 # arazinin altina girsin diye karolar hucre sinirindan biraz tasar.
@@ -942,24 +962,35 @@ func _lake_material() -> ShaderMaterial:
 	var shader := Shader.new()
 	shader.code = """
 shader_type spatial;
-// Gol suyu: denizden biraz acik ton, sik ve canli dalgacik
-uniform vec4 col : source_color = vec4(0.15, 0.40, 0.70, 1.0);
+// Stilize gol: sigda turkuaz, derinde koyu mavi; kiyida dalgalanan
+// beyaz kopuk halkasi; ince piriltilar. Derinlik COLOR.r'den okunur
+// (mesh'e islenmis kiyi mesafesi) - depth texture gerektirmez.
+uniform vec4 deep_col : source_color = vec4(0.12, 0.34, 0.60, 1.0);
+uniform vec4 shallow_col : source_color = vec4(0.28, 0.60, 0.72, 1.0);
 void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	VERTEX.y += sin(TIME * 2.1 + wp.x * 2.6 + wp.z * 1.8) * 0.022
-			+ cos(TIME * 1.5 + wp.z * 3.2) * 0.016;
+	VERTEX.y += sin(TIME * 1.9 + wp.x * 2.4 + wp.z * 1.7) * 0.018
+			+ cos(TIME * 1.3 + wp.z * 3.0) * 0.012;
 }
 void fragment() {
 	vec3 wp2 = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	// Gezinen isilti seritleri: kucuk alanda da surekli gorunur olsun
-	// diye esik denizden dusuk tutuldu
-	float band = sin(wp2.x * 2.4 + TIME * 0.9) * sin(wp2.z * 3.1 - TIME * 0.7)
-			* sin((wp2.x + wp2.z) * 1.1 + TIME * 0.5);
-	float foam = smoothstep(0.52, 0.88, band);
-	float shimmer = smoothstep(0.30, 0.52, band) * 0.22;
-	ALBEDO = mix(col.rgb, vec3(0.93, 0.97, 1.0), foam * 0.6 + shimmer);
-	ROUGHNESS = 0.35;
-	SPECULAR = 0.25;
+	float depth = COLOR.r;
+	vec3 col = mix(shallow_col.rgb, deep_col.rgb, smoothstep(0.04, 0.72, depth));
+	// Kiyi kopugu: kiyiyi izleyen, hafifce soluyup dalgalanan bant
+	float wobble = sin(wp2.x * 5.2 + wp2.z * 4.1 + TIME * 1.3) * 0.035
+			+ sin(wp2.x * 2.3 - wp2.z * 3.4 - TIME * 0.8) * 0.025;
+	float foam_edge = smoothstep(0.17, 0.05, depth + wobble);
+	// Ikinci ic halka: kiyidan biraz iceride kesik kesik kopuk cizgisi
+	float ring = smoothstep(0.03, 0.0, abs(depth + wobble - 0.30)) * 0.55
+			* step(0.0, sin(wp2.x * 3.0 + wp2.z * 2.6 + TIME * 0.6));
+	// Ince piriltilar (kocaman beyaz lekeler degil, minik parlamalar)
+	float sp = sin(wp2.x * 7.1 + TIME * 1.1) * sin(wp2.z * 8.3 - TIME * 0.9);
+	float sparkle = smoothstep(0.965, 1.0, sp) * 0.5;
+	col = mix(col, vec3(0.95, 0.98, 1.0),
+			clamp(foam_edge * 0.85 + ring + sparkle, 0.0, 1.0));
+	ALBEDO = col;
+	ROUGHNESS = 0.30;
+	SPECULAR = 0.30;
 }
 """
 	_lake_mat = ShaderMaterial.new()
