@@ -34,6 +34,11 @@ jobs:
           curl -sSL -o skeletons.zip \
             "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0/archive/refs/heads/main.zip"
           unzip -q skeletons.zip -d skeletons
+          curl -sSL -o survival.zip \
+            "https://kenney.nl/media/pages/assets/survival-kit/4065a8185b-1712149243/kenney_survival-kit.zip"
+          unzip -q survival.zip -d survival
+          echo "--- survival kit glb ---"
+          find survival -iname '*.glb' 
           echo "--- nature icerigi (ilk 60 glb) ---"
           find nature -iname '*.glb' | head -60
           echo "--- adventurers glb ---"
@@ -53,6 +58,10 @@ jobs:
             -exec cp {} assets/models/nature/ \;
           find /tmp/dl/adventurers /tmp/dl/skeletons -iname '*.glb' \
             -exec cp {} assets/models/characters/ \;
+          mkdir -p assets/models/tools
+          find /tmp/dl/survival -iname '*.glb' -exec cp {} assets/models/tools/ \;
+          echo "--- kopyalanan aletler ---"
+          ls assets/models/tools
           echo "--- kopyalanan doga modelleri ---"
           ls assets/models/nature | head -80
           echo "--- kopyalanan karakterler ---"
@@ -73,6 +82,7 @@ jobs:
           - nature/: Kenney Nature Kit - https://kenney.nl/assets/nature-kit
           - characters/: KayKit Character Pack Adventurers & Skeletons -
             https://kaylousberg.itch.io/ (github.com/KayKit-Game-Assets)
+          - tools/: Kenney Survival Kit - https://kenney.nl/assets/survival-kit
           EOF
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
