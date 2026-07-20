@@ -1,0 +1,56 @@
+name: 3D ekran goruntusu al
+
+# Oyunu sanal ekranda (xvfb + yazilimsal GL) calistirir, birkac saniye
+# sonra ekran goruntusunu docs/screens/3d.png olarak repoya commit'ler.
+# Boylece gorseller telefona build gitmeden kontrol edilebilir.
+
+on:
+  workflow_dispatch: {}
+
+env:
+  GODOT_TAG: "4.4-stable"
+
+permissions:
+  contents: write
+
+jobs:
+  shot:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repoyu al
+        uses: actions/checkout@v4
+
+      - name: Godot editor indir
+        run: |
+          set -e
+          mkdir -p /opt/godot
+          curl -sSL -o /tmp/godot.zip \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_TAG}/Godot_v${GODOT_TAG}_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d /opt/godot/editor
+          GODOT_BIN=$(find /opt/godot/editor -maxdepth 2 -type f -name 'Godot_*')
+          chmod +x "$GODOT_BIN"
+          mv "$GODOT_BIN" /opt/godot/godot
+
+      - name: Sanal ekran kur
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq xvfb
+
+      - name: Projeyi ice aktar
+        run: /opt/godot/godot --headless --import --path "$GITHUB_WORKSPACE" || true
+
+      - name: Oyunu calistir ve goruntu al
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE/docs/screens"
+          RABLE_SCREENSHOT="$GITHUB_WORKSPACE/docs/screens/3d.png" timeout 180 \
+            xvfb-run -a -s "-screen 0 1280x720x24" \
+            /opt/godot/godot --path "$GITHUB_WORKSPACE" --rendering-driver opengl3 \
+            2>&1 | tail -30 || true
+          ls -la "$GITHUB_WORKSPACE/docs/screens"
+
+      - name: Goruntuyu commit'le
+        run: |
+          cd "$GITHUB_WORKSPACE"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/screens
+          git commit -m "3D ekran goruntusu (otomatik)" || echo "degisiklik yok"
+          git push

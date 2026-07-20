@@ -139,6 +139,17 @@ func _ready() -> void:
 	hud.action_pressed.connect(_on_action_pressed)
 	hud.hold_requested.connect(_on_hold_requested)
 	_build_camera_ui()
+	# CI ekran goruntusu modu: birkac saniye sonra kare kaydet ve cik
+	if OS.has_environment("RABLE_SCREENSHOT"):
+		_setup_screenshot(OS.get_environment("RABLE_SCREENSHOT"))
+
+func _setup_screenshot(save_path: String) -> void:
+	var timer := get_tree().create_timer(4.0)
+	timer.timeout.connect(func():
+		var img := get_viewport().get_texture().get_image()
+		img.save_png(save_path)
+		print("ekran goruntusu kaydedildi: ", save_path)
+		get_tree().quit())
 
 func _process(delta: float) -> void:
 	# Kamera: SADECE konum takip eder, aci sabit kalir
