@@ -441,8 +441,6 @@ func _build_environment() -> void:
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_energy = 0.75
-	# Filmic ton eslemesi: parlak renkler beyaza patlamasin
-	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
@@ -572,7 +570,7 @@ func _water_material() -> ShaderMaterial:
 	shader.code = """
 shader_type spatial;
 // Opak su: seffaflik siralama sorunlari (beyaz ucgen artiklari) olmaz
-uniform vec4 col : source_color = vec4(0.19, 0.48, 0.82, 1.0);
+uniform vec4 col : source_color = vec4(0.24, 0.55, 0.86, 1.0);
 void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	VERTEX.y += sin(TIME * 1.6 + wp.x * 0.9 + wp.z * 0.7) * 0.05
@@ -729,14 +727,15 @@ func _make_multimesh(mesh: Mesh, color: Color, transforms: Array, water := false
 		multi.set_instance_transform(i, transforms[i])
 	var node := MultiMeshInstance3D.new()
 	node.multimesh = multi
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
 	if water:
-		# Harita ici su, denizle ayni dalgali malzemeyi kullanir
-		node.material_override = _water_material()
+		# Gol hucreleri: duz parlak mavi (dalga shader'i MultiMesh'te
+		# derlenemiyor ve beyaz dusuyordu; shader sadece denizde)
+		material.roughness = 0.25
 	else:
-		var material := StandardMaterial3D.new()
-		material.albedo_color = color
 		material.roughness = 1.0
-		node.material_override = material
+	node.material_override = material
 	return node
 
 # --- Oyuncu -------------------------------------------------------------
