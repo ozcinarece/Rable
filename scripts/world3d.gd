@@ -194,8 +194,8 @@ func _setup_screenshot(save_path: String) -> void:
 			print("genis kare kaydedildi")
 			# Ucuncu kare: cali adaylari vitrini (kullanici secimi icin)
 			var studio := _build_bush_showcase()
-			camera.position = studio + Vector3(3.0, 3.6, 8.2)
-			camera.rotation_degrees = Vector3(-22, 0, 0)
+			camera.position = studio + Vector3(5.0, 2.6, 9.0)
+			camera.rotation_degrees = Vector3(-13, 0, 0)
 			var timer3 := get_tree().create_timer(1.0)
 			timer3.timeout.connect(func():
 				var img3 := get_viewport().get_texture().get_image()
@@ -203,9 +203,13 @@ func _setup_screenshot(save_path: String) -> void:
 				print("cali vitrini kaydedildi")
 				get_tree().quit())))
 
-# Cali aday vitrini: 6 Kenney modeli + 2 Claude tasarimi, numarali.
+# Cali aday vitrini: Quaternius (CC0) cali modelleri, numarali tek sira.
 # Haritadan uzakta yuksek bir "studyo" zemininde kurulur; sadece CI
-# ekran goruntusu modunda cagrilir.
+# ekran goruntusu modunda cagrilir. GLB sahnesi komple yuklenir ki
+# cok parcali modeller (uclu cali gibi) eksiksiz gorunsun.
+const BUSH_CANDIDATES: Array[String] = ["quat_bushLeafy", "quat_bushTrio",
+		"quat_bushFlowers", "quat_bushEgg", "quat_bushBerries", "quat_bushRed"]
+
 func _build_bush_showcase() -> Vector3:
 	var base := Vector3(60.0, 30.0, 0.0)
 	var root := Node3D.new()
@@ -213,59 +217,27 @@ func _build_bush_showcase() -> Vector3:
 	add_child(root)
 	var floor_inst := MeshInstance3D.new()
 	var floor_mesh := PlaneMesh.new()
-	floor_mesh.size = Vector2(16, 10)
+	floor_mesh.size = Vector2(18, 10)
 	floor_inst.mesh = floor_mesh
-	floor_inst.position = Vector3(2.7, 0, 1.1)
+	floor_inst.position = Vector3(5.0, 0, 0.5)
 	var fm := StandardMaterial3D.new()
 	fm.albedo_color = Color(0.32, 0.55, 0.24)
 	fm.roughness = 1.0
 	floor_inst.material_override = fm
 	root.add_child(floor_inst)
-	var berry_mat := StandardMaterial3D.new()
-	berry_mat.albedo_color = Color(0.82, 0.16, 0.22)
-	berry_mat.roughness = 0.7
-	var vc_mat := StandardMaterial3D.new()
-	vc_mat.vertex_color_use_as_albedo = true
-	vc_mat.roughness = 1.0
-	var kenney := ["plant_bush", "plant_bushDetailed", "plant_bushLarge",
-			"plant_bushSmall", "plant_bushTriangle", "plant_bushLargeTriangle"]
-	for i in 8:
-		var col := i % 4
-		var row := i >> 2
-		# Arka sira (etiket 1-4) kameradan uzakta: z=0; on sira z=2.6
-		var pos := Vector3(float(col) * 2.0, 0, float(row) * 2.6)
+	for i in BUSH_CANDIDATES.size():
+		var pos := Vector3(float(i) * 2.0, 0, 0)
 		var holder := Node3D.new()
 		holder.position = pos
 		root.add_child(holder)
-		var top := 0.7
-		if i < 6:
-			var mesh := _model_mesh(kenney[i])
-			var inst := MeshInstance3D.new()
-			inst.mesh = mesh
-			var aabb := mesh.get_aabb()
-			var s := 0.7 / maxf(aabb.size.y, 0.01)
-			inst.scale = Vector3(s, s, s)
-			inst.position.y = -aabb.position.y * s
-			holder.add_child(inst)
-		else:
-			var inst := MeshInstance3D.new()
-			inst.mesh = _bush_mesh(true) if i == 6 else _bush_mesh_fluffy()
-			inst.scale = Vector3(1.5, 1.5, 1.5)
-			inst.material_override = vc_mat
-			holder.add_child(inst)
-			top = 0.75
-		if i < 6:
-			# Kenney adaylarina da meyve: oyundaki haliyle kiyas adil olsun
-			for bp: Vector3 in [Vector3(0.10, top * 0.55, 0.08),
-					Vector3(-0.10, top * 0.50, -0.04), Vector3(0.02, top * 0.68, -0.10)]:
-				var berry := MeshInstance3D.new()
-				var bm := SphereMesh.new()
-				bm.radius = 0.05
-				bm.height = 0.10
-				berry.mesh = bm
-				berry.material_override = berry_mat
-				berry.position = bp
-				holder.add_child(berry)
+		var scene: Node3D = load(NATURE_PATH % BUSH_CANDIDATES[i]).instantiate()
+		holder.add_child(scene)
+		var aabb := _scene_aabb(scene)
+		if aabb.size.y > 0.01:
+			var s := 0.8 / aabb.size.y
+			scene.scale = Vector3(s, s, s)
+			scene.position = Vector3(-aabb.get_center().x * s, -aabb.position.y * s,
+					-aabb.get_center().z * s)
 		var label := Label3D.new()
 		label.text = str(i + 1)
 		label.font_size = 80
@@ -273,9 +245,26 @@ func _build_bush_showcase() -> Vector3:
 		label.outline_size = 16
 		label.outline_modulate = Color(1, 1, 1)
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		label.position = pos + Vector3(0, 1.05, 0)
+		label.position = pos + Vector3(0, 1.15, 0)
 		root.add_child(label)
 	return base
+
+# Sahnedeki tum MeshInstance3D'lerin birlesik sinir kutusu (kok uzayinda)
+func _scene_aabb(node: Node, xform: Transform3D = Transform3D.IDENTITY) -> AABB:
+	var result := AABB()
+	var found := false
+	var t := xform
+	if node is Node3D:
+		t = xform * (node as Node3D).transform
+	if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+		result = t * (node as MeshInstance3D).mesh.get_aabb()
+		found = true
+	for child in node.get_children():
+		var sub := _scene_aabb(child, t)
+		if sub.size != Vector3.ZERO or sub.position != Vector3.ZERO:
+			result = result.merge(sub) if found else sub
+			found = true
+	return result
 
 # Claude tasarimi v2 "pofuduk": cok sayida kucuk lob, daha organik kume
 var _bush_fluffy_mesh: ArrayMesh

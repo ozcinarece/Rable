@@ -8,3 +8,6 @@ atif gerekmez (yine de tesekkurler!).
 - characters/: KayKit Character Pack Adventurers & Skeletons -
   https://kaylousberg.itch.io/ (github.com/KayKit-Game-Assets)
 - tools/: Kenney Survival Kit - https://kenney.nl/assets/survival-kit
+
+- nature/quat_*.glb: Quaternius nature paketleri (poly.pizza uzerinden) -
+  https://quaternius.com - CC0
