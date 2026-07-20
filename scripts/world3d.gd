@@ -192,7 +192,122 @@ func _setup_screenshot(save_path: String) -> void:
 			var img2 := get_viewport().get_texture().get_image()
 			img2.save_png(save_path.replace(".png", "_wide.png"))
 			print("genis kare kaydedildi")
-			get_tree().quit()))
+			# Ucuncu kare: cali adaylari vitrini (kullanici secimi icin)
+			var studio := _build_bush_showcase()
+			camera.position = studio + Vector3(2.7, 1.9, 5.6)
+			camera.rotation_degrees = Vector3(-17, 0, 0)
+			var timer3 := get_tree().create_timer(1.0)
+			timer3.timeout.connect(func():
+				var img3 := get_viewport().get_texture().get_image()
+				img3.save_png(save_path.replace(".png", "_cali.png"))
+				print("cali vitrini kaydedildi")
+				get_tree().quit())))
+
+# Cali aday vitrini: 6 Kenney modeli + 2 Claude tasarimi, numarali.
+# Haritadan uzakta yuksek bir "studyo" zemininde kurulur; sadece CI
+# ekran goruntusu modunda cagrilir.
+func _build_bush_showcase() -> Vector3:
+	var base := Vector3(60.0, 30.0, 0.0)
+	var root := Node3D.new()
+	root.position = base
+	add_child(root)
+	var floor_inst := MeshInstance3D.new()
+	var floor_mesh := PlaneMesh.new()
+	floor_mesh.size = Vector2(16, 10)
+	floor_inst.mesh = floor_mesh
+	floor_inst.position = Vector3(2.7, 0, 1.1)
+	var fm := StandardMaterial3D.new()
+	fm.albedo_color = Color(0.32, 0.55, 0.24)
+	fm.roughness = 1.0
+	floor_inst.material_override = fm
+	root.add_child(floor_inst)
+	var berry_mat := StandardMaterial3D.new()
+	berry_mat.albedo_color = Color(0.82, 0.16, 0.22)
+	berry_mat.roughness = 0.7
+	var vc_mat := StandardMaterial3D.new()
+	vc_mat.vertex_color_use_as_albedo = true
+	vc_mat.roughness = 1.0
+	var kenney := ["plant_bush", "plant_bushDetailed", "plant_bushLarge",
+			"plant_bushSmall", "plant_bushTriangle", "plant_bushLargeTriangle"]
+	for i in 8:
+		var col := i % 4
+		var row := i >> 2
+		# Arka sira (etiket 1-4) kameradan uzakta: z=0; on sira z=2.4
+		var pos := Vector3(float(col) * 1.8, 0, float(row) * 2.4)
+		var holder := Node3D.new()
+		holder.position = pos
+		root.add_child(holder)
+		var top := 0.7
+		if i < 6:
+			var mesh := _model_mesh(kenney[i])
+			var inst := MeshInstance3D.new()
+			inst.mesh = mesh
+			var aabb := mesh.get_aabb()
+			var s := 0.7 / maxf(aabb.size.y, 0.01)
+			inst.scale = Vector3(s, s, s)
+			inst.position.y = -aabb.position.y * s
+			holder.add_child(inst)
+		else:
+			var inst := MeshInstance3D.new()
+			inst.mesh = _bush_mesh(true) if i == 6 else _bush_mesh_fluffy()
+			inst.scale = Vector3(1.5, 1.5, 1.5)
+			inst.material_override = vc_mat
+			holder.add_child(inst)
+			top = 0.75
+		if i < 6:
+			# Kenney adaylarina da meyve: oyundaki haliyle kiyas adil olsun
+			for bp: Vector3 in [Vector3(0.14, top * 0.72, 0.10),
+					Vector3(-0.12, top * 0.62, -0.06), Vector3(0.02, top * 0.85, -0.12)]:
+				var berry := MeshInstance3D.new()
+				var bm := SphereMesh.new()
+				bm.radius = 0.05
+				bm.height = 0.10
+				berry.mesh = bm
+				berry.material_override = berry_mat
+				berry.position = bp
+				holder.add_child(berry)
+		var label := Label3D.new()
+		label.text = str(i + 1)
+		label.font_size = 140
+		label.modulate = Color(0.08, 0.08, 0.08)
+		label.outline_size = 24
+		label.outline_modulate = Color(1, 1, 1)
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.position = pos + Vector3(0, 1.35, 0)
+		root.add_child(label)
+	return base
+
+# Claude tasarimi v2 "pofuduk": cok sayida kucuk lob, daha organik kume
+var _bush_fluffy_mesh: ArrayMesh
+
+func _bush_mesh_fluffy() -> ArrayMesh:
+	if _bush_fluffy_mesh != null:
+		return _bush_fluffy_mesh
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	var tones := [Color(0.15, 0.34, 0.12), Color(0.20, 0.44, 0.15),
+			Color(0.26, 0.52, 0.18), Color(0.31, 0.58, 0.22)]
+	# Genis alcak kume: yerden kabaran pofuduk bulut
+	for k in 14:
+		var ang := float(k) * TAU / 14.0 + rng.randf() * 0.5
+		var ring := 0.10 + rng.randf() * 0.16
+		var center := Vector3(cos(ang) * ring, 0.10 + rng.randf() * 0.16, sin(ang) * ring)
+		var radius := 0.10 + rng.randf() * 0.07
+		var tone: Color = tones[rng.randi() % tones.size()]
+		_blob(st, center, radius, Vector3(1.1, 0.8, 1.1), tone)
+	# Ust tepeler: acik tonlu iki kucuk lob
+	_blob(st, Vector3(0.03, 0.30, 0.0), 0.11, Vector3(1.0, 0.75, 1.0), tones[3])
+	_blob(st, Vector3(-0.09, 0.27, -0.06), 0.09, Vector3(1.0, 0.75, 1.0), tones[2])
+	# Meyveler
+	var berry := Color(0.82, 0.16, 0.22)
+	for k in 6:
+		var ang2 := float(k) * TAU / 6.0 + 0.4
+		var pos := Vector3(cos(ang2) * 0.20, 0.18 + float(k % 3) * 0.07, sin(ang2) * 0.20)
+		_blob(st, pos, 0.032, Vector3.ONE, berry)
+	_bush_fluffy_mesh = st.commit()
+	return _bush_fluffy_mesh
 
 var _cam_locked := false  # teshis kareleri icin takibi durdurur
 
