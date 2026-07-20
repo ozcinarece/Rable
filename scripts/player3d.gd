@@ -515,6 +515,8 @@ func _try_move(offset: Vector3) -> void:
 	var next_z := pos + Vector3(0, 0, offset.z)
 	if _pos_walkable(next_z):
 		pos = next_z
+	# Araziyi takip et: tepecikte yuksel, kumsalda alcal
+	pos.y = world.ground_height(pos.x, pos.z)
 	position = pos
 
 # Govde yaricapi kadar 4 noktadan izgara kontrolu

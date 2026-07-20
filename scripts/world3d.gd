@@ -25,6 +25,8 @@ const GROUND_DEFS := {
 	"s": {"color": Color(0.80, 0.66, 0.40), "top": -0.02, "solid": false, "speckled": true},
 	"~": {"color": Color(0.17, 0.42, 0.72), "top": -0.14, "solid": true, "water": true},
 	"o": {"color": Color(0.30, 0.23, 0.17), "top": -0.25, "solid": true},
+	# Yuksek plato: cikilmaz manzara (falez yamaclari taslasir)
+	"h": {"color": Color(0.31, 0.55, 0.23), "top": 1.1, "solid": true},
 }
 
 ## Toplanabilir nesneler (2D'deki degerlerle ayni)
@@ -583,8 +585,34 @@ func _build_world() -> void:
 
 	_build_terrain()
 	_build_sea()
-	_build_decor(ground_cells["."])
+	_build_sea_rocks()
+	_build_decor(ground_cells["."] + ground_cells["h"])
 	_rebuild_objects()
+
+# Kiyi/deniz kayalari: ada cevresine serpistirilmis gri kayalar
+# (yari batik adaciklar - referans gorunumun imzasi)
+func _build_sea_rocks() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 20260720
+	var rock_models := ["rock_smallA", "rock_smallB", "rock_largeA",
+			"stone_smallE", "rock_smallF"]
+	var groups: Dictionary = {}
+	for i in 46:
+		# Harita sinirinin disinda, kiyiya yakin bir halka
+		var angle := rng.randf() * TAU
+		var ring := 2.0 + rng.randf() * 9.0
+		var cx := _map_w / 2.0
+		var cz := _map_h / 2.0
+		var rx := cx + cos(angle) * (_map_w / 2.0 + ring)
+		var rz := cz + sin(angle) * (_map_h / 2.0 + ring)
+		var model: String = rock_models[rng.randi() % rock_models.size()]
+		if not groups.has(model):
+			groups[model] = []
+		var scale := 1.2 + rng.randf() * 2.2
+		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(scale, scale, scale))
+		groups[model].append(Transform3D(basis, Vector3(rx, -0.24, rz)))
+	for model in groups:
+		add_child(_make_model_multimesh(model, groups[model]))
 
 # --- Purussuz arazi -----------------------------------------------------
 # Kare bloklar yerine TEK yumusak ortu: yukseklik ve renk komsu hucreler
@@ -602,7 +630,12 @@ func _cell_props(cx: int, cy: int) -> Array:
 		return [-0.40, Color(0.62, 0.54, 0.36)]
 	if ch == "o":
 		return [-0.30, def["color"]]
-	return [0.0, def["color"]]
+	if ch == "h":
+		return [1.1, def["color"]]
+	# Duz alanlar hafif dalgali: dogal tepecik hissi (yumusak fonksiyon)
+	var roll := sin(cx * 0.37) * cos(cy * 0.29) * 0.07 \
+			+ sin(cx * 0.15 + cy * 0.42) * 0.05
+	return [roll, def["color"]]
 
 # Bir dunya noktasinda yukseklik+renk (4 komsu hucrenin harmani)
 func _sample_terrain(x: float, z: float) -> Array:
@@ -638,10 +671,20 @@ func _build_terrain() -> void:
 			var x := float(i) / float(res)
 			var z := float(j) / float(res)
 			var s := _sample_terrain(x, z)
+			var height := float(s[0])
+			var c: Color = s[1]
+			# Dik yamaclar taslasir: falez gorunumu (katmanli gri-bej)
+			var steep := maxf(
+					absf(float(_sample_terrain(x + 0.5, z)[0]) - height),
+					absf(float(_sample_terrain(x, z + 0.5)[0]) - height))
+			steep = maxf(steep, absf(float(_sample_terrain(x - 0.5, z)[0]) - height))
+			steep = maxf(steep, absf(float(_sample_terrain(x, z - 0.5)[0]) - height))
+			if steep > 0.34:
+				var band := 0.5 + 0.5 * sin(height * 9.0)
+				c = Color(0.58, 0.53, 0.46).lerp(Color(0.72, 0.66, 0.56), band)
 			# Organik his: renkte deterministik minik oynama
 			var n := sin(float(i) * 12.9898 + float(j) * 78.233) * 0.035
-			var c: Color = s[1]
-			row_p.append(Vector3(x, float(s[0]), z))
+			row_p.append(Vector3(x, height, z))
 			row_c.append(Color(c.r * (1.0 + n), c.g * (1.0 + n), c.b * (1.0 + n)))
 		pts.append(row_p)
 		cols.append(row_c)
@@ -715,7 +758,12 @@ void vertex() {
 			+ cos(TIME * 1.1 + wp.z * 1.3) * 0.03;
 }
 void fragment() {
-	ALBEDO = col.rgb;
+	vec3 wp2 = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	// Suda gezinen beyaz isilti seritleri (Longvinter dalgalari)
+	float band = sin(wp2.x * 0.9 + TIME * 0.5) * sin(wp2.z * 1.4 - TIME * 0.35)
+			* sin((wp2.x + wp2.z) * 0.35 + TIME * 0.22);
+	float foam = smoothstep(0.86, 0.97, band);
+	ALBEDO = mix(col.rgb, vec3(0.94, 0.97, 1.0), foam * 0.75);
 	ROUGHNESS = 0.45;
 	SPECULAR = 0.2;
 }
@@ -742,8 +790,14 @@ func _build_decor(grass_cells: Array) -> void:
 	for model in groups:
 		add_child(_make_model_multimesh(model, groups[model]))
 
+## Bir dunya noktasindaki arazi yuksekligi (oyuncu ve nesneler icin)
+func ground_height(x: float, z: float) -> float:
+	return float(_sample_terrain(x, z)[0])
+
 func _cell_center(cell: Vector2i) -> Vector3:
-	return Vector3(cell.x + 0.5, 0, cell.y + 0.5)
+	var x := cell.x + 0.5
+	var z := cell.y + 0.5
+	return Vector3(x, ground_height(x, z), z)
 
 # Nesne gorsellerini bastan kurar (toplama sonrasi cagrilir).
 # Tur basina birkac MultiMesh: yuzlerce nesne, ~10 cizim cagrisi.
