@@ -22,14 +22,20 @@ const DRAG_DEAD_ZONE: float = 10.0    # kucuk parmak titremelerini yok say
 ## hedefleyecegini bundan hesaplar; sprite de buna gore secilir.
 var facing: Vector2 = Vector2.DOWN
 
-# 3/4 perspektif yon gorselleri (sol = sag gorselinin aynasi)
-const TEX_DOWN := preload("res://assets/player/player_down.png")
-const TEX_UP := preload("res://assets/player/player_up.png")
-const TEX_SIDE := preload("res://assets/player/player_side.png")
+# 3/4 perspektif yon gorselleri, her yon icin 2 kareli yurume animasyonu
+# (sol = sag gorselinin aynasi)
+const TEXTURES := {
+	"down": [preload("res://assets/player/player_down_0.png"), preload("res://assets/player/player_down_1.png")],
+	"up": [preload("res://assets/player/player_up_0.png"), preload("res://assets/player/player_up_1.png")],
+	"side": [preload("res://assets/player/player_side_0.png"), preload("res://assets/player/player_side_1.png")],
+}
+const WALK_FRAME_TIME: float = 0.18
 
 @onready var sprite: Sprite2D = $Sprite2D
 
 var _held_sprite: Sprite2D  # eline alinan aletin gorseli
+var _walk_timer: float = 0.0
+var _walk_frame: int = 0
 var _touch_start_position: Vector2 = Vector2.ZERO
 var _touch_current_position: Vector2 = Vector2.ZERO
 var _touch_start_time: float = 0.0
@@ -53,10 +59,19 @@ func set_held_item(icon_path: String) -> void:
 	_held_sprite.visible = true
 	_update_sprite()
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	var direction := _get_input_direction()
 	if direction != Vector2.ZERO:
 		facing = direction
+		# Yurume animasyonu: iki kare arasinda gidip gel
+		_walk_timer += delta
+		if _walk_timer >= WALK_FRAME_TIME:
+			_walk_timer = 0.0
+			_walk_frame = 1 - _walk_frame
+		_update_sprite()
+	elif _walk_frame != 0:
+		_walk_frame = 0
+		_walk_timer = 0.0
 		_update_sprite()
 	# Aclik sifirsa oyuncu yari hizda yurur
 	var effective_speed := speed * (0.5 if Hunger.is_starving() else 1.0)
@@ -65,15 +80,16 @@ func _physics_process(_delta: float) -> void:
 
 # Baktigi yone gore dogru gorseli secer (sola bakarken yan gorsel aynalanir)
 func _update_sprite() -> void:
+	var kind := "down"
 	if absf(facing.x) > absf(facing.y):
-		sprite.texture = TEX_SIDE
+		kind = "side"
 		sprite.flip_h = facing.x < 0
 	elif facing.y < 0:
-		sprite.texture = TEX_UP
+		kind = "up"
 		sprite.flip_h = false
 	else:
-		sprite.texture = TEX_DOWN
 		sprite.flip_h = false
+	sprite.texture = TEXTURES[kind][_walk_frame]
 	# Eldeki alet, bakilan tarafta dursun
 	if _held_sprite != null:
 		_held_sprite.position = Vector2(-13.0 if facing.x < 0 else 13.0, -8.0)

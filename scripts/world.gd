@@ -16,6 +16,7 @@ const MapData = preload("res://scripts/map_data.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const EnemyScript = preload("res://scripts/enemy.gd")
+const PARTICLE_TEX := preload("res://assets/ui/particle.png")
 
 const HARVEST_REACH_TILES: int = 1
 const REGROW_SECONDS: float = 60.0
@@ -27,7 +28,7 @@ const GROUND_DEFS: Dictionary = {
 	".": {"texture": "res://assets/tiles/grass.png", "solid": false, "dig": {"toprak": 1}},
 	"d": {"texture": "res://assets/tiles/dirt.png", "solid": false, "dig": {"toprak": 1}},
 	"s": {"texture": "res://assets/tiles/sand.png", "solid": false, "dig": {"kum": 1}},
-	"~": {"texture": "res://assets/tiles/water.png", "solid": true},
+	"~": {"texture": "res://assets/tiles/water_anim.png", "solid": true},
 	"o": {"texture": "res://assets/tiles/cukur.png", "solid": true},
 	# Ahsap doseme: evin zemini; kazilirsa kalas iade, altindan toprak cikar
 	"f": {"texture": "res://assets/tiles/zemin.png", "solid": false,
@@ -162,9 +163,18 @@ func _build_ground_tile_set() -> TileSet:
 	for ch in GROUND_DEFS:
 		var def: Dictionary = GROUND_DEFS[ch]
 		var source := TileSetAtlasSource.new()
-		source.texture = load(def["texture"])
-		source.texture_region_size = Vector2i(TILE_SIZE, TILE_SIZE)
-		source.create_tile(Vector2i(0, 0))
+		if ch == "~":
+			# Su: 4 kareli dalga animasyonu (kareler atlasda yan yana)
+			source.texture = load("res://assets/tiles/water_anim.png")
+			source.texture_region_size = Vector2i(TILE_SIZE, TILE_SIZE)
+			source.create_tile(Vector2i(0, 0))
+			source.set_tile_animation_frames_count(Vector2i(0, 0), 4)
+			for frame in 4:
+				source.set_tile_animation_frame_duration(Vector2i(0, 0), frame, 0.3)
+		else:
+			source.texture = load(def["texture"])
+			source.texture_region_size = Vector2i(TILE_SIZE, TILE_SIZE)
+			source.create_tile(Vector2i(0, 0))
 		tile_set.add_source(source, next_id)
 		if def["solid"]:
 			var tile_data: TileData = source.get_tile_data(Vector2i(0, 0), 0)
@@ -397,6 +407,7 @@ func _try_harvest(cell: Vector2i) -> bool:
 		Inventory.add_item(item_id, def["drops"][item_id])
 		gained.append("+%d %s" % [def["drops"][item_id], Items.display_name(item_id)])
 	_spawn_floating_text(cell, " ".join(gained), Color(0.7, 1.0, 0.7))
+	_spawn_burst(cell, Color(0.6, 0.9, 0.5))
 
 	if def.has("becomes_object"):
 		_set_object(cell, def["becomes_object"])
@@ -426,6 +437,7 @@ func _try_dig(cell: Vector2i) -> bool:
 		Inventory.add_item(item_id, dig_drops[item_id])
 		gained.append("+%d %s" % [dig_drops[item_id], Items.display_name(item_id)])
 	_spawn_floating_text(cell, " ".join(gained), Color(0.9, 0.8, 0.6))
+	_spawn_burst(cell, Color(0.62, 0.45, 0.28))
 	var new_ground: String = GROUND_DEFS[ground].get("dig_to", "o")
 	_set_ground(cell, new_ground)
 	if new_ground == "o":
@@ -579,6 +591,7 @@ func _try_attack(world_pos: Vector2) -> bool:
 func _kill_enemy(enemy) -> void:
 	var cell := ground_tile_map.local_to_map(ground_tile_map.to_local(enemy.global_position))
 	_spawn_floating_text(cell, "Yok oldu!", Color(1, 0.8, 1))
+	_spawn_burst(cell, Color(0.7, 0.4, 0.85))
 	_enemies.erase(enemy)
 	enemy.queue_free()
 
@@ -681,6 +694,22 @@ func _compute_action_state() -> String:
 			if ch != "" and OBJECT_DEFS[ch].has("drops"):
 				return "gather"
 	return "idle"
+
+# Kisa parcacik patlamasi (toplama/vurma geri bildirimi)
+func _spawn_burst(cell: Vector2i, color: Color) -> void:
+	var center := ground_tile_map.map_to_local(cell)
+	for i in 6:
+		var bit := Sprite2D.new()
+		bit.texture = PARTICLE_TEX
+		bit.modulate = color
+		bit.position = center
+		bit.z_index = 90
+		add_child(bit)
+		var target := center + Vector2.RIGHT.rotated(randf() * TAU) * (10.0 + randf() * 16.0)
+		var tween := create_tween()
+		tween.tween_property(bit, "position", target, 0.35)
+		tween.parallel().tween_property(bit, "modulate:a", 0.0, 0.35)
+		tween.tween_callback(bit.queue_free)
 
 func _spawn_floating_text(cell: Vector2i, text: String, color: Color) -> void:
 	var label := Label.new()

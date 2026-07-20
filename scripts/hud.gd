@@ -95,6 +95,8 @@ func _ready() -> void:
 	$InventoryPanel/VBox/TitleRow/CloseButton.pressed.connect(func():
 		inventory_button.button_pressed = false)
 	panel_eat_button.pressed.connect(_on_eat_pressed)
+	_apply_ui_theme()
+	_setup_damage_flash()
 	_build_build_bar()
 	_build_craft_panel()
 	_refresh()
@@ -175,10 +177,67 @@ func _on_reset_pressed() -> void:
 	DayNight.reset()
 	get_tree().reload_current_scene()
 
+# --- Gorsel tema ----------------------------------------------------------
+
+# Tum panellere/butonlara yuvarlak koseli koyu tema uygular.
+# Tema ust seviye Control'lere atanir; sonradan eklenen cocuklar
+# (tarif satirlari, slotlar) temayi otomatik miras alir.
+func _apply_ui_theme() -> void:
+	var theme := Theme.new()
+
+	var panel_style := StyleBoxFlat.new()
+	panel_style.bg_color = Color(0.07, 0.09, 0.13, 0.85)
+	panel_style.set_corner_radius_all(12)
+	panel_style.content_margin_left = 12
+	panel_style.content_margin_right = 12
+	panel_style.content_margin_top = 8
+	panel_style.content_margin_bottom = 8
+	theme.set_stylebox("panel", "PanelContainer", panel_style)
+
+	var button_style := StyleBoxFlat.new()
+	button_style.bg_color = Color(0.17, 0.21, 0.30, 0.95)
+	button_style.set_corner_radius_all(10)
+	button_style.content_margin_left = 12
+	button_style.content_margin_right = 12
+	button_style.content_margin_top = 6
+	button_style.content_margin_bottom = 6
+	theme.set_stylebox("normal", "Button", button_style)
+
+	var pressed_style := button_style.duplicate()
+	pressed_style.bg_color = Color(0.32, 0.42, 0.62, 1.0)
+	theme.set_stylebox("pressed", "Button", pressed_style)
+	theme.set_stylebox("hover", "Button", pressed_style)
+
+	var disabled_style := button_style.duplicate()
+	disabled_style.bg_color = Color(0.12, 0.13, 0.17, 0.6)
+	theme.set_stylebox("disabled", "Button", disabled_style)
+	theme.set_color("font_disabled_color", "Button", Color(1, 1, 1, 0.35))
+
+	for child in get_children():
+		if child is Control:
+			child.theme = theme
+
+# Hasar alininca ekran kenarlarinda kirmizi flas.
+var _damage_flash: ColorRect
+var _prev_hp: float = 100.0
+
+func _setup_damage_flash() -> void:
+	_damage_flash = ColorRect.new()
+	_damage_flash.color = Color(0.9, 0.1, 0.1, 0.0)
+	_damage_flash.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_damage_flash.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_damage_flash)
+	move_child(_damage_flash, 0)  # panellerin altinda kalsin
+	_prev_hp = Health.value
+
 # --- Can ve gun gostergesi ------------------------------------------------
 
 func _update_health() -> void:
 	health_bar.value = Health.value
+	if _damage_flash != null and Health.value < _prev_hp:
+		_damage_flash.color.a = 0.3
+		create_tween().tween_property(_damage_flash, "color:a", 0.0, 0.4)
+	_prev_hp = Health.value
 
 func _update_day_label() -> void:
 	if DayNight.is_night:
