@@ -120,8 +120,6 @@ const HAIR_COLORS := [
 ]
 const STONE_MODELS: Array[String] = ["rock_largeA", "rock_tallA",
 		"stone_tallB", "rock_largeB"]
-const BUSH_FULL_MODEL := "plant_bushDetailed"
-const BUSH_EMPTY_MODEL := "plant_bushSmall"
 # Cim hucrelerine serpistirilen susler (engel degil, toplanmaz).
 # Ot modelleri listede birkac kez: cimenlik agirlikli olsun
 const DECOR_MODELS: Array[String] = ["grass_leafs", "grass_large",
@@ -585,6 +583,7 @@ func _build_world() -> void:
 
 	_build_terrain()
 	_build_sea()
+	_build_lake_surface()
 	_build_sea_rocks()
 	_build_decor(ground_cells["."] + ground_cells["h"])
 	_rebuild_objects()
@@ -787,6 +786,93 @@ void fragment() {
 	_water_mat.shader = shader
 	return _water_mat
 
+# --- Gol yuzeyi ----------------------------------------------------------
+# Deniz duzlemi (-0.17) golleri dolduruyordu ama deniz izgarasi cok seyrek
+# oldugundan kucuk gol alaninda dalga okunmuyordu. Goller icin "~"
+# hucrelerini (kenar payiyla) orten ayri ince izgara kurulur; kendi
+# shader'i daha sik ve hizli dalgalanir. MeshInstance3D oldugu icin
+# shader sorunsuz calisir (MultiMesh kisiti yok).
+const LAKE_Y := -0.15
+
+func _build_lake_surface() -> void:
+	var lake_cells: Dictionary = {}
+	for cell in _ground_char:
+		if _ground_char[cell] == "~":
+			lake_cells[cell] = true
+	if lake_cells.is_empty():
+		return
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var res := 2  # 0.5 m karolar: dalga icin yeterli siklikta kose noktasi
+	var step := 1.0 / float(res)
+	var quads := 0
+	for j in _map_h * res:
+		for i in _map_w * res:
+			var x0 := float(i) * step
+			var z0 := float(j) * step
+			if not _near_lake(lake_cells, x0 + step * 0.5, z0 + step * 0.5):
+				continue
+			for tri in [[Vector2(x0, z0), Vector2(x0 + step, z0), Vector2(x0, z0 + step)],
+					[Vector2(x0 + step, z0), Vector2(x0 + step, z0 + step), Vector2(x0, z0 + step)]]:
+				for p: Vector2 in tri:
+					st.set_normal(Vector3.UP)
+					st.add_vertex(Vector3(p.x, LAKE_Y, p.y))
+			quads += 1
+	if quads == 0:
+		return
+	var inst := MeshInstance3D.new()
+	inst.mesh = st.commit()
+	inst.material_override = _lake_material()
+	add_child(inst)
+
+# Nokta bir gol hucresine (kiyi payi dahil) yakin mi? Su yuzeyi kiyida
+# arazinin altina girsin diye karolar hucre sinirindan biraz tasar.
+func _near_lake(lake_cells: Dictionary, x: float, z: float) -> bool:
+	var ci := floori(x)
+	var cj := floori(z)
+	for dj in range(-1, 2):
+		for di in range(-1, 2):
+			var cell := Vector2i(ci + di, cj + dj)
+			if not lake_cells.has(cell):
+				continue
+			var nx := clampf(x, float(cell.x), float(cell.x) + 1.0)
+			var nz := clampf(z, float(cell.y), float(cell.y) + 1.0)
+			if Vector2(x - nx, z - nz).length() <= 0.35:
+				return true
+	return false
+
+var _lake_mat: ShaderMaterial
+
+func _lake_material() -> ShaderMaterial:
+	if _lake_mat != null:
+		return _lake_mat
+	var shader := Shader.new()
+	shader.code = """
+shader_type spatial;
+// Gol suyu: denizden biraz acik ton, sik ve canli dalgacik
+uniform vec4 col : source_color = vec4(0.15, 0.40, 0.70, 1.0);
+void vertex() {
+	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	VERTEX.y += sin(TIME * 2.1 + wp.x * 2.6 + wp.z * 1.8) * 0.022
+			+ cos(TIME * 1.5 + wp.z * 3.2) * 0.016;
+}
+void fragment() {
+	vec3 wp2 = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+	// Gezinen isilti seritleri: kucuk alanda da surekli gorunur olsun
+	// diye esik denizden dusuk tutuldu
+	float band = sin(wp2.x * 2.4 + TIME * 0.9) * sin(wp2.z * 3.1 - TIME * 0.7)
+			* sin((wp2.x + wp2.z) * 1.1 + TIME * 0.5);
+	float foam = smoothstep(0.52, 0.88, band);
+	float shimmer = smoothstep(0.30, 0.52, band) * 0.22;
+	ALBEDO = mix(col.rgb, vec3(0.93, 0.97, 1.0), foam * 0.6 + shimmer);
+	ROUGHNESS = 0.35;
+	SPECULAR = 0.25;
+}
+"""
+	_lake_mat = ShaderMaterial.new()
+	_lake_mat.shader = shader
+	return _lake_mat
+
 # Bos cim hucrelerinin bir kismina cicek/ot/mantar serpistirir (sus).
 func _build_decor(grass_cells: Array) -> void:
 	var groups: Dictionary = {}  # model -> Array[Transform3D]
@@ -862,24 +948,84 @@ func _build_stones(cells: Array[Vector2i]) -> void:
 
 func _build_bushes(full: Array[Vector2i], empty: Array[Vector2i]) -> void:
 	if not full.is_empty():
-		var bush_t: Array[Transform3D] = []
-		var berry_t: Array[Transform3D] = []
-		var berry := SphereMesh.new()
-		berry.radius = 0.05
-		berry.height = 0.1
-		for cell in full:
-			var base := _cell_center(cell)
-			bush_t.append(Transform3D(_cell_variance(cell).scaled(Vector3(1.3, 1.3, 1.3)), base))
-			# Meyveler: cali ustunde iki kirmizi minik kure (dolu isareti)
-			berry_t.append(Transform3D(Basis.IDENTITY, base + Vector3(0.13, 0.42, 0.10)))
-			berry_t.append(Transform3D(Basis.IDENTITY, base + Vector3(-0.11, 0.36, -0.07)))
-		_keep(_make_model_multimesh(BUSH_FULL_MODEL, bush_t))
-		_keep(_make_multimesh(berry, Color(0.90, 0.28, 0.33), berry_t))
+		_keep(_bush_multimesh(full, true))
 	if not empty.is_empty():
-		var t2: Array[Transform3D] = []
-		for cell in empty:
-			t2.append(Transform3D(_cell_variance(cell), _cell_center(cell)))
-		_keep(_make_model_multimesh(BUSH_EMPTY_MODEL, t2))
+		_keep(_bush_multimesh(empty, false))
+
+# --- Claude tasarimi cali -------------------------------------------------
+# Kenney modeli yerine yumusak, yuvarlak gorunum: ust uste binen basik
+# yesil loblar (koyu/orta/acik ton), dolu calida yuzeye yari gomulu kirmizi
+# meyveler. Tek mesh + kose rengi = tur basina tek cizim cagrisi.
+var _bush_mesh_cache: Dictionary = {}
+var _bush_material: StandardMaterial3D
+
+func _bush_mesh(full: bool) -> ArrayMesh:
+	if _bush_mesh_cache.has(full):
+		return _bush_mesh_cache[full]
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var dark := Color(0.16, 0.36, 0.13)
+	var mid := Color(0.21, 0.45, 0.16)
+	var light := Color(0.28, 0.55, 0.20)
+	if not full:
+		# Bos cali: donuk zeytin tonlari (meyvesi toplanmis, sonuk)
+		dark = Color(0.24, 0.36, 0.16)
+		mid = Color(0.30, 0.42, 0.19)
+		light = Color(0.37, 0.49, 0.23)
+	# Ana lob + cevresine duzensiz yerlesmis yan loblar, ustte acik tepeler
+	_blob(st, Vector3(0, 0.20, 0), 0.26, Vector3(1.15, 0.78, 1.10), mid)
+	_blob(st, Vector3(0.20, 0.13, 0.06), 0.17, Vector3(1.10, 0.75, 1.00), dark)
+	_blob(st, Vector3(-0.19, 0.12, -0.08), 0.16, Vector3(1.00, 0.80, 1.10), dark)
+	_blob(st, Vector3(0.04, 0.14, -0.20), 0.15, Vector3(1.10, 0.72, 1.00), mid)
+	_blob(st, Vector3(-0.06, 0.15, 0.20), 0.16, Vector3(1.05, 0.75, 1.00), dark)
+	_blob(st, Vector3(0.08, 0.33, 0.02), 0.15, Vector3(1.00, 0.70, 1.00), light)
+	_blob(st, Vector3(-0.11, 0.30, -0.05), 0.12, Vector3(1.00, 0.70, 1.00), light)
+	if full:
+		# Meyveler loblarin yuzeyine yari gomulu (disari firlamis durmaz)
+		var berry := Color(0.82, 0.16, 0.22)
+		_blob(st, Vector3(0.24, 0.28, 0.16), 0.038, Vector3.ONE, berry)
+		_blob(st, Vector3(-0.21, 0.25, 0.14), 0.034, Vector3.ONE, berry)
+		_blob(st, Vector3(0.03, 0.42, -0.09), 0.036, Vector3.ONE, berry)
+		_blob(st, Vector3(-0.08, 0.24, 0.28), 0.032, Vector3.ONE, berry)
+		_blob(st, Vector3(0.25, 0.18, -0.13), 0.034, Vector3.ONE, berry)
+		_blob(st, Vector3(-0.15, 0.38, 0.03), 0.032, Vector3.ONE, berry)
+	var mesh := st.commit()
+	_bush_mesh_cache[full] = mesh
+	return mesh
+
+# Basik kure lobunu mesh'e ekler (kose rengiyle boyanmis)
+func _blob(st: SurfaceTool, center: Vector3, radius: float, scl: Vector3, color: Color) -> void:
+	var sphere := SphereMesh.new()
+	sphere.radius = radius
+	sphere.height = radius * 2.0
+	sphere.radial_segments = 12
+	sphere.rings = 6
+	var arrays := sphere.get_mesh_arrays()
+	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
+	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
+	for k in idx:
+		st.set_color(color)
+		st.set_normal(normals[k])
+		st.add_vertex(center + verts[k] * scl)
+
+func _bush_multimesh(cells: Array[Vector2i], full: bool) -> MultiMeshInstance3D:
+	var multi := MultiMesh.new()
+	multi.transform_format = MultiMesh.TRANSFORM_3D
+	multi.mesh = _bush_mesh(full)
+	multi.instance_count = cells.size()
+	for i in cells.size():
+		var cell := cells[i]
+		multi.set_instance_transform(i, Transform3D(
+				_cell_variance(cell).scaled(Vector3(1.5, 1.5, 1.5)), _cell_center(cell)))
+	var node := MultiMeshInstance3D.new()
+	node.multimesh = multi
+	if _bush_material == null:
+		_bush_material = StandardMaterial3D.new()
+		_bush_material.vertex_color_use_as_albedo = true
+		_bush_material.roughness = 1.0
+	node.material_override = _bush_material
+	return node
 
 func _keep(node: MultiMeshInstance3D) -> void:
 	add_child(node)
