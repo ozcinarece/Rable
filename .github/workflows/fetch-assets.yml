@@ -1,0 +1,81 @@
+name: CC0 modelleri getir
+
+# TEK SEFERLIK arac: ucretsiz (CC0) low-poly model paketlerini indirir,
+# isimize yarayan GLB dosyalarini assets/models/ altina kopyalar ve
+# 3d dalina commit'ler. Elle tetiklenir (workflow_dispatch).
+# Kaynaklar:
+#   - Kenney Nature Kit (agac/kaya/cali/bitki) - kenney.nl - CC0
+#   - KayKit Character Pack: Adventurers (animasyonlu karakterler) - CC0
+#   - KayKit Character Pack: Skeletons (gece yaratiklari icin) - CC0
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write  # repoya commit atabilmek icin
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repoyu al
+        uses: actions/checkout@v4
+
+      - name: Paketleri indir ve ac
+        run: |
+          set -e
+          mkdir -p /tmp/dl && cd /tmp/dl
+          curl -sSL -o nature.zip \
+            "https://kenney.nl/media/pages/assets/nature-kit/37ac38a37b-1677698939/kenney_nature-kit.zip"
+          unzip -q nature.zip -d nature
+          curl -sSL -o adventurers.zip \
+            "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Adventures-1.0/archive/refs/heads/main.zip"
+          unzip -q adventurers.zip -d adventurers
+          curl -sSL -o skeletons.zip \
+            "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0/archive/refs/heads/main.zip"
+          unzip -q skeletons.zip -d skeletons
+          echo "--- nature icerigi (ilk 60 glb) ---"
+          find nature -iname '*.glb' | head -60
+          echo "--- adventurers glb ---"
+          find adventurers -iname '*.glb'
+          echo "--- skeletons glb ---"
+          find skeletons -iname '*.glb'
+
+      - name: Isimize yarayan GLB'leri kopyala
+        run: |
+          set -e
+          cd "$GITHUB_WORKSPACE"
+          mkdir -p assets/models/nature assets/models/characters
+          find /tmp/dl/nature -iname '*.glb' \
+            \( -iname 'tree_*' -o -iname 'rock_*' -o -iname 'stone_*' \
+               -o -iname 'plant_*' -o -iname 'flower_*' -o -iname 'grass_*' \
+               -o -iname 'mushroom_*' -o -iname 'log_*' -o -iname 'stump_*' \) \
+            -exec cp {} assets/models/nature/ \;
+          find /tmp/dl/adventurers /tmp/dl/skeletons -iname '*.glb' \
+            -exec cp {} assets/models/characters/ \;
+          echo "--- kopyalanan doga modelleri ---"
+          ls assets/models/nature | head -80
+          echo "--- kopyalanan karakterler ---"
+          ls assets/models/characters
+          du -sh assets/models
+
+      - name: Lisans notu yaz ve commit'le
+        run: |
+          set -e
+          cd "$GITHUB_WORKSPACE"
+          cat > assets/models/LICENSE.md << 'EOF'
+          # Model Lisanslari
+
+          Bu klasordeki tum 3D modeller CC0 (Creative Commons Zero /
+          kamu mali) lisanslidir; kisisel ve ticari kullanim serbesttir,
+          atif gerekmez (yine de tesekkurler!).
+
+          - nature/: Kenney Nature Kit - https://kenney.nl/assets/nature-kit
+          - characters/: KayKit Character Pack Adventurers & Skeletons -
+            https://kaylousberg.itch.io/ (github.com/KayKit-Game-Assets)
+          EOF
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add assets/models
+          git commit -m "CC0 modeller: Kenney Nature Kit + KayKit karakterler (otomatik indirme)"
+          git push
