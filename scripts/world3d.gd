@@ -266,38 +266,6 @@ func _scene_aabb(node: Node, xform: Transform3D = Transform3D.IDENTITY) -> AABB:
 			found = true
 	return result
 
-# Claude tasarimi v2 "pofuduk": cok sayida kucuk lob, daha organik kume
-var _bush_fluffy_mesh: ArrayMesh
-
-func _bush_mesh_fluffy() -> ArrayMesh:
-	if _bush_fluffy_mesh != null:
-		return _bush_fluffy_mesh
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var rng := RandomNumberGenerator.new()
-	rng.seed = 7
-	var tones := [Color(0.15, 0.34, 0.12), Color(0.20, 0.44, 0.15),
-			Color(0.26, 0.52, 0.18), Color(0.31, 0.58, 0.22)]
-	# Genis alcak kume: yerden kabaran pofuduk bulut
-	for k in 14:
-		var ang := float(k) * TAU / 14.0 + rng.randf() * 0.5
-		var ring := 0.10 + rng.randf() * 0.16
-		var center := Vector3(cos(ang) * ring, 0.10 + rng.randf() * 0.16, sin(ang) * ring)
-		var radius := 0.10 + rng.randf() * 0.07
-		var tone: Color = tones[rng.randi() % tones.size()]
-		_blob(st, center, radius, Vector3(1.1, 0.8, 1.1), tone)
-	# Ust tepeler: acik tonlu iki kucuk lob
-	_blob(st, Vector3(0.03, 0.30, 0.0), 0.11, Vector3(1.0, 0.75, 1.0), tones[3])
-	_blob(st, Vector3(-0.09, 0.27, -0.06), 0.09, Vector3(1.0, 0.75, 1.0), tones[2])
-	# Meyveler
-	var berry := Color(0.82, 0.16, 0.22)
-	for k in 6:
-		var ang2 := float(k) * TAU / 6.0 + 0.4
-		var pos := Vector3(cos(ang2) * 0.20, 0.18 + float(k % 3) * 0.07, sin(ang2) * 0.20)
-		_blob(st, pos, 0.032, Vector3.ONE, berry)
-	_bush_fluffy_mesh = st.commit()
-	return _bush_fluffy_mesh
-
 var _cam_locked := false  # teshis kareleri icin takibi durdurur
 
 func _process(delta: float) -> void:
@@ -1051,84 +1019,95 @@ func _build_stones(cells: Array[Vector2i]) -> void:
 		_keep(_make_model_multimesh(model, groups[model]))
 
 func _build_bushes(full: Array[Vector2i], empty: Array[Vector2i]) -> void:
-	if not full.is_empty():
-		_keep(_bush_multimesh(full, true))
-	if not empty.is_empty():
-		_keep(_bush_multimesh(empty, false))
+	for v in BUSH_VARIANTS.size():
+		var f: Array = []
+		var e: Array = []
+		for cell in full:
+			if _bush_variant(cell) == v:
+				f.append(cell)
+		for cell in empty:
+			if _bush_variant(cell) == v:
+				e.append(cell)
+		if not f.is_empty():
+			_keep(_make_mesh_multimesh(_bush_game_mesh(v, true), _bush_transforms(f)))
+		if not e.is_empty():
+			_keep(_make_mesh_multimesh(_bush_game_mesh(v, false), _bush_transforms(e)))
 
-# --- Claude tasarimi cali -------------------------------------------------
-# Kenney modeli yerine yumusak, yuvarlak gorunum: ust uste binen basik
-# yesil loblar (koyu/orta/acik ton), dolu calida yuzeye yari gomulu kirmizi
-# meyveler. Tek mesh + kose rengi = tur basina tek cizim cagrisi.
-var _bush_mesh_cache: Dictionary = {}
-var _bush_material: StandardMaterial3D
+# Her cali hucresi iki secilen turden birine baglanir (deterministik:
+# toplayip yeniden buyuyunce ayni tur kalir)
+func _bush_variant(cell: Vector2i) -> int:
+	return absi(cell.x * 53 + cell.y * 97) % BUSH_VARIANTS.size()
 
-func _bush_mesh(full: bool) -> ArrayMesh:
-	if _bush_mesh_cache.has(full):
-		return _bush_mesh_cache[full]
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var dark := Color(0.16, 0.36, 0.13)
-	var mid := Color(0.21, 0.45, 0.16)
-	var light := Color(0.28, 0.55, 0.20)
+func _bush_transforms(cells: Array) -> Array:
+	var t: Array = []
+	for cell: Vector2i in cells:
+		t.append(Transform3D(_cell_variance(cell), _cell_center(cell)))
+	return t
+
+# --- Oyun calilari: Quaternius modelleri ----------------------------------
+# Kullanicinin sectigi iki tur: cicekli pofuduk + kizil. Dolu cali canli
+# renkli; toplanmis cali ayni modelin kucultulmus, soluk halidir.
+const BUSH_VARIANTS: Array[String] = ["quat_bushFlowers", "quat_bushRed"]
+
+var _bush_game_cache: Dictionary = {}
+
+func _bush_game_mesh(variant: int, full: bool) -> ArrayMesh:
+	var key := variant * 2 + (1 if full else 0)
+	if _bush_game_cache.has(key):
+		return _bush_game_cache[key]
+	var mesh := _merged_scene_mesh(NATURE_PATH % BUSH_VARIANTS[variant],
+			0.85 if full else 0.60)
 	if not full:
-		# Bos cali: donuk zeytin tonlari (meyvesi toplanmis, sonuk)
-		dark = Color(0.24, 0.36, 0.16)
-		mid = Color(0.30, 0.42, 0.19)
-		light = Color(0.37, 0.49, 0.23)
-	# Ana lob + cevresine duzensiz yerlesmis yan loblar, ustte acik tepeler
-	_blob(st, Vector3(0, 0.20, 0), 0.26, Vector3(1.15, 0.78, 1.10), mid)
-	_blob(st, Vector3(0.20, 0.13, 0.06), 0.17, Vector3(1.10, 0.75, 1.00), dark)
-	_blob(st, Vector3(-0.19, 0.12, -0.08), 0.16, Vector3(1.00, 0.80, 1.10), dark)
-	_blob(st, Vector3(0.04, 0.14, -0.20), 0.15, Vector3(1.10, 0.72, 1.00), mid)
-	_blob(st, Vector3(-0.06, 0.15, 0.20), 0.16, Vector3(1.05, 0.75, 1.00), dark)
-	_blob(st, Vector3(0.08, 0.33, 0.02), 0.15, Vector3(1.00, 0.70, 1.00), light)
-	_blob(st, Vector3(-0.11, 0.30, -0.05), 0.12, Vector3(1.00, 0.70, 1.00), light)
-	if full:
-		# Meyveler loblarin yuzeyine yari gomulu (disari firlamis durmaz)
-		var berry := Color(0.82, 0.16, 0.22)
-		_blob(st, Vector3(0.24, 0.28, 0.16), 0.038, Vector3.ONE, berry)
-		_blob(st, Vector3(-0.21, 0.25, 0.14), 0.034, Vector3.ONE, berry)
-		_blob(st, Vector3(0.03, 0.42, -0.09), 0.036, Vector3.ONE, berry)
-		_blob(st, Vector3(-0.08, 0.24, 0.28), 0.032, Vector3.ONE, berry)
-		_blob(st, Vector3(0.25, 0.18, -0.13), 0.034, Vector3.ONE, berry)
-		_blob(st, Vector3(-0.15, 0.38, 0.03), 0.032, Vector3.ONE, berry)
-	var mesh := st.commit()
-	_bush_mesh_cache[full] = mesh
+		# Toplanmis: soluk/donuk ton (dokulu materyalde albedo carpani)
+		for i in mesh.get_surface_count():
+			var mat := mesh.surface_get_material(i)
+			if mat is BaseMaterial3D:
+				var dull: BaseMaterial3D = mat.duplicate()
+				dull.albedo_color = dull.albedo_color * Color(0.58, 0.62, 0.52, 1.0)
+				mesh.surface_set_material(i, dull)
+	_bush_game_cache[key] = mesh
 	return mesh
 
-# Basik kure lobunu mesh'e ekler (kose rengiyle boyanmis)
-func _blob(st: SurfaceTool, center: Vector3, radius: float, scl: Vector3, color: Color) -> void:
-	var sphere := SphereMesh.new()
-	sphere.radius = radius
-	sphere.height = radius * 2.0
-	sphere.radial_segments = 12
-	sphere.rings = 6
-	var arrays := sphere.get_mesh_arrays()
-	var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
-	var normals: PackedVector3Array = arrays[Mesh.ARRAY_NORMAL]
-	var idx: PackedInt32Array = arrays[Mesh.ARRAY_INDEX]
-	for k in idx:
-		st.set_color(color)
-		st.set_normal(normals[k])
-		st.add_vertex(center + verts[k] * scl)
+# GLB sahnesindeki TUM yuzeyleri tek ArrayMesh'te birlestirir (MultiMesh
+# tek mesh ister; cok parcali modeller boylece eksiksiz kalir).
+# Sonuc normalize: taban y=0, yukseklik target_h, yatayda merkezli.
+func _merged_scene_mesh(path: String, target_h: float) -> ArrayMesh:
+	var scene: Node3D = load(path).instantiate()
+	var aabb := _scene_aabb(scene)
+	var s := target_h / maxf(aabb.size.y, 0.01)
+	var norm := Transform3D(Basis.IDENTITY.scaled(Vector3(s, s, s)),
+			Vector3(-aabb.get_center().x * s, -aabb.position.y * s,
+					-aabb.get_center().z * s))
+	var result := ArrayMesh.new()
+	_merge_into(scene, norm, result)
+	scene.free()
+	return result
 
-func _bush_multimesh(cells: Array[Vector2i], full: bool) -> MultiMeshInstance3D:
+func _merge_into(node: Node, xform: Transform3D, result: ArrayMesh) -> void:
+	var t := xform
+	if node is Node3D:
+		t = xform * (node as Node3D).transform
+	if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+		var m: Mesh = (node as MeshInstance3D).mesh
+		for i in m.get_surface_count():
+			var st := SurfaceTool.new()
+			st.append_from(m, i, t)
+			var mat := m.surface_get_material(i)
+			if mat != null:
+				st.set_material(mat)
+			st.commit(result)
+	for child in node.get_children():
+		_merge_into(child, t, result)
+
+func _make_mesh_multimesh(mesh: Mesh, transforms: Array) -> MultiMeshInstance3D:
 	var multi := MultiMesh.new()
 	multi.transform_format = MultiMesh.TRANSFORM_3D
-	multi.mesh = _bush_mesh(full)
-	multi.instance_count = cells.size()
-	for i in cells.size():
-		var cell := cells[i]
-		multi.set_instance_transform(i, Transform3D(
-				_cell_variance(cell).scaled(Vector3(1.5, 1.5, 1.5)), _cell_center(cell)))
+	multi.mesh = mesh
+	multi.instance_count = transforms.size()
+	for i in transforms.size():
+		multi.set_instance_transform(i, transforms[i])
 	var node := MultiMeshInstance3D.new()
 	node.multimesh = multi
-	if _bush_material == null:
-		_bush_material = StandardMaterial3D.new()
-		_bush_material.vertex_color_use_as_albedo = true
-		_bush_material.roughness = 1.0
-	node.material_override = _bush_material
 	return node
 
 func _keep(node: MultiMeshInstance3D) -> void:
