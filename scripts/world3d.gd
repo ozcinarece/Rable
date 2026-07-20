@@ -543,7 +543,9 @@ func _build_sea() -> void:
 	var sea := MeshInstance3D.new()
 	sea.mesh = plane
 	sea.material_override = _water_material()
-	sea.position = Vector3(_map_w / 2.0, -0.14, _map_h / 2.0)
+	# Golun ust yuzeyinden (-0.14) biraz asagida: ayni duzlemde
+	# cakisma (z-fighting) olmasin
+	sea.position = Vector3(_map_w / 2.0, -0.17, _map_h / 2.0)
 	add_child(sea)
 
 # Dalgali su malzemesi (deniz + harita ici su ayni gorunum)
@@ -555,7 +557,8 @@ func _water_material() -> ShaderMaterial:
 	var shader := Shader.new()
 	shader.code = """
 shader_type spatial;
-uniform vec4 col : source_color = vec4(0.24, 0.55, 0.86, 0.88);
+// Opak su: seffaflik siralama sorunlari (beyaz ucgen artiklari) olmaz
+uniform vec4 col : source_color = vec4(0.24, 0.55, 0.86, 1.0);
 void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	VERTEX.y += sin(TIME * 1.6 + wp.x * 0.9 + wp.z * 0.7) * 0.05
@@ -563,7 +566,6 @@ void vertex() {
 }
 void fragment() {
 	ALBEDO = col.rgb;
-	ALPHA = col.a;
 	ROUGHNESS = 0.45;
 	SPECULAR = 0.2;
 }
