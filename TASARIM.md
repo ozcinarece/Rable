@@ -121,6 +121,10 @@ sistemler eklendikce guncellenir.
 - Aksiyon butonu: bakilan yondeki hucreye vur / insa et
 
 ## Gorunum
+- Sanat yonu: Go-Go Town esinli pastel/cozy palet; arayuz krem kartlar +
+  koyu kahve yazi + turuncu vurgu (insa cubugu turuncu serit)
+- Insa/kazma/tasima modunda oyuncu cevresinde grid + hedef hucrede
+  yesil/kirmizi yerlestirme onizlemesi
 - 3/4 perspektif (Animal Crossing / Stardew tarzi): nesnelerin hem ustu
   hem on yuzu gorunur; ekranda asagida olan one cizilir (Y-sort)
 - Zemin duz TileMap; nesneler (agac/kaya/yapilar) 32x64 gorselli,

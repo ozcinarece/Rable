@@ -17,6 +17,7 @@ const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const EnemyScript = preload("res://scripts/enemy.gd")
 const PARTICLE_TEX := preload("res://assets/ui/particle.png")
+const BuildPreviewScript = preload("res://scripts/build_preview.gd")
 
 const HARVEST_REACH_TILES: int = 1
 const REGROW_SECONDS: float = 60.0
@@ -107,6 +108,7 @@ var _enemies: Array = []           # sahnedeki yaratiklar
 var _trap_uses: Dictionary = {}    # tuzak hucresi -> kalan kullanim
 var _crops: Dictionary = {}        # ekin hucresi -> asamaya kalan sure
 var _night_tint: CanvasModulate
+var _preview: Node2D  # grid + yerlestirme onizlemesi
 
 func _ready() -> void:
 	ground_tile_map.tile_set = _build_ground_tile_set()
@@ -120,6 +122,9 @@ func _ready() -> void:
 	hud.chest_closed.connect(func(): _open_chest = NO_CELL)
 	hud.move_toggled.connect(_on_move_toggled)
 	hud.hold_requested.connect(_on_hold_requested)
+	_preview = BuildPreviewScript.new()
+	add_child(_preview)
+	move_child(_preview, 1)  # GroundTileMap'in hemen ustune cizilsin
 	# Gece karartmasi (HUD'i etkilemez, sadece dunyayi)
 	_night_tint = CanvasModulate.new()
 	_night_tint.color = Color.WHITE
@@ -133,6 +138,7 @@ func _ready() -> void:
 
 func _process(delta: float) -> void:
 	hud.set_action_state(_compute_action_state())
+	_update_build_preview()
 	Crafting.near_station = _is_near_object("B")
 	if _open_chest != NO_CELL:
 		var diff := (_open_chest - _get_player_cell()).abs()
@@ -338,15 +344,13 @@ func _on_action_pressed() -> void:
 
 # --- Insa / toplama / kazma --------------------------------------------
 
-func _try_place(cell: Vector2i, player_cell: Vector2i) -> bool:
+# Tarif bu hucreye yerlestirilebilir mi? (maliyet dahil tum kontroller)
+func _can_place(cell: Vector2i, player_cell: Vector2i, recipe: Dictionary) -> bool:
 	if not _is_editable_cell(cell):
 		return false
 	if cell == player_cell:
 		return false
-
-	var recipe: Dictionary = Recipes.BUILD_RECIPES[_selected_recipe_id]
 	var ground: String = _ground_char.get(cell, "")
-
 	if recipe.has("place_on"):
 		# Ozel hedefli tarif (Doldur: cukura, Ekin: topraga)
 		if ground != recipe["place_on"] or _object_char.has(cell):
@@ -363,11 +367,16 @@ func _try_place(cell: Vector2i, player_cell: Vector2i) -> bool:
 			return false
 		if ground == "" or GROUND_DEFS[ground]["solid"]:
 			return false
-
-	var cost: Dictionary = recipe["cost"]
-	for item_id in cost:
-		if Inventory.get_count(item_id) < cost[item_id]:
+	for item_id in recipe["cost"]:
+		if Inventory.get_count(item_id) < recipe["cost"][item_id]:
 			return false
+	return true
+
+func _try_place(cell: Vector2i, player_cell: Vector2i) -> bool:
+	var recipe: Dictionary = Recipes.BUILD_RECIPES[_selected_recipe_id]
+	if not _can_place(cell, player_cell, recipe):
+		return false
+	var cost: Dictionary = recipe["cost"]
 	for item_id in cost:
 		Inventory.remove_item(item_id, cost[item_id])
 
@@ -417,7 +426,7 @@ func _try_harvest(cell: Vector2i) -> bool:
 			_set_ground(cell, def["ground_becomes"])
 	return true
 
-func _try_dig(cell: Vector2i) -> bool:
+func _can_dig(cell: Vector2i) -> bool:
 	if not _is_editable_cell(cell):
 		return false
 	if _object_char.has(cell):
@@ -425,13 +434,17 @@ func _try_dig(cell: Vector2i) -> bool:
 	var ground: String = _ground_char.get(cell, "")
 	if ground == "" or not GROUND_DEFS[ground].has("dig"):
 		return false
-	if _held_item != "kurek":
+	return _held_item == "kurek"
+
+func _try_dig(cell: Vector2i) -> bool:
+	if not _can_dig(cell):
 		return false
-	if not Inventory.can_add_all(GROUND_DEFS[ground]["dig"]):
+	var ground: String = _ground_char.get(cell, "")
+	var dig_drops: Dictionary = GROUND_DEFS[ground]["dig"]
+	if not Inventory.can_add_all(dig_drops):
 		_spawn_floating_text(cell, "Envanter dolu!", Color(1, 0.6, 0.6))
 		return false
 
-	var dig_drops: Dictionary = GROUND_DEFS[ground]["dig"]
 	var gained: PackedStringArray = []
 	for item_id in dig_drops:
 		Inventory.add_item(item_id, dig_drops[item_id])
@@ -484,6 +497,38 @@ func _on_move_toggled(enabled: bool) -> void:
 			_object_nodes[_move_source].modulate = Color.WHITE
 		_move_source = NO_CELL
 
+# Tasinan yapi bu hucreye birakilabilir mi?
+func _can_drop_move(cell: Vector2i, player_cell: Vector2i) -> bool:
+	if not _is_editable_cell(cell) or cell == player_cell:
+		return false
+	if _object_char.has(cell):
+		return false
+	var ground: String = _ground_char.get(cell, "")
+	return ground != "" and not GROUND_DEFS[ground]["solid"]
+
+# Grid ve hedef hucre onizlemesini gunceller (her kare).
+func _update_build_preview() -> void:
+	var player_cell := _get_player_cell()
+	var active := _move_mode or _selected_recipe_id != "" or _held_item == "kurek"
+	_preview.grid_visible = active
+	_preview.center_cell = player_cell
+	var facing_offset := Vector2i(player.facing.round())
+	if facing_offset == Vector2i.ZERO:
+		facing_offset = Vector2i(0, 1)
+	var target := player_cell + facing_offset
+	if _selected_recipe_id != "":
+		_preview.preview_cell = target
+		_preview.preview_ok = _can_place(target, player_cell, Recipes.BUILD_RECIPES[_selected_recipe_id])
+	elif _held_item == "kurek":
+		_preview.preview_cell = target
+		_preview.preview_ok = _can_dig(target)
+	elif _move_mode and _move_source != NO_CELL:
+		_preview.preview_cell = target
+		_preview.preview_ok = _can_drop_move(target, player_cell)
+	else:
+		_preview.preview_cell = Vector2i(-999, -999)
+	_preview.queue_redraw()
+
 # Tasima modunda dokunma: once yapiyi sec, sonra bos zemine birak.
 func _handle_move_tap(cell: Vector2i, player_cell: Vector2i) -> void:
 	if _move_source == NO_CELL:
@@ -497,13 +542,7 @@ func _handle_move_tap(cell: Vector2i, player_cell: Vector2i) -> void:
 		return
 	if cell == _move_source:
 		return
-	# Birakma: hedef bos ve yurunebilir olmali
-	if not _is_editable_cell(cell) or cell == player_cell:
-		return
-	if _object_char.has(cell):
-		return
-	var ground: String = _ground_char.get(cell, "")
-	if ground == "" or GROUND_DEFS[ground]["solid"]:
+	if not _can_drop_move(cell, player_cell):
 		return
 
 	var moving_ch: String = _object_char.get(_move_source, "")

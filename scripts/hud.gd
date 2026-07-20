@@ -179,15 +179,26 @@ func _on_reset_pressed() -> void:
 
 # --- Gorsel tema ----------------------------------------------------------
 
-# Tum panellere/butonlara yuvarlak koseli koyu tema uygular.
-# Tema ust seviye Control'lere atanir; sonradan eklenen cocuklar
-# (tarif satirlari, slotlar) temayi otomatik miras alir.
+# Go-Go Town tarzi krem/pastel tema: yuvarlak koseli krem kartlar,
+# koyu kahve yazi, turuncu vurgu. Tema ust seviye Control'lere atanir;
+# sonradan eklenen cocuklar (tarif satirlari, slotlar) otomatik miras alir.
+const COL_CREAM := Color(0.99, 0.96, 0.89)
+const COL_CREAM_LIGHT := Color(1.0, 0.99, 0.95)
+const COL_BROWN := Color(0.33, 0.24, 0.16)
+const COL_BROWN_SOFT := Color(0.85, 0.78, 0.66)
+const COL_ORANGE := Color(0.98, 0.62, 0.22)
+
 func _apply_ui_theme() -> void:
 	var theme := Theme.new()
 
 	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = Color(0.07, 0.09, 0.13, 0.85)
-	panel_style.set_corner_radius_all(12)
+	panel_style.bg_color = COL_CREAM
+	panel_style.set_corner_radius_all(16)
+	panel_style.border_color = COL_BROWN_SOFT
+	panel_style.set_border_width_all(2)
+	panel_style.shadow_color = Color(0.2, 0.12, 0.05, 0.25)
+	panel_style.shadow_size = 5
+	panel_style.shadow_offset = Vector2(0, 3)
 	panel_style.content_margin_left = 12
 	panel_style.content_margin_right = 12
 	panel_style.content_margin_top = 8
@@ -195,27 +206,70 @@ func _apply_ui_theme() -> void:
 	theme.set_stylebox("panel", "PanelContainer", panel_style)
 
 	var button_style := StyleBoxFlat.new()
-	button_style.bg_color = Color(0.17, 0.21, 0.30, 0.95)
-	button_style.set_corner_radius_all(10)
+	button_style.bg_color = COL_CREAM_LIGHT
+	button_style.set_corner_radius_all(12)
+	button_style.border_color = COL_BROWN_SOFT
+	button_style.set_border_width_all(2)
+	button_style.shadow_color = Color(0.2, 0.12, 0.05, 0.2)
+	button_style.shadow_size = 3
+	button_style.shadow_offset = Vector2(0, 2)
 	button_style.content_margin_left = 12
 	button_style.content_margin_right = 12
 	button_style.content_margin_top = 6
 	button_style.content_margin_bottom = 6
 	theme.set_stylebox("normal", "Button", button_style)
 
+	# Basili/secili: turuncu dolgu + beyaz yazi (Go-Go Town vurgusu)
 	var pressed_style := button_style.duplicate()
-	pressed_style.bg_color = Color(0.32, 0.42, 0.62, 1.0)
+	pressed_style.bg_color = COL_ORANGE
+	pressed_style.border_color = Color(0.85, 0.48, 0.12)
 	theme.set_stylebox("pressed", "Button", pressed_style)
 	theme.set_stylebox("hover", "Button", pressed_style)
 
 	var disabled_style := button_style.duplicate()
-	disabled_style.bg_color = Color(0.12, 0.13, 0.17, 0.6)
+	disabled_style.bg_color = Color(0.93, 0.89, 0.81, 0.8)
+	disabled_style.shadow_size = 0
 	theme.set_stylebox("disabled", "Button", disabled_style)
-	theme.set_color("font_disabled_color", "Button", Color(1, 1, 1, 0.35))
+
+	# Yazi renkleri: krem zeminde koyu kahve
+	theme.set_color("font_color", "Button", COL_BROWN)
+	theme.set_color("font_pressed_color", "Button", Color.WHITE)
+	theme.set_color("font_hover_color", "Button", Color.WHITE)
+	theme.set_color("font_disabled_color", "Button", Color(0.33, 0.24, 0.16, 0.4))
+	theme.set_color("font_color", "Label", COL_BROWN)
+
+	# Hap seklinde bar govdesi (aclik/can ortak arka plan)
+	var bar_bg := StyleBoxFlat.new()
+	bar_bg.bg_color = Color(0.88, 0.82, 0.71)
+	bar_bg.set_corner_radius_all(9)
+	bar_bg.border_color = COL_BROWN_SOFT
+	bar_bg.set_border_width_all(1)
+	theme.set_stylebox("background", "ProgressBar", bar_bg)
 
 	for child in get_children():
 		if child is Control:
 			child.theme = theme
+
+	# Insa cubugu turuncu serit olsun (temadaki krem kartin ustune)
+	var build_style: StyleBoxFlat = panel_style.duplicate()
+	build_style.bg_color = COL_ORANGE
+	build_style.border_color = Color(0.85, 0.48, 0.12)
+	$BuildBar.add_theme_stylebox_override("panel", build_style)
+
+	# Bar dolgulari: aclik turuncu, can kirmizi (hap seklinde)
+	hunger_bar.add_theme_stylebox_override("fill", _make_bar_fill(Color(0.98, 0.65, 0.25)))
+	health_bar.add_theme_stylebox_override("fill", _make_bar_fill(Color(0.92, 0.32, 0.32)))
+
+	# Gun etiketi panel disinda, dunyanin ustunde: beyaz + golge kalsin
+	day_label.add_theme_color_override("font_color", Color.WHITE)
+	day_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	day_label.add_theme_constant_override("shadow_offset_y", 2)
+
+func _make_bar_fill(color: Color) -> StyleBoxFlat:
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = color
+	fill.set_corner_radius_all(9)
+	return fill
 
 # Hasar alininca ekran kenarlarinda kirmizi flas.
 var _damage_flash: ColorRect
