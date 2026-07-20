@@ -41,9 +41,10 @@ const OBJECT_DEFS := {
 	"mantar": {"drops": {"mantar": 1}, "hits": 1, "vanish_regrow": true},
 }
 
-## Tas turleri (kullanici secimi): normal / komurlu / altinli.
+## Tas turleri (kullanici secimi): iki normal gorunum + komurlu + altinli.
 ## Hucreye gore deterministik dagilir; kazma hepsinde 2 vurusa dusurur.
 const STONE_VARIANTS := [
+	{"model": "quat2_rock02", "h": 0.95, "drops": {"tas": 2}, "hits": 4},
 	{"model": "quat2_rock05", "h": 0.95, "drops": {"tas": 2}, "hits": 4},
 	{"model": "quat2_rock03", "h": 0.80, "drops": {"tas": 1, "komur": 2}, "hits": 4},
 	{"model": "quat2_rock07", "h": 0.90, "drops": {"tas": 1, "altin": 1}, "hits": 5},
@@ -55,7 +56,7 @@ const SETTINGS_PATH := "user://cam3d.json"
 # Doga modelleri (CC0, Quaternius). Hucreye gore deterministik secilir:
 # orman cesitli ama her acilista ayni gorunur.
 const NATURE_PATH := "res://assets/models/nature/%s.glb"
-## Orman: kullanici secimi - akcaagac paketi + sonbahar agaci (kizil orman)
+## Orman: kullanici secimi - A1 yesil yaprakli agac paketi
 const TREE_HEIGHT := 3.1
 ## Karakter secenekleri (Gorunum paneli).
 ## "Yuvarlak" olanlar kendi tasarimimiz (kod ile insa: kose yok,
@@ -1021,13 +1022,10 @@ func _rebuild_objects() -> void:
 	_build_pickups(flowers, "cicek")
 	_build_pickups(mushrooms, "mantar")
 
-# Agaclar: akcaagac paketinin her agaci + sonbahar agaci tek havuzda,
-# hucreye gore deterministik secilir. Boylar normalize (TREE_HEIGHT).
+# Agaclar: A1 paketindeki her agac ayri varyant, hucreye gore
+# deterministik secilir. Boylar normalize (TREE_HEIGHT).
 func _tree_pool() -> Array:
-	var pool: Array = []
-	pool += _model_pool("quat2_tree10", TREE_HEIGHT)
-	pool += _model_pool("quat2_tree12", TREE_HEIGHT * 0.9)
-	return pool
+	return _model_pool("quat2_tree01", TREE_HEIGHT)
 
 func _build_trees(cells: Array[Vector2i]) -> void:
 	var pool := _tree_pool()
@@ -1040,12 +1038,14 @@ func _build_trees(cells: Array[Vector2i]) -> void:
 	for idx in groups:
 		_keep(_make_mesh_multimesh(pool[idx], groups[idx]))
 
-# Hucrenin tas turu: %60 normal, %30 komur, %10 altin
+# Hucrenin tas turu: %60 normal (iki gorunum), %30 komur, %10 altin
 func _stone_variant(cell: Vector2i) -> int:
 	var h := absi(cell.x * 41 + cell.y * 89) % 10
-	if h < 6:
+	if h < 3:
 		return 0
-	return 1 if h < 9 else 2
+	if h < 6:
+		return 1
+	return 2 if h < 9 else 3
 
 func _build_stones(cells: Array[Vector2i]) -> void:
 	var groups: Dictionary = {}  # Vector2i(tur, havuz indeksi) -> transformlar
