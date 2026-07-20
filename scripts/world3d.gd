@@ -148,12 +148,24 @@ func _setup_screenshot(save_path: String) -> void:
 		var img := get_viewport().get_texture().get_image()
 		img.save_png(save_path)
 		print("ekran goruntusu kaydedildi: ", save_path)
-		get_tree().quit())
+		# Ikinci kare: kusbakisi tum ada (teshis icin)
+		_cam_locked = true
+		camera.position = Vector3(_map_w / 2.0, 42.0, _map_h / 2.0 + 12.0)
+		camera.rotation_degrees = Vector3(-74, 0, 0)
+		var timer2 := get_tree().create_timer(1.0)
+		timer2.timeout.connect(func():
+			var img2 := get_viewport().get_texture().get_image()
+			img2.save_png(save_path.replace(".png", "_wide.png"))
+			print("genis kare kaydedildi")
+			get_tree().quit()))
+
+var _cam_locked := false  # teshis kareleri icin takibi durdurur
 
 func _process(delta: float) -> void:
 	# Kamera: SADECE konum takip eder, aci sabit kalir
-	var target := player.position + _camera_offset()
-	camera.position = camera.position.lerp(target, minf(1.0, 6.0 * delta))
+	if not _cam_locked:
+		var target := player.position + _camera_offset()
+		camera.position = camera.position.lerp(target, minf(1.0, 6.0 * delta))
 	hud.set_action_state(_compute_action_state())
 	_tick_regrow(delta)
 	# Eldeki esya envanterden ciktiysa birak
