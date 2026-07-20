@@ -29,40 +29,56 @@ func setup_from_spec(spec: String) -> void:
 	_build(skin, shirt, pants)
 
 func _build(skin: Color, shirt: Color, pants: Color) -> void:
-	# Bacaklar: kalcadan sallanan kapsuller (koke bagli)
-	_leg_l = _limb(self, Vector3(-0.055, 0.17, 0), 0.05, 0.17, pants)
-	_leg_r = _limb(self, Vector3(0.055, 0.17, 0), 0.05, 0.17, pants)
-	# Ayaklar: yuvarlak minik toplar
-	_add_ball(_leg_l, Vector3(0, -0.16, 0.02), 0.055, pants.darkened(0.3))
-	_add_ball(_leg_r, Vector3(0, -0.16, 0.02), 0.055, pants.darkened(0.3))
+	# TEK PARCA gorunum: govde yumurta formunda, kafa govdeye gomulu,
+	# kollar govdeye yapisik, bacaklar govdenin altindan cikan kisa
+	# tombul ayaklar. Parca birlesim yerleri gorunmez.
 
-	# Govde: tombul kapsul (kollar ve kafa govdeyle birlikte salinir)
+	# Bacaklar: govdenin altina gizli kisa ayaklar
+	_leg_l = _limb(self, Vector3(-0.052, 0.14, 0), 0.048, 0.09, pants)
+	_leg_r = _limb(self, Vector3(0.052, 0.14, 0), 0.048, 0.09, pants)
+	_add_ball(_leg_l, Vector3(0, -0.085, 0.018), 0.052, pants.darkened(0.25))
+	_add_ball(_leg_r, Vector3(0, -0.085, 0.018), 0.052, pants.darkened(0.25))
+
+	# Govde: yumurta (altta genis, ustte dar) - kafayla ic ice gecer
 	_body = Node3D.new()
 	add_child(_body)
 	var torso := MeshInstance3D.new()
-	var torso_mesh := CapsuleMesh.new()
-	torso_mesh.radius = 0.115
-	torso_mesh.height = 0.32
+	var torso_mesh := SphereMesh.new()
+	torso_mesh.radius = 0.135
+	torso_mesh.height = 0.36
 	torso.mesh = torso_mesh
 	torso.position = Vector3(0, 0.28, 0)
+	torso.scale = Vector3(1, 1, 0.88)
 	torso.material_override = _mat(shirt)
 	_body.add_child(torso)
+	# Pantolon: govdenin alt kismini saran ikinci yumurta dilimi
+	var hips := MeshInstance3D.new()
+	var hips_mesh := SphereMesh.new()
+	hips_mesh.radius = 0.128
+	hips_mesh.height = 0.24
+	hips.mesh = hips_mesh
+	hips.position = Vector3(0, 0.20, 0)
+	hips.scale = Vector3(1, 1, 0.86)
+	hips.material_override = _mat(pants)
+	_body.add_child(hips)
 
-	# Kollar: omuzdan sallanan kapsuller (govdeye bagli)
-	_arm_l = _limb(_body, Vector3(-0.135, 0.37, 0), 0.042, 0.16, shirt)
-	_arm_r = _limb(_body, Vector3(0.135, 0.37, 0), 0.042, 0.16, shirt)
+	# Kollar: govdeye yapisik kisa kollar (disari sarkmaz, hafif acili)
+	_arm_l = _limb(_body, Vector3(-0.118, 0.35, 0), 0.038, 0.12, shirt)
+	_arm_r = _limb(_body, Vector3(0.118, 0.35, 0), 0.038, 0.12, shirt)
+	_arm_l.rotation.z = -0.18  # govdeye dogru yaslan
+	_arm_r.rotation.z = 0.18
 	# Eller: ten rengi minik toplar
-	_add_ball(_arm_l, Vector3(0, -0.155, 0), 0.045, skin)
-	_add_ball(_arm_r, Vector3(0, -0.155, 0), 0.045, skin)
+	_add_ball(_arm_l, Vector3(0, -0.125, 0), 0.04, skin)
+	_add_ball(_arm_r, Vector3(0, -0.125, 0), 0.04, skin)
 
 	# Sag ele alet baglama noktasi
 	hand_attach = Node3D.new()
-	hand_attach.position = Vector3(0, -0.155, 0.02)
+	hand_attach.position = Vector3(0, -0.125, 0.02)
 	_arm_r.add_child(hand_attach)
 
-	# Kafa: buyuk yumusak kure
+	# Kafa: buyuk yumusak kure, govdeye GOMULU (boyun cizgisi yok)
 	_head = Node3D.new()
-	_head.position = Vector3(0, 0.42, 0)
+	_head.position = Vector3(0, 0.38, 0)
 	_body.add_child(_head)
 	var head_mesh := SphereMesh.new()
 	head_mesh.radius = 0.155

@@ -581,64 +581,108 @@ func _build_world() -> void:
 				_solid_cells[cell] = true
 			ground_cells[ground].append(cell)
 
-	# Zemin bloklari: tur basina tek MultiMesh (tek cizim cagrisi)
-	for ch in ground_cells:
-		var cells: Array = ground_cells[ch]
-		if cells.is_empty():
-			continue
-		var def: Dictionary = GROUND_DEFS[ch]
-		var box := BoxMesh.new()
-		box.size = Vector3(1, 0.5, 1)
-		var transforms: Array[Transform3D] = []
-		for cell in cells:
-			transforms.append(Transform3D(Basis.IDENTITY,
-					_cell_center(cell) + Vector3(0, float(def["top"]) - 0.25, 0)))
-		var node := _make_multimesh(box, def["color"], transforms, def.get("water", false))
-		if def.get("speckled", false):
-			var mat: StandardMaterial3D = node.material_override
-			mat.albedo_texture = _make_speckle_texture(def["color"])
-			mat.albedo_color = Color.WHITE
-		add_child(node)
-
+	_build_terrain()
 	_build_sea()
 	_build_decor(ground_cells["."])
 	_rebuild_objects()
 
-# Benekli zemin dokusu: kod ile uretilir (dosya yok, iceri aktarma yok).
-# Ana renk + acik/koyu benekler; cim icin ince ot cizgileri de eklenir.
-var _speckle_cache: Dictionary = {}
+# --- Purussuz arazi -----------------------------------------------------
+# Kare bloklar yerine TEK yumusak ortu: yukseklik ve renk komsu hucreler
+# arasinda harmanlanir. Gol kiyilari merdiven degil dogal kavis olur;
+# su hucreleri cukurlasir, deniz duzlemi iclerini doldurur (kumsal suya
+# egimle iner).
 
-func _make_speckle_texture(base: Color) -> ImageTexture:
-	if _speckle_cache.has(base):
-		return _speckle_cache[base]
+func _cell_props(cx: int, cy: int) -> Array:
+	if cx < 0 or cy < 0 or cx >= _map_w or cy >= _map_h:
+		return [-1.0, Color(0.72, 0.60, 0.38)]  # harita disi: denize inen yamac
+	var ch: String = _ground_char.get(Vector2i(cx, cy), ".")
+	var def: Dictionary = GROUND_DEFS[ch]
+	if ch == "~":
+		# Golun dibi kumlu; su yuzeyini deniz duzlemi saglar
+		return [-0.40, Color(0.62, 0.54, 0.36)]
+	if ch == "o":
+		return [-0.30, def["color"]]
+	return [0.0, def["color"]]
+
+# Bir dunya noktasinda yukseklik+renk (4 komsu hucrenin harmani)
+func _sample_terrain(x: float, z: float) -> Array:
+	var cx := x - 0.5
+	var cz := z - 0.5
+	var i0 := floori(cx)
+	var j0 := floori(cz)
+	var fx := cx - float(i0)
+	var fz := cz - float(j0)
+	var height := 0.0
+	var col := Color(0, 0, 0)
+	for dj in 2:
+		for di in 2:
+			var wgt := (fx if di == 1 else 1.0 - fx) * (fz if dj == 1 else 1.0 - fz)
+			var props := _cell_props(i0 + di, j0 + dj)
+			height += float(props[0]) * wgt
+			col += Color(props[1]) * wgt
+	return [height, col]
+
+func _build_terrain() -> void:
+	var res := 2  # hucre basina 2x2 yama (0.5 m cozunurluk)
+	var vw := _map_w * res
+	var vh := _map_h * res
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	# Once tum kose noktalari
+	var pts: Array = []
+	var cols: Array = []
+	for j in vh + 1:
+		var row_p: Array = []
+		var row_c: Array = []
+		for i in vw + 1:
+			var x := float(i) / float(res)
+			var z := float(j) / float(res)
+			var s := _sample_terrain(x, z)
+			# Organik his: renkte deterministik minik oynama
+			var n := sin(float(i) * 12.9898 + float(j) * 78.233) * 0.035
+			var c: Color = s[1]
+			row_p.append(Vector3(x, float(s[0]), z))
+			row_c.append(Color(c.r * (1.0 + n), c.g * (1.0 + n), c.b * (1.0 + n)))
+		pts.append(row_p)
+		cols.append(row_c)
+	for j in vh:
+		for i in vw:
+			for tri in [[Vector2i(i, j), Vector2i(i + 1, j), Vector2i(i, j + 1)],
+					[Vector2i(i + 1, j), Vector2i(i + 1, j + 1), Vector2i(i, j + 1)]]:
+				for v in tri:
+					st.set_color(cols[v.y][v.x])
+					st.set_uv(Vector2(pts[v.y][v.x].x, pts[v.y][v.x].z) * 0.5)
+					st.add_vertex(pts[v.y][v.x])
+	st.generate_normals()
+	var inst := MeshInstance3D.new()
+	inst.mesh = st.commit()
+	var material := StandardMaterial3D.new()
+	material.vertex_color_use_as_albedo = true
+	material.roughness = 1.0
+	material.albedo_texture = _make_neutral_speckle()
+	inst.material_override = material
+	add_child(inst)
+
+# Notr benek dokusu: koyu/acik gri noktalar, renkleri carparak dokular
+var _neutral_speckle: ImageTexture
+
+func _make_neutral_speckle() -> ImageTexture:
+	if _neutral_speckle != null:
+		return _neutral_speckle
 	var size := 64
 	var img := Image.create(size, size, false, Image.FORMAT_RGB8)
 	var rng := RandomNumberGenerator.new()
-	rng.seed = 12345  # deterministik: her acilista ayni gorunum
-	for y in size:
-		for x in size:
-			var wave := 1.0 + sin(x * 0.35 + y * 0.21) * cos(y * 0.4 - x * 0.13) * 0.05
-			img.set_pixel(x, y, Color(base.r * wave, base.g * wave, base.b * wave))
-	# Acik ve koyu benekler
-	for i in 90:
+	rng.seed = 424242
+	img.fill(Color(0.97, 0.97, 0.97))
+	for i in 110:
 		var px := rng.randi_range(0, size - 1)
 		var py := rng.randi_range(0, size - 1)
-		var tone := 0.86 + rng.randf() * 0.30  # 0.86..1.16
-		var speck := Color(base.r * tone, base.g * tone, base.b * tone)
-		img.set_pixel(px, py, speck)
-		img.set_pixel((px + 1) % size, py, speck)
-		img.set_pixel(px, (py + 1) % size, speck)
-	# Cim icin kisa dikey ot cizgileri (yesil agirlikli renklerde)
-	if base.g > base.r and base.g > base.b:
-		for i in 70:
-			var gx := rng.randi_range(0, size - 1)
-			var gy := rng.randi_range(2, size - 1)
-			var blade := Color(base.r * 1.18, base.g * 1.16, base.b * 1.12)
-			for k in rng.randi_range(2, 4):
-				img.set_pixel(gx, (gy - k + size) % size, blade)
-	var tex := ImageTexture.create_from_image(img)
-	_speckle_cache[base] = tex
-	return tex
+		var tone := 0.86 + rng.randf() * 0.24
+		var c := Color(tone, tone, tone)
+		img.set_pixel(px, py, c)
+		img.set_pixel((px + 1) % size, py, c)
+	_neutral_speckle = ImageTexture.create_from_image(img)
+	return _neutral_speckle
 
 # Harita bir ada: cevresini ufka kadar dalgali deniz sarar.
 func _build_sea() -> void:
