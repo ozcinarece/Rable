@@ -178,76 +178,116 @@ func _setup_screenshot(save_path: String) -> void:
 	player.set_character("custom:f2c29b/4fa7d8/5b6b8c")
 	player.set_hair("kut", Color(0.35, 0.22, 0.12))
 	player.set_hat("yok")
-	var timer := get_tree().create_timer(4.0)
-	timer.timeout.connect(func():
-		var img := get_viewport().get_texture().get_image()
-		img.save_png(save_path)
-		print("ekran goruntusu kaydedildi: ", save_path)
-		# Ikinci kare: kusbakisi tum ada (teshis icin)
-		_cam_locked = true
-		camera.position = Vector3(_map_w / 2.0, 42.0, _map_h / 2.0 + 12.0)
-		camera.rotation_degrees = Vector3(-74, 0, 0)
-		var timer2 := get_tree().create_timer(1.0)
-		timer2.timeout.connect(func():
-			var img2 := get_viewport().get_texture().get_image()
-			img2.save_png(save_path.replace(".png", "_wide.png"))
-			print("genis kare kaydedildi")
-			# Ucuncu kare: cali adaylari vitrini (kullanici secimi icin)
-			var studio := _build_bush_showcase()
-			camera.position = studio + Vector3(5.0, 2.6, 9.0)
-			camera.rotation_degrees = Vector3(-13, 0, 0)
-			var timer3 := get_tree().create_timer(1.0)
-			timer3.timeout.connect(func():
-				var img3 := get_viewport().get_texture().get_image()
-				img3.save_png(save_path.replace(".png", "_cali.png"))
-				print("cali vitrini kaydedildi")
-				get_tree().quit())))
+	await get_tree().create_timer(4.0).timeout
+	_snap(save_path)
+	# Ikinci kare: kusbakisi tum ada (teshis icin)
+	_cam_locked = true
+	camera.position = Vector3(_map_w / 2.0, 42.0, _map_h / 2.0 + 12.0)
+	camera.rotation_degrees = Vector3(-74, 0, 0)
+	await get_tree().create_timer(1.0).timeout
+	_snap(save_path.replace(".png", "_wide.png"))
+	# Aday vitrinleri: kategori basina bir kare (kullanici secimi icin)
+	for f in SHOWCASE_FRAMES.size():
+		var frame: Dictionary = SHOWCASE_FRAMES[f]
+		var base := Vector3(60.0 + float(f) * 80.0, 30.0, 0.0)
+		_build_showcase_frame(frame["rows"], base)
+		camera.position = base + Vector3(frame["cam"][0], frame["cam"][1], frame["cam"][2])
+		camera.rotation_degrees = Vector3(frame["pitch"], 0, 0)
+		await get_tree().create_timer(1.2).timeout
+		_snap(save_path.replace(".png", String(frame["suffix"]) + ".png"))
+	get_tree().quit()
 
-# Cali aday vitrini: Quaternius (CC0) cali modelleri, numarali tek sira.
-# Haritadan uzakta yuksek bir "studyo" zemininde kurulur; sadece CI
-# ekran goruntusu modunda cagrilir. GLB sahnesi komple yuklenir ki
-# cok parcali modeller (uclu cali gibi) eksiksiz gorunsun.
-const BUSH_CANDIDATES: Array[String] = ["quat_bushLeafy", "quat_bushTrio",
-		"quat_bushFlowers", "quat_bushEgg", "quat_bushBerries", "quat_bushRed"]
+func _snap(path: String) -> void:
+	get_viewport().get_texture().get_image().save_png(path)
+	print("kare kaydedildi: ", path)
 
-func _build_bush_showcase() -> Vector3:
-	var base := Vector3(60.0, 30.0, 0.0)
+# --- Aday vitrinleri ------------------------------------------------------
+# Quaternius (CC0) modelleri kategorilere ayrilmis etiketli siralar halinde
+# sergilenir. Sira 0 kameradan en uzaktadir. "h": hedef yukseklik (m),
+# "gap": yan yana aralik. Etiketler: A=agac, K=kaya, O=ot, C=cicek, M=mantar.
+const SHOWCASE_FRAMES: Array = [
+	{"suffix": "_agac", "cam": [0.0, 4.4, 14.0], "pitch": -12.0, "rows": [
+		{"h": 2.4, "gap": 2.8, "items": [
+			{"label": "A1", "model": "quat2_tree01"},
+			{"label": "A2", "model": "quat2_tree02"},
+			{"label": "A3", "model": "quat2_tree03"},
+			{"label": "A4", "model": "quat2_tree04"},
+			{"label": "A5", "model": "quat2_tree05"},
+			{"label": "A6", "model": "quat2_tree06"}]},
+		{"h": 2.4, "gap": 2.8, "items": [
+			{"label": "A7", "model": "quat2_tree07"},
+			{"label": "A8", "model": "quat2_tree08"},
+			{"label": "A9", "model": "quat2_tree09"},
+			{"label": "A10", "model": "quat2_tree10"},
+			{"label": "A11", "model": "quat2_tree11"},
+			{"label": "A12", "model": "quat2_tree12"}]},
+	]},
+	{"suffix": "_kaya", "cam": [0.0, 2.9, 10.5], "pitch": -14.0, "rows": [
+		{"h": 1.1, "gap": 2.2, "items": [
+			{"label": "K1", "model": "quat2_rock01"},
+			{"label": "K2", "model": "quat2_rock02"},
+			{"label": "K3", "model": "quat2_rock03"},
+			{"label": "K4", "model": "quat2_rock04"},
+			{"label": "K5", "model": "quat2_rock05"},
+			{"label": "K6", "model": "quat2_rock06"},
+			{"label": "K7", "model": "quat2_rock07"}]},
+	]},
+	{"suffix": "_bitki", "cam": [0.0, 2.4, 7.8], "pitch": -16.0, "rows": [
+		{"h": 0.7, "gap": 1.6, "items": [
+			{"label": "O1", "model": "quat2_grass01"},
+			{"label": "O2", "model": "quat2_grass02"},
+			{"label": "O3", "model": "quat2_grass03"},
+			{"label": "O4", "model": "quat2_grass04"}]},
+		{"h": 0.6, "gap": 1.6, "items": [
+			{"label": "C1", "model": "quat2_flower01"},
+			{"label": "C2", "model": "quat2_flower02"},
+			{"label": "M1", "model": "quat2_mush01"},
+			{"label": "M2", "model": "quat2_mush02"}]},
+	]},
+]
+
+func _build_showcase_frame(rows: Array, base: Vector3) -> void:
 	var root := Node3D.new()
 	root.position = base
 	add_child(root)
 	var floor_inst := MeshInstance3D.new()
 	var floor_mesh := PlaneMesh.new()
-	floor_mesh.size = Vector2(18, 10)
+	floor_mesh.size = Vector2(34, 18)
 	floor_inst.mesh = floor_mesh
-	floor_inst.position = Vector3(5.0, 0, 0.5)
+	floor_inst.position = Vector3(0, 0, 2.0)
 	var fm := StandardMaterial3D.new()
 	fm.albedo_color = Color(0.32, 0.55, 0.24)
 	fm.roughness = 1.0
 	floor_inst.material_override = fm
 	root.add_child(floor_inst)
-	for i in BUSH_CANDIDATES.size():
-		var pos := Vector3(float(i) * 2.0, 0, 0)
-		var holder := Node3D.new()
-		holder.position = pos
-		root.add_child(holder)
-		var scene: Node3D = load(NATURE_PATH % BUSH_CANDIDATES[i]).instantiate()
-		holder.add_child(scene)
-		var aabb := _scene_aabb(scene)
-		if aabb.size.y > 0.01:
-			var s := 0.8 / aabb.size.y
-			scene.scale = Vector3(s, s, s)
-			scene.position = Vector3(-aabb.get_center().x * s, -aabb.position.y * s,
-					-aabb.get_center().z * s)
-		var label := Label3D.new()
-		label.text = str(i + 1)
-		label.font_size = 80
-		label.modulate = Color(0.08, 0.08, 0.08)
-		label.outline_size = 16
-		label.outline_modulate = Color(1, 1, 1)
-		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-		label.position = pos + Vector3(0, 1.15, 0)
-		root.add_child(label)
-	return base
+	for r in rows.size():
+		var row: Dictionary = rows[r]
+		var items: Array = row["items"]
+		var gap: float = row["gap"]
+		var h: float = row["h"]
+		var z := float(r) * 2.8
+		for i in items.size():
+			var x := (float(i) - float(items.size() - 1) / 2.0) * gap
+			var holder := Node3D.new()
+			holder.position = Vector3(x, 0, z)
+			root.add_child(holder)
+			var scene: Node3D = load(NATURE_PATH % String(items[i]["model"])).instantiate()
+			holder.add_child(scene)
+			var aabb := _scene_aabb(scene)
+			if aabb.size.y > 0.01:
+				var s := h / aabb.size.y
+				scene.scale = Vector3(s, s, s)
+				scene.position = Vector3(-aabb.get_center().x * s, -aabb.position.y * s,
+						-aabb.get_center().z * s)
+			var label := Label3D.new()
+			label.text = String(items[i]["label"])
+			label.font_size = 72
+			label.modulate = Color(0.08, 0.08, 0.08)
+			label.outline_size = 14
+			label.outline_modulate = Color(1, 1, 1)
+			label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+			label.position = Vector3(x, h + 0.35, z)
+			root.add_child(label)
 
 # Sahnedeki tum MeshInstance3D'lerin birlesik sinir kutusu (kok uzayinda)
 func _scene_aabb(node: Node, xform: Transform3D = Transform3D.IDENTITY) -> AABB:
