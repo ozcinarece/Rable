@@ -656,47 +656,58 @@ func _sample_terrain(x: float, z: float) -> Array:
 	return [height, col]
 
 func _build_terrain() -> void:
-	var res := 2  # hucre basina 2x2 yama (0.5 m cozunurluk)
+	var res := 4  # hucre basina 4x4 yama (0.25 m) - falez kenari keskin cikar
 	var vw := _map_w * res
 	var vh := _map_h * res
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	# Once tum kose noktalari
-	var pts: Array = []
-	var cols: Array = []
+	# 1. gecis: yukseklik + ham renk izgarasi
+	var hgt: Array = []
+	var raw: Array = []
 	for j in vh + 1:
-		var row_p: Array = []
+		var row_h := PackedFloat32Array()
 		var row_c: Array = []
 		for i in vw + 1:
-			var x := float(i) / float(res)
-			var z := float(j) / float(res)
-			var s := _sample_terrain(x, z)
-			var height := float(s[0])
-			var c: Color = s[1]
-			# Dik yamaclar taslasir: falez gorunumu (katmanli gri-bej)
-			var steep := maxf(
-					absf(float(_sample_terrain(x + 0.5, z)[0]) - height),
-					absf(float(_sample_terrain(x, z + 0.5)[0]) - height))
-			steep = maxf(steep, absf(float(_sample_terrain(x - 0.5, z)[0]) - height))
-			steep = maxf(steep, absf(float(_sample_terrain(x, z - 0.5)[0]) - height))
+			var s := _sample_terrain(float(i) / float(res), float(j) / float(res))
+			row_h.append(float(s[0]))
+			row_c.append(s[1])
+		hgt.append(row_h)
+		raw.append(row_c)
+	# 2. gecis: diklik izgaradan olculur (0.5 m mesafedeki komsu farki),
+	# renkler falez/gecis kusagina gore boyanir
+	var cols: Array = []
+	for j in vh + 1:
+		var row: Array = []
+		for i in vw + 1:
+			var height: float = hgt[j][i]
+			var c: Color = raw[j][i]
+			var steep := 0.0
+			for off: Vector2i in [Vector2i(2, 0), Vector2i(-2, 0), Vector2i(0, 2), Vector2i(0, -2)]:
+				var ni: int = clampi(i + off.x, 0, vw)
+				var nj: int = clampi(j + off.y, 0, vh)
+				steep = maxf(steep, absf(hgt[nj][ni] - height))
 			if steep > 0.40:
-				# Koyu katmanli kaya (parlak isikta bile bej-gri kalir)
-				var band := 0.5 + 0.5 * sin(height * 9.0)
-				c = Color(0.38, 0.33, 0.28).lerp(Color(0.52, 0.46, 0.38), band)
+				# Falez: net yatay katmanlar (bulanik gri yerine kaya seritleri)
+				var layer := int(floorf((height + 8.0) * 5.0))
+				var band := 0.30 if layer % 2 == 0 else 0.70
+				band += sin(float(i) * 0.9 + float(j) * 0.7) * 0.10
+				c = Color(0.33, 0.29, 0.24).lerp(
+						Color(0.49, 0.43, 0.35), clampf(band, 0.0, 1.0))
+			elif steep > 0.26:
+				# Cim -> kaya arasinda dar toprak kusagi (yesil falezden akmasin)
+				c = c.lerp(Color(0.40, 0.34, 0.25), (steep - 0.26) / 0.14 * 0.85)
 			# Organik his: renkte deterministik minik oynama
 			var n := sin(float(i) * 12.9898 + float(j) * 78.233) * 0.035
-			row_p.append(Vector3(x, height, z))
-			row_c.append(Color(c.r * (1.0 + n), c.g * (1.0 + n), c.b * (1.0 + n)))
-		pts.append(row_p)
-		cols.append(row_c)
+			row.append(Color(c.r * (1.0 + n), c.g * (1.0 + n), c.b * (1.0 + n)))
+		cols.append(row)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var step := 1.0 / float(res)
 	for j in vh:
 		for i in vw:
 			for tri in [[Vector2i(i, j), Vector2i(i + 1, j), Vector2i(i, j + 1)],
 					[Vector2i(i + 1, j), Vector2i(i + 1, j + 1), Vector2i(i, j + 1)]]:
-				for v in tri:
+				for v: Vector2i in tri:
 					st.set_color(cols[v.y][v.x])
-					st.set_uv(Vector2(pts[v.y][v.x].x, pts[v.y][v.x].z) * 0.5)
-					st.add_vertex(pts[v.y][v.x])
+					st.add_vertex(Vector3(float(v.x) * step, hgt[v.y][v.x], float(v.y) * step))
 	st.generate_normals()
 	var inst := MeshInstance3D.new()
 	inst.mesh = st.commit()
@@ -704,6 +715,9 @@ func _build_terrain() -> void:
 	material.vertex_color_use_as_albedo = true
 	material.roughness = 1.0
 	material.albedo_texture = _make_neutral_speckle()
+	# Ucgen UV'si yerine dunya-uzayi doku: dik yamaclarda cizgi cizgi akmaz
+	material.uv1_triplanar = true
+	material.uv1_scale = Vector3(0.5, 0.5, 0.5)
 	inst.material_override = material
 	add_child(inst)
 
