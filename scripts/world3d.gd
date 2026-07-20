@@ -174,8 +174,9 @@ func _ready() -> void:
 func _setup_screenshot(save_path: String) -> void:
 	# Vitrin: yeni tasarimlar fotografta gorunsun diye ornek gorunum
 	player.set_character("custom:f2c29b/4fa7d8/5b6b8c")
-	player.set_hair("kut", Color(0.75, 0.30, 0.15))
+	player.set_hair("kut", Color(0.35, 0.22, 0.12))
 	player.set_hat("yok")
+	cam_distance = 0.58  # yakin cekim: sac/yuz detayi gorunsun
 	var timer := get_tree().create_timer(4.0)
 	timer.timeout.connect(func():
 		var img := get_viewport().get_texture().get_image()

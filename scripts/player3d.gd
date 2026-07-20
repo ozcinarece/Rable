@@ -282,49 +282,89 @@ func set_hair(style: String, color: Color) -> void:
 	hair.scale = Vector3(f, f, f)
 	_head_attach.add_child(hair)
 
-# Sac: kubbe (yarim kure) tabanli yumusak tasarimlar - yuvarlak kafaya
-# sarilir, blok kafada da sirin durur. Yuz (on taraf) hep acik kalir.
+# Sac: gercek "kesim" gibi sekilli tasarimlar. Duz kubbe tas gibi
+# durdugu icin her stilde percemler (kakul), yan tutamlar, tepe
+# lobeleri ve minik tepe tutami var - tas gorunumunu bunlar kirar.
 func _make_hair(style: String, color: Color) -> Node3D:
 	var hair := Node3D.new()
-	# Ortak kubbe: kafanin ust yarisini saran yumusak kep
+	# Taban: kafayi saran alcak kep (tek basina degil, uzeri sekillenir)
 	var dome := SphereMesh.new()
-	dome.radius = 0.185
-	dome.height = 0.21
+	dome.radius = 0.175
+	dome.height = 0.17
 	dome.is_hemisphere = true
-	hair.add_child(_hat_part(dome, color, Vector3(0, 0.145, -0.01)))
-	# Ense: arkada yumusak dolgu
+	hair.add_child(_hat_part(dome, color, Vector3(0, 0.12, -0.015)))
+	# Percemler: alinda 5 yuvarlak tutamlik kakul sirasi
+	for i in 5:
+		var a := deg_to_rad(-52.0 + 26.0 * i)
+		var bang := SphereMesh.new()
+		bang.radius = 0.048
+		bang.height = 0.075
+		hair.add_child(_hat_part(bang, color,
+				Vector3(sin(a) * 0.145, 0.135, cos(a) * 0.145 - 0.005)))
+	# Yan tutamlar: kulak ustlerini ortier
+	var side_lock := SphereMesh.new()
+	side_lock.radius = 0.06
+	side_lock.height = 0.11
+	hair.add_child(_hat_part(side_lock, color, Vector3(0.15, 0.105, 0.0)))
+	hair.add_child(_hat_part(side_lock, color, Vector3(-0.15, 0.105, 0.0)))
+	# Ense dolgusu
 	var nape := SphereMesh.new()
 	nape.radius = 0.115
-	nape.height = 0.20
-	hair.add_child(_hat_part(nape, color, Vector3(0, 0.115, -0.10)))
+	nape.height = 0.17
+	hair.add_child(_hat_part(nape, color, Vector3(0, 0.10, -0.095)))
+	# Tepe lobeleri: kubbenin duzlugunu kiran hacim yumrulari
+	var lobe_a := SphereMesh.new()
+	lobe_a.radius = 0.105
+	lobe_a.height = 0.15
+	hair.add_child(_hat_part(lobe_a, color, Vector3(0.065, 0.205, 0.03)))
+	var lobe_b := SphereMesh.new()
+	lobe_b.radius = 0.095
+	lobe_b.height = 0.14
+	hair.add_child(_hat_part(lobe_b, color, Vector3(-0.06, 0.21, -0.045)))
+	# Tepe tutami: hafif yatik minik ahoge
+	var tuft := CapsuleMesh.new()
+	tuft.radius = 0.022
+	tuft.height = 0.10
+	hair.add_child(_hat_part(tuft, color, Vector3(0.02, 0.285, 0.02),
+			Vector3(18, 0, -28)))
 	match style:
 		"kut":
-			pass  # sade kep + ense yeterli
+			pass  # sekilli kisa kesim (taban set yeterli)
 		"sivri":
-			for i in 5:
+			# Disari yatik sivri tutamlar (dagilmis dinamik gorunum)
+			for i in 6:
+				var angle := TAU * i / 6.0 + 0.3
 				var spike := CylinderMesh.new()
 				spike.top_radius = 0.0
-				spike.bottom_radius = 0.045
-				spike.height = 0.11
-				var angle := TAU * i / 5.0
+				spike.bottom_radius = 0.042
+				spike.height = 0.12
 				hair.add_child(_hat_part(spike, color,
-						Vector3(cos(angle) * 0.08, 0.30, sin(angle) * 0.08 - 0.01)))
+						Vector3(cos(angle) * 0.10, 0.26, sin(angle) * 0.10 - 0.01),
+						Vector3(sin(angle) * 32.0, 0, -cos(angle) * 32.0)))
 		"topuz":
 			var bun := SphereMesh.new()
-			bun.radius = 0.08
-			bun.height = 0.16
-			hair.add_child(_hat_part(bun, color, Vector3(0, 0.30, -0.10)))
+			bun.radius = 0.085
+			bun.height = 0.15
+			hair.add_child(_hat_part(bun, color, Vector3(0, 0.275, -0.11)))
+			var band := TorusMesh.new()
+			band.inner_radius = 0.05
+			band.outer_radius = 0.075
+			hair.add_child(_hat_part(band, color.darkened(0.35),
+					Vector3(0, 0.235, -0.115), Vector3(60, 0, 0)))
 		"uzun":
-			# Yanlardan ve arkadan sarkan yumusak tutamlar
+			# Omuzlara sarkan yumusak tutamlar (hafif disa yatik)
 			var lock := CapsuleMesh.new()
-			lock.radius = 0.045
-			lock.height = 0.28
-			hair.add_child(_hat_part(lock, color, Vector3(0.145, 0.05, -0.03)))
-			hair.add_child(_hat_part(lock, color, Vector3(-0.145, 0.05, -0.03)))
+			lock.radius = 0.05
+			lock.height = 0.30
+			hair.add_child(_hat_part(lock, color, Vector3(0.15, 0.03, -0.02),
+					Vector3(0, 0, -8)))
+			hair.add_child(_hat_part(lock, color, Vector3(-0.15, 0.03, -0.02),
+					Vector3(0, 0, 8)))
 			var back_lock := CapsuleMesh.new()
-			back_lock.radius = 0.07
-			back_lock.height = 0.32
-			hair.add_child(_hat_part(back_lock, color, Vector3(0, 0.04, -0.13)))
+			back_lock.radius = 0.08
+			back_lock.height = 0.34
+			hair.add_child(_hat_part(back_lock, color, Vector3(0, 0.02, -0.125),
+					Vector3(6, 0, 0)))
 	return hair
 
 func _make_hat(hat_id: String) -> Node3D:
@@ -392,10 +432,12 @@ func _cyl(top: float, bottom: float, height: float) -> CylinderMesh:
 	mesh.height = height
 	return mesh
 
-func _hat_part(mesh: Mesh, color: Color, pos: Vector3) -> MeshInstance3D:
+func _hat_part(mesh: Mesh, color: Color, pos: Vector3,
+		rot_degrees: Vector3 = Vector3.ZERO) -> MeshInstance3D:
 	var part := MeshInstance3D.new()
 	part.mesh = mesh
 	part.position = pos
+	part.rotation_degrees = rot_degrees
 	var material := StandardMaterial3D.new()
 	material.albedo_color = color
 	material.roughness = 0.9
