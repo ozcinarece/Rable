@@ -15,13 +15,14 @@ const MapData = preload("res://scripts/map_data.gd")
 const Player3DScript = preload("res://scripts/player3d.gd")
 const Items = preload("res://scripts/items.gd")
 
-## Zemin turleri: renk/doku + ust yuzeyin yuksekligi (0 = yuruyus seviyesi)
+## Zemin turleri: renk (dokusuz yedek) + doku + ust yuzey yuksekligi.
+## Doku yuklenemezse duz renk kullanilir (asla beyaz kalmaz).
 const GROUND_DEFS := {
-	".": {"color": Color.WHITE, "texture": "res://assets/textures3d/grass.png",
+	".": {"color": Color(0.46, 0.73, 0.36), "texture": "res://assets/textures3d/grass.png",
 			"top": 0.0, "solid": false},
-	"d": {"color": Color.WHITE, "texture": "res://assets/textures3d/dirt.png",
+	"d": {"color": Color(0.60, 0.44, 0.29), "texture": "res://assets/textures3d/dirt.png",
 			"top": -0.02, "solid": false},
-	"s": {"color": Color.WHITE, "texture": "res://assets/textures3d/sand.png",
+	"s": {"color": Color(0.91, 0.83, 0.58), "texture": "res://assets/textures3d/sand.png",
 			"top": -0.02, "solid": false},
 	"~": {"color": Color(0.30, 0.58, 0.88), "top": -0.14, "solid": true, "water": true},
 	"o": {"color": Color(0.33, 0.26, 0.20), "top": -0.25, "solid": true},
@@ -490,8 +491,13 @@ func _build_world() -> void:
 					_cell_center(cell) + Vector3(0, float(def["top"]) - 0.25, 0)))
 		var node := _make_multimesh(box, def["color"], transforms, def.get("water", false))
 		if def.has("texture"):
-			var mat: StandardMaterial3D = node.material_override
-			mat.albedo_texture = load(def["texture"])
+			var tex: Texture2D = load(def["texture"])
+			if tex != null:
+				var mat: StandardMaterial3D = node.material_override
+				mat.albedo_texture = tex
+				mat.albedo_color = Color.WHITE
+			else:
+				push_warning("ZEMIN DOKUSU YUKLENEMEDI: " + String(def["texture"]))
 		add_child(node)
 
 	_build_sea()
