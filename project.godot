@@ -17,6 +17,8 @@ Inventory="*res://scripts/inventory.gd"
 Crafting="*res://scripts/crafting.gd"
 Hunger="*res://scripts/hunger.gd"
 SaveManager="*res://scripts/save_manager.gd"
+DayNight="*res://scripts/daynight.gd"
+Health="*res://scripts/health.gd"
 
 [display]
 

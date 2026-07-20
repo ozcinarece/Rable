@@ -51,6 +51,20 @@ sistemler eklendikce guncellenir.
 - Cukur, insa cubugundaki "Doldur" ile 1 toprak karsiligi kapatilir
 - Kurek: 2 cubuk + 1 ip + 1 kalas [tezgah]
 
+### Gece / Savas
+- Gunduz 180 sn, gece 75 sn; gece ekran kararir, HUD'da "Gun N - GECE!"
+- Gece dalgasi: 2 + gun sayisi yaratik (en fazla 10), harita kenarlarindan
+  dogar, oyuncuya yurur; duvar/hendek onlari fiziksel olarak durdurur
+- Yaratik: 30 can, temas hasari 10 (0.8 sn arayla); gun dogunca yok olur
+- Saldiri: yaratik yakindayken aksiyon butonu / yaratiga dokunma vurur
+  (yumruk 10, mizrak eldeyken 30 hasar; geri tepme var)
+- Zirh envanterdeyken hasar %40, sapka %15 azalir (birlikte ~%49)
+- Diken tuzagi (2 cubuk + 1 tas): yaratik ustunden gecerken 15 hasar,
+  5 kullanimda kirilir; oyuncu uzerinden gecebilir, tasinabilir
+- Olum: kampta (ev/respawn) yeniden dogus, can dolar
+- Mizrak: 2 cubuk + 1 tas + 1 ip [tezgah]; Zirh: 4 ip + 2 kalas + 2 tas;
+  Sapka: 2 ip + 3 yaprak
+
 ### Kayit
 - Her 8 saniyede + uygulama arka plana alininca otomatik kayit (user://save.json)
 - Harita durumu, envanter, aclik, respawn ve oyuncu konumu saklanir
@@ -101,7 +115,7 @@ sistemler eklendikce guncellenir.
 2. [x] Envanter altyapisi: envanter paneli (slot/detay) + canta
    (kapasite) + eline esya alma (elde gorunur alet, bonuslar eldeyken) +
    yapi tasima (sandik icerigiyle birlikte tasinir)
-3. [ ] Savas cagi: mizrak/zirh/sapka + gece-gunduz + dusman dalgalari +
+3. [x] Savas cagi: mizrak/zirh/sapka + gece-gunduz + dusman dalgalari +
    can/savas + tuzaklar
 4. [ ] Yerlesik hayat: cok tile'li ev/base insaati (oda mantigi, gorsel +
    stratejik) + tarim (su kanallariyla sulama)
@@ -123,7 +137,7 @@ uygun faza serpistirilir.
 - [x] M4f: Aclik + meyve calisi (yeniden buyuyen kaynak)
 - [x] M4g: Depo sandigi (esya tasima paneli, sandik basina depolama)
 - [x] M4h: Kazma sistemi (kurek, cukur/hendek, su kanali, doldurma)
-- [ ] M5: Gece/gunduz dongusu + dusman dalgalari + can/savas
+- [x] M5: Gece/gunduz dongusu + dusman dalgalari + can/savas + tuzak
 - [ ] M7: Su sistemi genisletme (borular, hacim aktarma, pompa)
 - [ ] Prosedurel harita uretimi (ayni ASCII formatini ureten uretec)
 

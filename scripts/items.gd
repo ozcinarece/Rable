@@ -19,10 +19,13 @@ const ITEMS: Dictionary = {
 	"toprak": {"name": "Toprak", "icon": "res://assets/items/toprak.png"},
 	"kum": {"name": "Kum", "icon": "res://assets/items/kum.png"},
 	"canta": {"name": "Çanta", "icon": "res://assets/items/canta.png"},
+	"mizrak": {"name": "Mızrak", "icon": "res://assets/items/mizrak.png"},
+	"zirh": {"name": "Zırh", "icon": "res://assets/items/zirh.png"},
+	"sapka": {"name": "Şapka", "icon": "res://assets/items/sapka.png"},
 }
 
 ## Ele alinabilen esyalar (envanter panelindeki "Eline Al" butonu)
-const HOLDABLE: Array[String] = ["balta", "kazma", "kurek"]
+const HOLDABLE: Array[String] = ["balta", "kazma", "kurek", "mizrak"]
 
 ## Envanter panelinde gosterilen kisa aciklamalar
 const DESCRIPTIONS: Dictionary = {
@@ -39,6 +42,9 @@ const DESCRIPTIONS: Dictionary = {
 	"toprak": "Cukurlari doldurur.",
 	"kum": "Ileride ise yarayacak...",
 	"canta": "+4 envanter slotu (en fazla 2).",
+	"mizrak": "Eline al: yaratiklara 30 hasar (yumruk 10).",
+	"zirh": "Envanterdeyken hasari %40 azaltir.",
+	"sapka": "Envanterdeyken hasari %15 azaltir.",
 }
 
 static func description(item_id: String) -> String:

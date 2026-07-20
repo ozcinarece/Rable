@@ -15,6 +15,7 @@ const TILE_SIZE: int = 32
 const MapData = preload("res://scripts/map_data.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
+const EnemyScript = preload("res://scripts/enemy.gd")
 
 const HARVEST_REACH_TILES: int = 1
 const REGROW_SECONDS: float = 60.0
@@ -52,7 +53,14 @@ const OBJECT_DEFS: Dictionary = {
 			"drops": {"meyve": 2}, "hits": 1, "becomes_object": "n"},
 	"n": {"texture": "res://assets/tiles/bush_empty.png"},
 	"S": {"texture": "res://assets/tiles/sandik.png"},
+	# Diken tuzagi: carpismasiz (yaratiklar ustunden gecer ve hasar alir)
+	"Z": {"texture": "res://assets/tiles/tuzak.png", "no_collision": true,
+			"drops": {"cubuk": 2, "tas": 1}, "hits": 1},
 }
+
+const TRAP_DAMAGE: int = 15
+const TRAP_MAX_USES: int = 5
+const ATTACK_RANGE: float = 56.0  # oyuncunun vurus menzili (piksel)
 
 @onready var ground_tile_map: TileMap = $GroundTileMap
 @onready var ysort: Node2D = $YSort
@@ -75,6 +83,9 @@ var _respawn_cell: Vector2i = Vector2i.ZERO
 var _save_timer: float = 0.0
 var _map_width: int = 0
 var _map_height: int = 0
+var _enemies: Array = []           # sahnedeki yaratiklar
+var _trap_uses: Dictionary = {}    # tuzak hucresi -> kalan kullanim
+var _night_tint: CanvasModulate
 
 func _ready() -> void:
 	ground_tile_map.tile_set = _build_ground_tile_set()
@@ -88,6 +99,16 @@ func _ready() -> void:
 	hud.chest_closed.connect(func(): _open_chest = NO_CELL)
 	hud.move_toggled.connect(_on_move_toggled)
 	hud.hold_requested.connect(_on_hold_requested)
+	# Gece karartmasi (HUD'i etkilemez, sadece dunyayi)
+	_night_tint = CanvasModulate.new()
+	_night_tint.color = Color.WHITE
+	add_child(_night_tint)
+	DayNight.night_started.connect(_on_night_started)
+	DayNight.day_started.connect(_on_day_started)
+	Health.died.connect(_on_player_died)
+	if DayNight.is_night:
+		_night_tint.color = Color(0.42, 0.46, 0.66)
+		_spawn_wave()
 
 func _process(delta: float) -> void:
 	hud.set_action_state(_compute_action_state())
@@ -100,6 +121,7 @@ func _process(delta: float) -> void:
 	if _held_item != "" and Inventory.get_count(_held_item) <= 0:
 		_on_hold_requested("")
 	_tick_regrow(delta)
+	_tick_traps()
 	_save_timer += delta
 	if _save_timer >= SAVE_INTERVAL:
 		_save_timer = 0.0
@@ -182,11 +204,12 @@ func _set_object(cell: Vector2i, ch: String) -> void:
 	_object_char[cell] = ch
 	var body := StaticBody2D.new()
 	body.position = ground_tile_map.map_to_local(cell)
-	var shape := CollisionShape2D.new()
-	var rect := RectangleShape2D.new()
-	rect.size = Vector2(30, 30)
-	shape.shape = rect
-	body.add_child(shape)
+	if not OBJECT_DEFS[ch].get("no_collision", false):
+		var shape := CollisionShape2D.new()
+		var rect := RectangleShape2D.new()
+		rect.size = Vector2(30, 30)
+		shape.shape = rect
+		body.add_child(shape)
 	var sprite := Sprite2D.new()
 	sprite.texture = load(OBJECT_DEFS[ch]["texture"])
 	sprite.offset = Vector2(0, -16)  # 32x64 gorselin tabani hucreye oturur
@@ -223,6 +246,8 @@ func _on_player_world_tapped(world_pos: Vector2) -> void:
 	elif _object_char.get(cell, "") == "S":
 		_open_chest = cell
 		hud.show_chest(_chests.get(cell, {}))
+	elif _try_attack(world_pos):
+		pass  # yakindaki yaratiga vuruldu
 	elif _held_item == "kurek" and not _object_char.has(cell):
 		_try_dig(cell)
 	else:
@@ -235,6 +260,8 @@ func _on_action_pressed() -> void:
 		facing_offset = Vector2i(0, 1)
 	if _move_mode:
 		_handle_move_tap(player_cell + facing_offset, player_cell)
+		return
+	if _try_attack(player.global_position):
 		return
 	if _held_item == "kurek" and _try_dig(player_cell + facing_offset):
 		return
@@ -378,7 +405,7 @@ func _on_hold_requested(item_id: String) -> void:
 	hud.set_held_item(item_id)
 
 ## Tasinabilir yapilar (dogal seyler tasinamaz)
-const MOVABLE: Array[String] = ["W", "K", "B", "E", "S"]
+const MOVABLE: Array[String] = ["W", "K", "B", "E", "S", "Z"]
 
 func _on_move_toggled(enabled: bool) -> void:
 	_move_mode = enabled
@@ -422,6 +449,108 @@ func _handle_move_tap(cell: Vector2i, player_cell: Vector2i) -> void:
 	if moving_ch == "E" and _respawn_cell == source:
 		_respawn_cell = cell
 	_spawn_floating_text(cell, "Taşındı", Color(0.8, 1.0, 0.8))
+
+# --- Gece / savas --------------------------------------------------------
+
+func _on_night_started() -> void:
+	create_tween().tween_property(_night_tint, "color", Color(0.42, 0.46, 0.66), 3.0)
+	_spawn_wave()
+
+func _on_day_started() -> void:
+	create_tween().tween_property(_night_tint, "color", Color.WHITE, 3.0)
+	# Gun dogunca kalan yaratiklar yok olur
+	for enemy in _enemies:
+		if is_instance_valid(enemy):
+			enemy.queue_free()
+	_enemies.clear()
+
+# Gece dalgasi: gun sayisina gore artan sayida yaratik, harita
+# kenarlarina yakin yurunebilir hucrelerde dogar.
+func _spawn_wave() -> void:
+	var count := mini(2 + DayNight.day, 10)
+	for i in count:
+		var cell := _find_spawn_cell()
+		if cell == NO_CELL:
+			continue
+		var enemy = EnemyScript.new()
+		enemy.target = player
+		enemy.position = ground_tile_map.map_to_local(cell)
+		ysort.add_child(enemy)
+		_enemies.append(enemy)
+	_spawn_floating_text(_get_player_cell(), "Gece coktu... %d yaratik!" % count, Color(1, 0.6, 1))
+
+# Kenarlara yakin, bos ve yurunebilir bir dogum hucresi arar.
+func _find_spawn_cell() -> Vector2i:
+	for attempt in 40:
+		var edge := randi() % 4
+		var x: int
+		var y: int
+		match edge:
+			0: x = 1 + randi() % (_map_width - 2); y = 1 + randi() % 3
+			1: x = 1 + randi() % (_map_width - 2); y = _map_height - 2 - randi() % 3
+			2: x = 1 + randi() % 3; y = 1 + randi() % (_map_height - 2)
+			_: x = _map_width - 2 - randi() % 3; y = 1 + randi() % (_map_height - 2)
+		var cell := Vector2i(x, y)
+		if _object_char.has(cell):
+			continue
+		var ground: String = _ground_char.get(cell, "")
+		if ground == "" or GROUND_DEFS[ground]["solid"]:
+			continue
+		return cell
+	return NO_CELL
+
+# Hedef noktaya yakin bir yaratik varsa vurur; vurus yapildiysa true.
+func _try_attack(world_pos: Vector2) -> bool:
+	var best = null
+	var best_distance := 40.0
+	for enemy in _enemies:
+		if not is_instance_valid(enemy):
+			continue
+		if enemy.global_position.distance_to(player.global_position) > ATTACK_RANGE:
+			continue  # oyuncunun menzili disinda
+		var d: float = enemy.global_position.distance_to(world_pos)
+		if d < best_distance:
+			best_distance = d
+			best = enemy
+	if best == null:
+		return false
+	var damage := 30 if _held_item == "mizrak" else 10
+	if best.hurt(damage, player.global_position):
+		_kill_enemy(best)
+	return true
+
+func _kill_enemy(enemy) -> void:
+	var cell := ground_tile_map.local_to_map(ground_tile_map.to_local(enemy.global_position))
+	_spawn_floating_text(cell, "Yok oldu!", Color(1, 0.8, 1))
+	_enemies.erase(enemy)
+	enemy.queue_free()
+
+# Tuzak hucresindeki yaratiklara hasar verir; tuzak 5 kullanimda kirilir.
+func _tick_traps() -> void:
+	for enemy in _enemies.duplicate():
+		if not is_instance_valid(enemy):
+			_enemies.erase(enemy)
+			continue
+		var cell := ground_tile_map.local_to_map(ground_tile_map.to_local(enemy.global_position))
+		if _object_char.get(cell, "") != "Z":
+			continue
+		if enemy.trap_cooldown > 0.0:
+			continue
+		enemy.trap_cooldown = 0.5
+		if enemy.hurt(TRAP_DAMAGE, enemy.global_position + Vector2(randf() - 0.5, 1)):
+			_kill_enemy(enemy)
+		_trap_uses[cell] = int(_trap_uses.get(cell, 0)) + 1
+		if _trap_uses[cell] >= TRAP_MAX_USES:
+			_trap_uses.erase(cell)
+			_set_object(cell, "")
+			_spawn_floating_text(cell, "Tuzak kirildi", Color(1, 0.8, 0.6))
+
+# Olum: kampta yeniden dogus
+func _on_player_died() -> void:
+	player.global_position = ground_tile_map.map_to_local(_respawn_cell)
+	Health.reset()
+	Hunger.eat(25.0)
+	_spawn_floating_text(_respawn_cell, "Bayıldın! Kampta uyandın.", Color(1, 0.7, 0.7))
 
 # --- Sandik ------------------------------------------------------------
 
@@ -469,6 +598,10 @@ func _on_chest_dismantle() -> void:
 func _compute_action_state() -> String:
 	if _move_mode:
 		return "move"
+	for enemy in _enemies:
+		if is_instance_valid(enemy) \
+				and enemy.global_position.distance_to(player.global_position) <= ATTACK_RANGE:
+			return "attack_spear" if _held_item == "mizrak" else "attack"
 	if _selected_recipe_id != "":
 		return "build"
 	if _held_item == "kurek":
@@ -545,6 +678,10 @@ func _save_game() -> void:
 		"respawn": [_respawn_cell.x, _respawn_cell.y],
 		"player": [player.global_position.x, player.global_position.y],
 		"held": _held_item,
+		"day": DayNight.day,
+		"is_night": DayNight.is_night,
+		"cycle_elapsed": DayNight.elapsed,
+		"hp": Health.value,
 	})
 
 func _load_game() -> void:
@@ -612,3 +749,7 @@ func _load_game() -> void:
 	var held: String = data.get("held", "")
 	if held != "" and Inventory.get_count(held) > 0:
 		_on_hold_requested(held)
+	DayNight.load_state(int(data.get("day", 1)), bool(data.get("is_night", false)),
+			float(data.get("cycle_elapsed", 0.0)))
+	Health.value = float(data.get("hp", Health.MAX_VALUE))
+	Health.changed.emit()

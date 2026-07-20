@@ -32,6 +32,7 @@ const ICON_GATHER := preload("res://assets/ui/axe.png")
 const ICON_BUILD := preload("res://assets/ui/hammer.png")
 const ICON_DIG := preload("res://assets/ui/shovel.png")
 const ICON_MOVE := preload("res://assets/ui/move.png")
+const ICON_SPEAR := preload("res://assets/ui/spear.png")
 
 @onready var inventory_box: HBoxContainer = $Panel/HBox
 @onready var build_box: HBoxContainer = $BuildBar/HBox
@@ -55,6 +56,8 @@ const ICON_MOVE := preload("res://assets/ui/move.png")
 @onready var inventory_detail: Label = $InventoryPanel/VBox/Detail
 @onready var panel_eat_button: Button = $InventoryPanel/VBox/PanelEatButton
 @onready var chest_title: Label = $ChestPanel/VBox/TitleRow/Title
+@onready var health_bar: ProgressBar = $HealthPanel/HBox/HealthBar
+@onready var day_label: Label = $DayLabel
 
 var _selected_item: String = ""
 var _held_item: String = ""  # World bildirir; detay butonunun metni icin
@@ -67,6 +70,10 @@ func _ready() -> void:
 	Inventory.changed.connect(_refresh)
 	Crafting.station_changed.connect(_update_craft_buttons)
 	Hunger.changed.connect(_update_hunger)
+	Health.changed.connect(_update_health)
+	DayNight.changed.connect(_update_day_label)
+	_update_health()
+	_update_day_label()
 	action_button.pressed.connect(func(): action_pressed.emit())
 	action_button.icon = ICON_FIST
 	craft_button.toggled.connect(func(pressed: bool): craft_panel.visible = pressed)
@@ -164,7 +171,22 @@ func _on_reset_pressed() -> void:
 	SaveManager.delete_save()
 	Inventory.reset()
 	Hunger.reset()
+	Health.reset()
+	DayNight.reset()
 	get_tree().reload_current_scene()
+
+# --- Can ve gun gostergesi ------------------------------------------------
+
+func _update_health() -> void:
+	health_bar.value = Health.value
+
+func _update_day_label() -> void:
+	if DayNight.is_night:
+		day_label.text = "Gün %d - GECE!" % DayNight.day
+		day_label.modulate = Color(1, 0.75, 1)
+	else:
+		day_label.text = "Gün %d - Gündüz" % DayNight.day
+		day_label.modulate = Color.WHITE
 
 # Sadece sahip olunan esyalari, items.gd'deki sirayla gosterir.
 func _rebuild_inventory_bar() -> void:
@@ -381,5 +403,9 @@ func set_action_state(state: String) -> void:
 			action_button.icon = ICON_DIG
 		"move":
 			action_button.icon = ICON_MOVE
+		"attack_spear":
+			action_button.icon = ICON_SPEAR
+		"attack":
+			action_button.icon = ICON_FIST
 		_:
 			action_button.icon = ICON_FIST
