@@ -21,10 +21,13 @@ sistemler eklendikce guncellenir.
 | Tas | Kaya | 4 (kazma: 2) | +2 tas |
 | Meyve | Meyve calisi | 1 | +2 meyve; cali 60 sn sonra yeniden buyur |
 
-### Aclik
-- 100'den baslar, saniyede 0.25 azalir (~6.5 dk)
-- Meyve ye: +25 (HUD'daki "Ye" butonu)
-- Sifira inince oyuncu yari hizda yurur (olum M5'te can sistemiyle)
+### Aclik ve Susuzluk
+- Aclik: 100'den baslar, saniyede 0.25 azalir (~6.5 dk); meyve ye +25
+- Susuzluk: saniyede 0.3 azalir; su kenarinda suya DOKUNUNCA icilir (+35)
+- Aclik sifir: yari hiz; susuzluk sifir: 0.6x; ikisi birden: iyice yavas
+- Gosterge: sag ustte ICI DOLAN ikonlar - kalp (kirmizi/can), mide
+  (hardal/aclik), damla (mavi/susuzluk); deger dustukce renk asagi iner,
+  ikona dokununca altinda "50/100" degeri acilir
 
 ### Envanter
 - Slot mantigi: her esya turu 1 slot, yigin limiti 50

@@ -309,6 +309,9 @@ func _on_player_world_tapped(world_pos: Vector2) -> void:
 		_try_sleep(cell)
 	elif _try_attack(world_pos):
 		pass  # yakindaki yaratiga vuruldu
+	elif _ground_char.get(cell, "") == "~" and not _object_char.has(cell):
+		Thirst.drink()
+		_spawn_floating_text(cell, "Su içtin!", Color(0.6, 0.85, 1.0))
 	elif _can_place_held(cell, player_cell):
 		_try_place_held(cell, player_cell)
 	elif _held_item == "kurek" and not _object_char.has(cell):
@@ -667,6 +670,7 @@ func _on_player_died() -> void:
 	player.global_position = ground_tile_map.map_to_local(_respawn_cell)
 	Health.reset()
 	Hunger.eat(25.0)
+	Thirst.drink()
 	_spawn_floating_text(_respawn_cell, "Bayıldın! Kampta uyandın.", Color(1, 0.7, 0.7))
 
 # --- Sandik ------------------------------------------------------------
@@ -858,6 +862,7 @@ func _save_game() -> void:
 		"craft_queue": Crafting.to_save(),
 		"ground_items": ground_item_data,
 		"hunger": Hunger.value,
+		"thirst": Thirst.value,
 		"respawn": [_respawn_cell.x, _respawn_cell.y],
 		"player": [player.global_position.x, player.global_position.y],
 		"held": _held_item,
@@ -931,6 +936,8 @@ func _load_game() -> void:
 					String(entry["id"]), int(entry["count"]))
 	Hunger.value = float(data.get("hunger", Hunger.MAX_VALUE))
 	Hunger.changed.emit()
+	Thirst.value = float(data.get("thirst", Thirst.MAX_VALUE))
+	Thirst.changed.emit()
 
 	var respawn: Array = data.get("respawn", [])
 	if respawn.size() == 2:

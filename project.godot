@@ -16,6 +16,7 @@ config/features=PackedStringArray("4.3", "GL Compatibility")
 Inventory="*res://scripts/inventory.gd"
 Crafting="*res://scripts/crafting.gd"
 Hunger="*res://scripts/hunger.gd"
+Thirst="*res://scripts/thirst.gd"
 SaveManager="*res://scripts/save_manager.gd"
 DayNight="*res://scripts/daynight.gd"
 Health="*res://scripts/health.gd"

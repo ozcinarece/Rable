@@ -42,10 +42,17 @@ const ICON_CLOSE := preload("res://assets/ui/close_x.png")
 @onready var action_button: Button = $ActionButton
 @onready var move_button: Button = $MoveButton
 @onready var reset_button: Button = $ResetButton
-@onready var hunger_bar: ProgressBar = $HungerPanel/HBox/HungerBar
-@onready var eat_button: Button = $HungerPanel/HBox/EatButton
-@onready var health_bar: ProgressBar = $HealthPanel/HBox/HealthBar
+@onready var stats_box: HBoxContainer = $StatsPanel/HBox
 @onready var day_label: Label = $DayLabel
+
+# Ikonlu durum gostergeleri (kalp/mide/damla) - _build_stats kurar
+var eat_button: Button
+var _heart_bar: TextureProgressBar
+var _heart_label: Label
+var _stomach_bar: TextureProgressBar
+var _stomach_label: Label
+var _drop_bar: TextureProgressBar
+var _drop_label: Label
 
 @onready var inventory_button: Button = $InventoryButton
 @onready var inventory_panel: PanelContainer = $InventoryPanel
@@ -106,12 +113,14 @@ func _ready() -> void:
 	Crafting.station_changed.connect(_update_cards)
 	Crafting.queue_changed.connect(_update_cards)
 	Hunger.changed.connect(_update_hunger)
+	Thirst.changed.connect(_update_thirst)
 	Health.changed.connect(_update_health)
 	DayNight.changed.connect(_update_day_label)
 	action_button.pressed.connect(func(): action_pressed.emit())
 	action_button.icon = ICON_FIST
 	move_button.icon = ICON_MOVE
 	move_button.toggled.connect(func(pressed: bool): move_toggled.emit(pressed))
+	_build_stats()
 	eat_button.pressed.connect(_on_eat_pressed)
 	reset_button.pressed.connect(_on_reset_pressed)
 
@@ -295,12 +304,64 @@ func set_held_item(item_id: String) -> void:
 	_refresh_hotbar(_mini_hotbar_slots)
 	_update_detail()
 
-# --- Aclik / can / gun --------------------------------------------------
+# --- Can / aclik / susuzluk gostergeleri --------------------------------
+
+# Sag ustteki ikonlu gostergeler: kalp (can), mide (aclik), damla (su).
+# Ikonun ici degerle orantili dolar; ikona dokununca altinda "50/100"
+# gibi sayi acilir/kapanir.
+func _build_stats() -> void:
+	var heart := _make_stat_widget("kalp")
+	_heart_bar = heart[0]
+	_heart_label = heart[1]
+	var stomach := _make_stat_widget("mide")
+	_stomach_bar = stomach[0]
+	_stomach_label = stomach[1]
+	var drop := _make_stat_widget("damla")
+	_drop_bar = drop[0]
+	_drop_label = drop[1]
+	eat_button = Button.new()
+	eat_button.text = "Ye"
+	eat_button.add_theme_font_size_override("font_size", 20)
+	eat_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	stats_box.add_child(eat_button)
+	_update_thirst()
+
+# Tek gosterge: alttan dolan ikon + gizli deger etiketi. [bar, label] doner.
+func _make_stat_widget(icon_name: String) -> Array:
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 2)
+	var bar := TextureProgressBar.new()
+	bar.texture_under = load("res://assets/ui/%s_bos.png" % icon_name)
+	bar.texture_progress = load("res://assets/ui/%s_dolu.png" % icon_name)
+	bar.fill_mode = TextureProgressBar.FILL_BOTTOM_TO_TOP
+	bar.max_value = 100.0
+	bar.value = 100.0
+	bar.custom_minimum_size = Vector2(48, 48)
+	bar.mouse_filter = Control.MOUSE_FILTER_STOP
+	var label := Label.new()
+	label.visible = false
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	label.add_theme_font_size_override("font_size", 14)
+	bar.gui_input.connect(func(event: InputEvent):
+		if event is InputEventMouseButton and event.pressed:
+			label.visible = not label.visible)
+	box.add_child(bar)
+	box.add_child(label)
+	stats_box.add_child(box)
+	return [bar, label]
 
 func _update_hunger() -> void:
-	hunger_bar.value = Hunger.value
-	hunger_bar.modulate = Color(1, 0.45, 0.45) if Hunger.value <= 25.0 else Color.WHITE
+	if _stomach_bar == null:
+		return
+	_stomach_bar.value = Hunger.value
+	_stomach_label.text = "%d/100" % int(Hunger.value)
 	eat_button.disabled = Inventory.get_count("meyve") <= 0 or Hunger.value >= Hunger.MAX_VALUE
+
+func _update_thirst() -> void:
+	if _drop_bar == null:
+		return
+	_drop_bar.value = Thirst.value
+	_drop_label.text = "%d/100" % int(Thirst.value)
 
 func _on_eat_pressed() -> void:
 	if Inventory.remove_item("meyve", 1):
@@ -312,12 +373,15 @@ func _on_reset_pressed() -> void:
 	Inventory.reset()
 	Crafting.reset()
 	Hunger.reset()
+	Thirst.reset()
 	Health.reset()
 	DayNight.reset()
 	get_tree().reload_current_scene()
 
 func _update_health() -> void:
-	health_bar.value = Health.value
+	if _heart_bar != null:
+		_heart_bar.value = Health.value
+		_heart_label.text = "%d/100" % int(Health.value)
 	if _damage_flash != null and Health.value < _prev_hp:
 		_damage_flash.color.a = 0.3
 		create_tween().tween_property(_damage_flash, "color:a", 0.0, 0.4)
@@ -651,10 +715,6 @@ func _apply_ui_theme() -> void:
 	for child in get_children():
 		if child is Control:
 			child.theme = theme
-
-	# Bar dolgulari: aclik turuncu, can kirmizi (hap seklinde)
-	hunger_bar.add_theme_stylebox_override("fill", _make_bar_fill(Color(0.98, 0.65, 0.25)))
-	health_bar.add_theme_stylebox_override("fill", _make_bar_fill(Color(0.92, 0.32, 0.32)))
 
 	# Gun etiketi panel disinda, dunyanin ustunde: beyaz + golge kalsin
 	day_label.add_theme_color_override("font_color", Color.WHITE)

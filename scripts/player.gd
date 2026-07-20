@@ -76,9 +76,13 @@ func _physics_process(delta: float) -> void:
 		_walk_frame = 0
 		_walk_timer = 0.0
 		_update_sprite()
-	# Aclik sifirsa oyuncu yari hizda yurur
-	var effective_speed := speed * (0.5 if Hunger.is_starving() else 1.0)
-	velocity = direction * effective_speed
+	# Aclik/susuzluk sifirsa oyuncu yavaslar (ikisi birden: iyice yavas)
+	var slow := 1.0
+	if Hunger.is_starving():
+		slow *= 0.5
+	if Thirst.is_dehydrated():
+		slow *= 0.6
+	velocity = direction * speed * slow
 	move_and_slide()
 
 # Baktigi yone gore dogru gorseli secer (sola bakarken yan gorsel aynalanir)
