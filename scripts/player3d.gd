@@ -282,52 +282,49 @@ func set_hair(style: String, color: Color) -> void:
 	hair.scale = Vector3(f, f, f)
 	_head_attach.add_child(hair)
 
-# Mini kafa yaklasik 0.30x0.28x0.28 blok; sac onu hafifce sarar
+# Sac: kubbe (yarim kure) tabanli yumusak tasarimlar - yuvarlak kafaya
+# sarilir, blok kafada da sirin durur. Yuz (on taraf) hep acik kalir.
 func _make_hair(style: String, color: Color) -> Node3D:
 	var hair := Node3D.new()
+	# Ortak kubbe: kafanin ust yarisini saran yumusak kep
+	var dome := SphereMesh.new()
+	dome.radius = 0.185
+	dome.height = 0.21
+	dome.is_hemisphere = true
+	hair.add_child(_hat_part(dome, color, Vector3(0, 0.145, -0.01)))
+	# Ense: arkada yumusak dolgu
+	var nape := SphereMesh.new()
+	nape.radius = 0.115
+	nape.height = 0.20
+	hair.add_child(_hat_part(nape, color, Vector3(0, 0.115, -0.10)))
 	match style:
 		"kut":
-			# Kut kesim: ustte kalin blok + ensede kisa etek
-			var top := BoxMesh.new()
-			top.size = Vector3(0.33, 0.15, 0.33)
-			hair.add_child(_hat_part(top, color, Vector3(0, 0.2, 0)))
-			var back := BoxMesh.new()
-			back.size = Vector3(0.33, 0.16, 0.06)
-			hair.add_child(_hat_part(back, color, Vector3(0, 0.1, -0.15)))
+			pass  # sade kep + ense yeterli
 		"sivri":
-			# Sivri: ustte 5 kucuk koni
-			var base := BoxMesh.new()
-			base.size = Vector3(0.32, 0.09, 0.32)
-			hair.add_child(_hat_part(base, color, Vector3(0, 0.19, 0)))
 			for i in 5:
 				var spike := CylinderMesh.new()
 				spike.top_radius = 0.0
-				spike.bottom_radius = 0.05
-				spike.height = 0.13
+				spike.bottom_radius = 0.045
+				spike.height = 0.11
 				var angle := TAU * i / 5.0
 				hair.add_child(_hat_part(spike, color,
-						Vector3(cos(angle) * 0.09, 0.29, sin(angle) * 0.09)))
+						Vector3(cos(angle) * 0.08, 0.30, sin(angle) * 0.08 - 0.01)))
 		"topuz":
-			# Topuz: ustte blok + arkada yuvarlak topuz
-			var top2 := BoxMesh.new()
-			top2.size = Vector3(0.33, 0.13, 0.33)
-			hair.add_child(_hat_part(top2, color, Vector3(0, 0.2, 0)))
 			var bun := SphereMesh.new()
-			bun.radius = 0.09
-			bun.height = 0.18
-			hair.add_child(_hat_part(bun, color, Vector3(0, 0.28, -0.14)))
+			bun.radius = 0.08
+			bun.height = 0.16
+			hair.add_child(_hat_part(bun, color, Vector3(0, 0.30, -0.10)))
 		"uzun":
-			# Uzun: ustte blok + yanlarda ve arkada uzun etekler
-			var top3 := BoxMesh.new()
-			top3.size = Vector3(0.34, 0.14, 0.34)
-			hair.add_child(_hat_part(top3, color, Vector3(0, 0.2, 0)))
-			var side := BoxMesh.new()
-			side.size = Vector3(0.06, 0.3, 0.2)
-			hair.add_child(_hat_part(side, color, Vector3(0.155, 0.04, -0.05)))
-			hair.add_child(_hat_part(side, color, Vector3(-0.155, 0.04, -0.05)))
-			var back2 := BoxMesh.new()
-			back2.size = Vector3(0.3, 0.32, 0.06)
-			hair.add_child(_hat_part(back2, color, Vector3(0, 0.03, -0.16)))
+			# Yanlardan ve arkadan sarkan yumusak tutamlar
+			var lock := CapsuleMesh.new()
+			lock.radius = 0.045
+			lock.height = 0.28
+			hair.add_child(_hat_part(lock, color, Vector3(0.145, 0.05, -0.03)))
+			hair.add_child(_hat_part(lock, color, Vector3(-0.145, 0.05, -0.03)))
+			var back_lock := CapsuleMesh.new()
+			back_lock.radius = 0.07
+			back_lock.height = 0.32
+			hair.add_child(_hat_part(back_lock, color, Vector3(0, 0.04, -0.13)))
 	return hair
 
 func _make_hat(hat_id: String) -> Node3D:
