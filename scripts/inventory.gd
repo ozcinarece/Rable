@@ -23,8 +23,23 @@ const HOTBAR_UNLOCKED: int = 4  # kalani seviye atlayinca acilacak
 var slots: Array = []   # TOTAL_SLOTS eleman; null veya {"id","count"}
 var hotbar: Array = []  # HOTBAR_SIZE eleman; "" veya item_id
 
+## Baslangic seti: temel aletler hazir gelir (her seferinde uretmek yok).
+## Hem ilk aciliste hem "Yeni Oyun"da verilir; kayit varsa uzerine yuklenir.
+const STARTER_KIT := {"balta": 1, "kazma": 1, "kurek": 1}
+
 func _ready() -> void:
 	_init_arrays()
+	_give_starter_kit()
+
+func _give_starter_kit() -> void:
+	for item_id in STARTER_KIT:
+		add_item(item_id, STARTER_KIT[item_id])
+	# Aletler hizli erisimde hazir dursun
+	var slot_i := 0
+	for item_id in STARTER_KIT:
+		if slot_i < HOTBAR_UNLOCKED:
+			hotbar[slot_i] = item_id
+			slot_i += 1
 
 func _init_arrays() -> void:
 	slots = []
@@ -204,7 +219,8 @@ func load_from_dict(items: Dictionary) -> void:
 			count -= take
 	changed.emit()
 
-## Yeni oyun icin: envanteri bosaltir.
+## Yeni oyun icin: envanteri bosaltir, baslangic setini verir.
 func reset() -> void:
 	_init_arrays()
+	_give_starter_kit()
 	changed.emit()

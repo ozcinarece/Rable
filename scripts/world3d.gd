@@ -63,7 +63,10 @@ const TREE_HEIGHT := 3.1
 ## kure kafa + kapsul govde; spec = ten/tisort/pantolon renkleri).
 ## Mini'ler Kenney paketi (blok stil). Ayni olcek = aksesuarlar ortak.
 const CHARACTER_OPTIONS := [
-	["Sam (Yeni)", "res://assets/models/characters/quat_sam.glb"],
+	["Sarışın", "res://assets/models/characters/quat_sarisin.glb"],
+	["Matt", "res://assets/models/characters/quat_matt.glb"],
+	["Asker", "res://assets/models/characters/quat_asker.glb"],
+	["Sam", "res://assets/models/characters/quat_sam.glb"],
 	["Yuvarlak Mavi", "custom:f2c29b/4fa7d8/5b6b8c"],
 	["Yuvarlak Yeşil", "custom:e8b48d/6abf69/6b5b4a"],
 	["Yuvarlak Pembe", "custom:f5cba7/ef8fb0/7a6f8f"],
@@ -140,7 +143,7 @@ var _held_item: String = ""
 # Kamera + gorunum ayarlari (kaydedilir)
 var cam_distance: float = 1.0  # yakinlik carpani
 var cam_pitch: float = 52.0    # bakis acisi (derece)
-var character_path: String = "res://assets/models/characters/quat_sam.glb"  # varsayilan: Sam
+var character_path: String = "custom:f2c29b/4fa7d8/5b6b8c"  # varsayilan: yuvarlak
 var hat_id: String = "yok"
 var face_path: String = ""
 var hair_style: String = ""
@@ -173,8 +176,8 @@ func _ready() -> void:
 func _setup_screenshot(save_path: String) -> void:
 	# Vitrin: ornek gorunum, kamera OYUN VARSAYILANINDA
 	# (referansla olcek karsilastirmasi icin)
-	player.set_character("res://assets/models/characters/quat_sam.glb")
-	player.set_hair("", Color(0.35, 0.22, 0.12))  # Sam'in kendi saci kalsin
+	player.set_character("custom:f2c29b/4fa7d8/5b6b8c")
+	player.set_hair("kut", Color(0.35, 0.22, 0.12))
 	player.set_hat("yok")
 	await get_tree().create_timer(4.0).timeout
 	_snap(save_path)
@@ -242,6 +245,13 @@ const SHOWCASE_FRAMES: Array = [
 			{"label": "M1", "model": "quat2_mush01"},
 			{"label": "M2", "model": "quat2_mush02"}]},
 	]},
+	{"suffix": "_karakter", "cam": [0.0, 1.8, 5.4], "pitch": -10.0, "rows": [
+		{"h": 1.4, "gap": 1.5, "items": [
+			{"label": "1", "model": "res://assets/models/characters/quat_sarisin.glb"},
+			{"label": "2", "model": "res://assets/models/characters/quat_matt.glb"},
+			{"label": "3", "model": "res://assets/models/characters/quat_asker.glb"},
+			{"label": "4", "model": "res://assets/models/characters/quat_sam.glb"}]},
+	]},
 	{"suffix": "_alet", "cam": [0.0, 3.0, 10.8], "pitch": -15.0, "rows": [
 		{"h": 0.9, "gap": 1.4, "by": "long", "items": [
 			{"label": "S1", "model": "res://assets/models/tools/tool-axe.glb"},
@@ -293,6 +303,11 @@ func _build_showcase_frame(rows: Array, base: Vector3) -> void:
 					else NATURE_PATH % model_id
 			var scene: Node3D = load(model_path).instantiate()
 			holder.add_child(scene)
+			# Karakter paketlerinin gomulu silah/aletleri vitrinde de gizli
+			for weapon_name in Player3DScript.EMBEDDED_WEAPONS:
+				var weapon := scene.find_child(weapon_name, true, false)
+				if weapon != null and weapon is Node3D:
+					(weapon as Node3D).visible = false
 			var aabb := _scene_aabb(scene)
 			# "by": "long" -> yassi/genis modeller (masa, kalas) en uzun
 			# eksenlerine gore olceklenir, yoksa devasa gorunurler
@@ -367,9 +382,9 @@ func _load_settings() -> void:
 	if parsed is Dictionary:
 		cam_distance = clampf(float(parsed.get("zoom", 1.0)), 0.55, 1.7)
 		cam_pitch = clampf(float(parsed.get("pitch", 52.0)), 35.0, 68.0)
-		# v2 gecisi: Sam varsayilan oldu; eski kayitli secim BIR KEZ
-		# Sam'e cevrilir, sonraki secimler (v>=2 kayitlari) aynen korunur
-		if int(parsed.get("v", 1)) >= 2:
+		# v3 gecisi: karakter secimi sifirlandi (Sam denemesi geri alindi);
+		# v>=3 kayitlardaki secimler aynen korunur
+		if int(parsed.get("v", 1)) >= 3:
 			var saved_char := String(parsed.get("character", character_path))
 			if saved_char.begins_with("custom:") or ResourceLoader.exists(saved_char):
 				character_path = saved_char
@@ -381,7 +396,7 @@ func _load_settings() -> void:
 func _save_settings() -> void:
 	var file := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if file != null:
-		file.store_string(JSON.stringify({"v": 2, "zoom": cam_distance,
+		file.store_string(JSON.stringify({"v": 3, "zoom": cam_distance,
 				"pitch": cam_pitch, "character": character_path,
 				"hat": hat_id, "face": face_path,
 				"hair": hair_style, "hair_color": "#" + hair_color.to_html(false)}))

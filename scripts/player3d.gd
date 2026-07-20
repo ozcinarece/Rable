@@ -34,7 +34,11 @@ const EMBEDDED_WEAPONS: Array[String] = ["Knife", "Knife_Offhand",
 		"1H_Sword", "2H_Sword", "1H_Sword_Offhand", "Badge_Shield",
 		"Round_Shield", "Rectangle_Shield", "Spike_Shield", "1H_Axe",
 		"2H_Axe", "Mug", "Mage_Hat", "Spellbook", "Spellbook_open",
-		"Axe", "Gun"]  # Quaternius Sam/Matt serisinin elindeki gomulu aletler
+		# Quaternius karakterlerinin gomulu alet/silahlari
+		"Axe", "Gun", "NurbsPath.001", "Revolver", "Revolver_Small",
+		"Sniper", "Sniper_2", "Pistol", "SMG", "GrenadeLauncher",
+		"ShortCannon", "Shotgun", "RocketLauncher", "AK", "Shovel",
+		"Knife_1", "Knife_2"]
 
 const CustomCharScript = preload("res://scripts/custom_character.gd")
 
@@ -251,6 +255,8 @@ func _detect_animations() -> void:
 				"run": _anim_run = pair[0]
 	if _anim_run == "":
 		_anim_run = _anim_walk
+	if _anim_walk == "":
+		_anim_walk = _anim_run  # bazi paketlerde Walk yok (orn. Asker)
 	for anim_name in [_anim_idle, _anim_walk, _anim_run]:
 		if anim_name != "" and _anim.has_animation(anim_name):
 			_anim.get_animation(anim_name).loop_mode = Animation.LOOP_LINEAR
