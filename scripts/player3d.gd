@@ -38,9 +38,13 @@ const EMBEDDED_WEAPONS: Array[String] = ["Knife", "Knife_Offhand",
 var _anim: AnimationPlayer
 var _current_anim: String = ""
 var _model_scale: float = 1.0
+var _raw_height: float = 0.67  # modelin ham boyu (aksesuar olcek referansi)
 var _model_root: Node3D    # aktif karakter modeli
 var _tool_attach: Node3D   # eldeki aletin baglandigi nokta
+var _head_attach: Node3D   # sapka/gozluk baglanma noktasi (kafa kemigi)
 var _held_tool_path: String = ""  # karakter degisince yeniden takmak icin
+var _hat_id: String = ""
+var _face_path: String = ""
 # Pakete gore degisen animasyon adlari (otomatik bulunur)
 var _anim_idle: String = ""
 var _anim_walk: String = ""
@@ -71,6 +75,7 @@ func set_character(model_path: String) -> void:
 	if mesh_node != null:
 		var height: float = mesh_node.get_aabb().size.y
 		if height > 0.01:
+			_raw_height = height
 			_model_scale = TARGET_HEIGHT / height
 			model.scale = Vector3(_model_scale, _model_scale, _model_scale)
 	# Paketle gelen silah/aksesuar gorselleri kapansin (sade gorunum)
@@ -93,13 +98,29 @@ func set_character(model_path: String) -> void:
 		_tool_attach = Node3D.new()
 		_tool_attach.position = Vector3(0.28, 0.75, 0.18)
 		_visual.add_child(_tool_attach)
+	# Sapka/gozluk baglanma noktasi: kafa kemigi
+	_head_attach = null
+	if skeleton != null:
+		for i in skeleton.get_bone_count():
+			if skeleton.get_bone_name(i).to_lower().contains("head"):
+				var head_att := BoneAttachment3D.new()
+				skeleton.add_child(head_att)
+				head_att.bone_name = skeleton.get_bone_name(i)
+				_head_attach = head_att
+				break
+	if _head_attach == null:
+		_head_attach = Node3D.new()
+		_head_attach.position = Vector3(0, _raw_height * 0.85, 0)
+		model.add_child(_head_attach)
 	# Animasyonlari otomatik bul (paketlerde adlar degisir) ve dongulet
 	_anim = model.find_child("AnimationPlayer", true, false)
 	_detect_animations()
 	if _anim_idle != "":
 		_play(_anim_idle)
-	# Eldeki alet yeni karaktere de takilsin
+	# Eldeki alet ve aksesuarlar yeni karaktere de takilsin
 	set_held_tool(_held_tool_path)
+	set_hat(_hat_id)
+	set_face(_face_path)
 
 # Sag el kemigini bulur: once "handslot", sonra "hand", sonra "arm"
 # (Kenney mini karakterlerde el kemigi yok, "arm-right" var)
@@ -173,6 +194,121 @@ func set_held_tool(model_path: String) -> void:
 		if size > 0.01 and _model_scale > 0.001:
 			var s := 0.5 / (size * _model_scale)
 			tool_model.scale = Vector3(s, s, s)
+
+# --- Aksesuarlar (sapka + yuz) ------------------------------------------
+
+## Sapka takar ("yok" veya "" = cikar). Sapkalar kod ile insa edilir;
+## mini kafa olcusune gore tasarlanmistir, diger boylara olceklenir.
+func set_hat(hat_id: String) -> void:
+	_hat_id = hat_id
+	if _head_attach == null:
+		return
+	for child in _head_attach.get_children():
+		if String(child.name).begins_with("Hat"):
+			child.queue_free()
+	if hat_id == "" or hat_id == "yok":
+		return
+	var hat := _make_hat(hat_id)
+	hat.name = "Hat"
+	var f := _acc_scale()
+	hat.scale = Vector3(f, f, f)
+	_head_attach.add_child(hat)
+
+## Yuz aksesuari takar: gozluk/maske GLB yolu ("" = cikar).
+## Modeller mini kafa pivotuna gore hizali gelir (ayni paketten).
+func set_face(model_path: String) -> void:
+	_face_path = model_path
+	if _head_attach == null:
+		return
+	for child in _head_attach.get_children():
+		if String(child.name).begins_with("Face"):
+			child.queue_free()
+	if model_path == "" or not ResourceLoader.exists(model_path):
+		return
+	var inst: Node3D = load(model_path).instantiate()
+	inst.name = "Face"
+	var f := _acc_scale()
+	inst.scale = Vector3(f, f, f)
+	_head_attach.add_child(inst)
+
+# Aksesuarlar mini boyuna (0.67) gore tasarlandi; baska govdede olcekle
+func _acc_scale() -> float:
+	return _raw_height / 0.67
+
+func _make_hat(hat_id: String) -> Node3D:
+	var hat := Node3D.new()
+	match hat_id:
+		"hasir":
+			# Genis kenarli hasir sapka
+			hat.add_child(_hat_part(_cyl(0.26, 0.26, 0.025), Color(0.89, 0.78, 0.45), Vector3(0, 0.20, 0)))
+			hat.add_child(_hat_part(_cyl(0.13, 0.15, 0.1), Color(0.92, 0.82, 0.50), Vector3(0, 0.26, 0)))
+			hat.add_child(_hat_part(_cyl(0.155, 0.155, 0.03), Color(0.55, 0.38, 0.22), Vector3(0, 0.225, 0)))
+		"bere":
+			var dome := SphereMesh.new()
+			dome.radius = 0.17
+			dome.height = 0.2
+			hat.add_child(_hat_part(dome, Color(0.85, 0.28, 0.32), Vector3(0, 0.23, 0)))
+			var pom := SphereMesh.new()
+			pom.radius = 0.045
+			pom.height = 0.09
+			hat.add_child(_hat_part(pom, Color(0.98, 0.96, 0.92), Vector3(0, 0.34, 0)))
+		"kasket":
+			var top := SphereMesh.new()
+			top.radius = 0.16
+			top.height = 0.19
+			hat.add_child(_hat_part(top, Color(0.28, 0.48, 0.78), Vector3(0, 0.22, 0)))
+			var visor := BoxMesh.new()
+			visor.size = Vector3(0.2, 0.02, 0.13)
+			hat.add_child(_hat_part(visor, Color(0.22, 0.38, 0.62), Vector3(0, 0.21, 0.17)))
+		"tac":
+			hat.add_child(_hat_part(_cyl(0.14, 0.14, 0.07), Color(0.95, 0.78, 0.25), Vector3(0, 0.24, 0)))
+			for i in 4:
+				var spike := CylinderMesh.new()
+				spike.top_radius = 0.0
+				spike.bottom_radius = 0.03
+				spike.height = 0.07
+				var angle := TAU * i / 4.0
+				hat.add_child(_hat_part(spike, Color(0.95, 0.78, 0.25),
+						Vector3(cos(angle) * 0.11, 0.31, sin(angle) * 0.11)))
+		"parti":
+			var cone := CylinderMesh.new()
+			cone.top_radius = 0.0
+			cone.bottom_radius = 0.11
+			cone.height = 0.26
+			hat.add_child(_hat_part(cone, Color(0.95, 0.45, 0.70), Vector3(0, 0.33, 0)))
+			var pom2 := SphereMesh.new()
+			pom2.radius = 0.035
+			pom2.height = 0.07
+			hat.add_child(_hat_part(pom2, Color(0.98, 0.9, 0.3), Vector3(0, 0.47, 0)))
+		"cicek":
+			hat.add_child(_hat_part(_cyl(0.16, 0.16, 0.035), Color(0.38, 0.62, 0.30), Vector3(0, 0.22, 0)))
+			var petal_colors := [Color(0.95, 0.5, 0.6), Color(0.98, 0.85, 0.35),
+					Color(0.75, 0.55, 0.9), Color(0.95, 0.5, 0.6), Color(0.98, 0.85, 0.35)]
+			for i in 5:
+				var flower := SphereMesh.new()
+				flower.radius = 0.035
+				flower.height = 0.07
+				var angle := TAU * i / 5.0
+				hat.add_child(_hat_part(flower, petal_colors[i],
+						Vector3(cos(angle) * 0.15, 0.235, sin(angle) * 0.15)))
+	return hat
+
+func _cyl(top: float, bottom: float, height: float) -> CylinderMesh:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = top
+	mesh.bottom_radius = bottom
+	mesh.height = height
+	return mesh
+
+func _hat_part(mesh: Mesh, color: Color, pos: Vector3) -> MeshInstance3D:
+	var part := MeshInstance3D.new()
+	part.mesh = mesh
+	part.position = pos
+	var material := StandardMaterial3D.new()
+	material.albedo_color = color
+	material.roughness = 0.9
+	part.material_override = material
+	return part
 
 # Basit mizrak: ahsap sap + gri sivri uc (elde ~0.9 m gorunur)
 func _make_spear() -> Node3D:

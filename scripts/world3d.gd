@@ -54,7 +54,8 @@ const FOREST_STYLES := {
 	"ince": {"label": "İnce Uzun", "models": ["tree_thin", "tree_tall",
 			"tree_pineTallA_detailed", "tree_pineTallB_detailed"]},
 }
-## Karakter secenekleri (Gorunum paneli): ad + model yolu
+## Karakter secenekleri (Gorunum paneli): Mini ailesi - 12 govde/kiyafet.
+## Tek govde tipi = tum aksesuarlar herkese tam oturur.
 const CHARACTER_OPTIONS := [
 	["Erkek A", "res://assets/models/characters/mini/character-male-a.glb"],
 	["Erkek B", "res://assets/models/characters/mini/character-male-b.glb"],
@@ -68,11 +69,25 @@ const CHARACTER_OPTIONS := [
 	["Kadın D", "res://assets/models/characters/mini/character-female-d.glb"],
 	["Kadın E", "res://assets/models/characters/mini/character-female-e.glb"],
 	["Kadın F", "res://assets/models/characters/mini/character-female-f.glb"],
-	["Köylü", "res://assets/models/characters/Rogue.glb"],
-	["Kapüşonlu", "res://assets/models/characters/Rogue_Hooded.glb"],
-	["Barbar", "res://assets/models/characters/Barbarian.glb"],
-	["Şövalye", "res://assets/models/characters/Knight.glb"],
-	["Büyücü", "res://assets/models/characters/Mage.glb"],
+]
+
+## Sapka secenekleri (player3d kod ile insa eder)
+const HAT_OPTIONS := [
+	["Yok", "yok"],
+	["Hasır Şapka", "hasir"],
+	["Bere", "bere"],
+	["Kasket", "kasket"],
+	["Taç", "tac"],
+	["Parti", "parti"],
+	["Çiçek Tacı", "cicek"],
+]
+
+## Yuz aksesuarlari (mini paketinden hazir modeller)
+const FACE_OPTIONS := [
+	["Yok", ""],
+	["Gözlük", "res://assets/models/characters/mini/aid-glasses.glb"],
+	["Güneş Gözlüğü", "res://assets/models/characters/mini/aid-sunglasses.glb"],
+	["Maske", "res://assets/models/characters/mini/aid-mask.glb"],
 ]
 const STONE_MODELS: Array[String] = ["rock_largeA", "rock_tallA",
 		"stone_tallB", "rock_largeB"]
@@ -101,6 +116,8 @@ var cam_distance: float = 1.0  # yakinlik carpani
 var cam_pitch: float = 52.0    # bakis acisi (derece)
 var character_path: String = "res://assets/models/characters/mini/character-male-a.glb"
 var forest_style: String = "karisik"
+var hat_id: String = "yok"
+var face_path: String = ""
 
 var player: Node3D
 var camera: Camera3D
@@ -163,13 +180,15 @@ func _load_settings() -> void:
 		var saved_forest := String(parsed.get("forest", forest_style))
 		if FOREST_STYLES.has(saved_forest):
 			forest_style = saved_forest
+		hat_id = String(parsed.get("hat", hat_id))
+		face_path = String(parsed.get("face", face_path))
 
 func _save_settings() -> void:
 	var file := FileAccess.open(SETTINGS_PATH, FileAccess.WRITE)
 	if file != null:
 		file.store_string(JSON.stringify({"zoom": cam_distance,
 				"pitch": cam_pitch, "character": character_path,
-				"forest": forest_style}))
+				"forest": forest_style, "hat": hat_id, "face": face_path}))
 
 # Iki parmakla yakinlastirma (pinch); oyuncu hareketi 1. parmakta kalir
 func _unhandled_input(event: InputEvent) -> void:
@@ -284,7 +303,7 @@ func _build_look_panel(layer: CanvasLayer, look_button: Button, cam_button: Butt
 	box.add_child(char_label)
 
 	var scroll := ScrollContainer.new()
-	scroll.custom_minimum_size = Vector2(0, 260)
+	scroll.custom_minimum_size = Vector2(0, 170)
 	box.add_child(scroll)
 	var grid := GridContainer.new()
 	grid.columns = 3
@@ -309,6 +328,57 @@ func _build_look_panel(layer: CanvasLayer, look_button: Button, cam_button: Butt
 				player.set_character(path)
 				_save_settings())
 		grid.add_child(b)
+
+	# Sapka secimi
+	var hat_label := Label.new()
+	hat_label.text = "Şapka"
+	hat_label.add_theme_font_size_override("font_size", 17)
+	box.add_child(hat_label)
+	var hat_grid := GridContainer.new()
+	hat_grid.columns = 4
+	hat_grid.add_theme_constant_override("h_separation", 6)
+	hat_grid.add_theme_constant_override("v_separation", 6)
+	box.add_child(hat_grid)
+	var hat_group := ButtonGroup.new()
+	for option in HAT_OPTIONS:
+		var hb := Button.new()
+		hb.text = option[0]
+		hb.toggle_mode = true
+		hb.button_group = hat_group
+		hb.add_theme_font_size_override("font_size", 13)
+		hb.button_pressed = option[1] == hat_id
+		var hid: String = option[1]
+		hb.toggled.connect(func(pressed: bool):
+			if pressed:
+				hat_id = hid
+				player.set_hat(hid)
+				_save_settings())
+		hat_grid.add_child(hb)
+
+	# Yuz aksesuari secimi
+	var face_label := Label.new()
+	face_label.text = "Yüz"
+	face_label.add_theme_font_size_override("font_size", 17)
+	box.add_child(face_label)
+	var face_row := GridContainer.new()
+	face_row.columns = 4
+	face_row.add_theme_constant_override("h_separation", 6)
+	box.add_child(face_row)
+	var face_group := ButtonGroup.new()
+	for option in FACE_OPTIONS:
+		var fb2 := Button.new()
+		fb2.text = option[0]
+		fb2.toggle_mode = true
+		fb2.button_group = face_group
+		fb2.add_theme_font_size_override("font_size", 13)
+		fb2.button_pressed = option[1] == face_path
+		var fpath: String = option[1]
+		fb2.toggled.connect(func(pressed: bool):
+			if pressed:
+				face_path = fpath
+				player.set_face(fpath)
+				_save_settings())
+		face_row.add_child(fb2)
 
 	var forest_label := Label.new()
 	forest_label.text = "Orman Stili"
@@ -614,6 +684,8 @@ func _spawn_player() -> void:
 	player.position = _cell_center(_spawn_cell)
 	add_child(player)
 	player.set_character(character_path)  # kayitli secim
+	player.set_hat(hat_id)
+	player.set_face(face_path)
 	player.world_tapped.connect(_on_world_tapped)
 	camera.position = player.position + _camera_offset()
 
