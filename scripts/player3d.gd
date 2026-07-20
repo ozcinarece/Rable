@@ -294,13 +294,14 @@ func _make_hair(style: String, color: Color) -> Node3D:
 	dome.is_hemisphere = true
 	hair.add_child(_hat_part(dome, color, Vector3(0, 0.12, -0.015)))
 	# Percemler: alinda 5 yuvarlak tutamlik kakul sirasi
+	# (gozlerin ustunde kalir; yuz acik)
 	for i in 5:
 		var a := deg_to_rad(-52.0 + 26.0 * i)
 		var bang := SphereMesh.new()
-		bang.radius = 0.048
-		bang.height = 0.075
+		bang.radius = 0.044
+		bang.height = 0.07
 		hair.add_child(_hat_part(bang, color,
-				Vector3(sin(a) * 0.145, 0.135, cos(a) * 0.145 - 0.005)))
+				Vector3(sin(a) * 0.145, 0.152, cos(a) * 0.145 - 0.005)))
 	# Yan tutamlar: kulak ustlerini ortier
 	var side_lock := SphereMesh.new()
 	side_lock.radius = 0.06

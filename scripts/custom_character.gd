@@ -74,15 +74,16 @@ func _build(skin: Color, shirt: Color, pants: Color) -> void:
 	_head.add_child(head_inst)
 
 	# Yuz: iki goz + yanak pembesi + minik gulumseme
+	# (gozler percemin ALTINDA kalacak yukseklikte - yuz hep okunur)
 	for side in [-1.0, 1.0]:
-		_add_ball(_head, Vector3(side * 0.055, 0.13, 0.135), 0.018, Color(0.15, 0.13, 0.14))
-		_add_ball(_head, Vector3(side * 0.105, 0.08, 0.11), 0.022, Color(0.98, 0.62, 0.58, 1.0))
+		_add_ball(_head, Vector3(side * 0.055, 0.10, 0.142), 0.02, Color(0.15, 0.13, 0.14))
+		_add_ball(_head, Vector3(side * 0.105, 0.06, 0.112), 0.022, Color(0.98, 0.62, 0.58, 1.0))
 	var smile := MeshInstance3D.new()
 	var smile_mesh := TorusMesh.new()
 	smile_mesh.inner_radius = 0.015
 	smile_mesh.outer_radius = 0.03
 	smile.mesh = smile_mesh
-	smile.position = Vector3(0, 0.075, 0.135)
+	smile.position = Vector3(0, 0.045, 0.138)
 	smile.rotation_degrees = Vector3(65, 0, 0)
 	smile.scale = Vector3(1, 1, 0.5)
 	smile.material_override = _mat(Color(0.62, 0.32, 0.28))
