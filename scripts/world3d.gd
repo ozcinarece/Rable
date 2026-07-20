@@ -18,12 +18,13 @@ const Items = preload("res://scripts/items.gd")
 ## Zemin turleri: renk + ust yuzey yuksekligi. "speckled": true olan
 ## turler icin benekli doku CALISMA ANINDA kodla uretilir (dosya
 ## iceri aktarma boru hattina bagimlilik yok - her platformda calisir).
+# Renkler kasitli koyu: parlak isikta ekranda referanstaki tona oturur
 const GROUND_DEFS := {
-	".": {"color": Color(0.36, 0.62, 0.27), "top": 0.0, "solid": false, "speckled": true},
-	"d": {"color": Color(0.55, 0.40, 0.26), "top": -0.02, "solid": false, "speckled": true},
-	"s": {"color": Color(0.88, 0.76, 0.50), "top": -0.02, "solid": false, "speckled": true},
-	"~": {"color": Color(0.22, 0.50, 0.80), "top": -0.14, "solid": true, "water": true},
-	"o": {"color": Color(0.33, 0.26, 0.20), "top": -0.25, "solid": true},
+	".": {"color": Color(0.29, 0.53, 0.21), "top": 0.0, "solid": false, "speckled": true},
+	"d": {"color": Color(0.47, 0.33, 0.20), "top": -0.02, "solid": false, "speckled": true},
+	"s": {"color": Color(0.80, 0.66, 0.40), "top": -0.02, "solid": false, "speckled": true},
+	"~": {"color": Color(0.17, 0.42, 0.72), "top": -0.14, "solid": true, "water": true},
+	"o": {"color": Color(0.30, 0.23, 0.17), "top": -0.25, "solid": true},
 }
 
 ## Toplanabilir nesneler (2D'deki degerlerle ayni)
@@ -663,7 +664,7 @@ func _water_material() -> ShaderMaterial:
 	shader.code = """
 shader_type spatial;
 // Opak su: seffaflik siralama sorunlari (beyaz ucgen artiklari) olmaz
-uniform vec4 col : source_color = vec4(0.17, 0.44, 0.74, 1.0);
+uniform vec4 col : source_color = vec4(0.13, 0.36, 0.66, 1.0);
 void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	VERTEX.y += sin(TIME * 1.6 + wp.x * 0.9 + wp.z * 0.7) * 0.05
@@ -790,6 +791,20 @@ func _model_mesh(model: String) -> Mesh:
 	var scene: Node = load(NATURE_PATH % model).instantiate()
 	var mesh := _find_mesh(scene)
 	scene.free()
+	# Renk duzeltme: Kenney'nin camgobegi yesilleri gercek orman
+	# yesiline cevrilir (mavi kanali kisilir). Kahve govdeler ve
+	# kirmizi/sari cicekler etkilenmez (yesil baskin olanlar duzeltilir).
+	if mesh != null:
+		mesh = mesh.duplicate()
+		for i in mesh.get_surface_count():
+			var mat := mesh.surface_get_material(i)
+			if mat is BaseMaterial3D:
+				var fixed: BaseMaterial3D = mat.duplicate()
+				var c := fixed.albedo_color
+				if c.g > c.r and c.b > c.r:
+					fixed.albedo_color = Color(c.r * 1.05, c.g * 0.88, c.b * 0.40, c.a)
+				fixed.roughness = 1.0
+				mesh.surface_set_material(i, fixed)
 	_mesh_cache[model] = mesh
 	return mesh
 
