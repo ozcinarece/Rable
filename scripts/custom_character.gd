@@ -95,25 +95,25 @@ func _build(skin: Color, shirt: Color, pants: Color) -> void:
 		glint_inst.position = Vector3(side * 0.048 + 0.006, 0.112, 0.155)
 		glint_inst.material_override = _mat(Color(0.99, 0.99, 0.99))
 		_head.add_child(glint_inst)
-		# Yanak: soluk pembe, yassi, iyice yanda
+		# Yanak: canli pembe, kucuk, gozlerin ALTINDA (beyaz patlamasin)
 		var cheek := SphereMesh.new()
-		cheek.radius = 0.02
-		cheek.height = 0.028
+		cheek.radius = 0.016
+		cheek.height = 0.02
 		var cheek_inst := MeshInstance3D.new()
 		cheek_inst.mesh = cheek
-		cheek_inst.position = Vector3(side * 0.094, 0.058, 0.122)
-		cheek_inst.scale = Vector3(1.2, 1, 0.35)
-		cheek_inst.material_override = _mat(Color(0.99, 0.74, 0.70))
+		cheek_inst.position = Vector3(side * 0.082, 0.062, 0.132)
+		cheek_inst.scale = Vector3(1.25, 1, 0.3)
+		cheek_inst.material_override = _mat(Color(0.96, 0.58, 0.55))
 		_head.add_child(cheek_inst)
-	# Agiz: ortada, asagida, minicik koyu oval (yuze yapisik)
+	# Agiz: genis-kisa yatay cizgi = kapali gulumseme ("O" saskinligi yok)
 	var mouth := SphereMesh.new()
-	mouth.radius = 0.013
-	mouth.height = 0.018
+	mouth.radius = 0.012
+	mouth.height = 0.014
 	var mouth_inst := MeshInstance3D.new()
 	mouth_inst.mesh = mouth
-	mouth_inst.position = Vector3(0, 0.048, 0.150)
-	mouth_inst.scale = Vector3(1.4, 1, 0.35)
-	mouth_inst.material_override = _mat(Color(0.42, 0.20, 0.18))
+	mouth_inst.position = Vector3(0, 0.052, 0.150)
+	mouth_inst.scale = Vector3(2.1, 0.6, 0.3)
+	mouth_inst.material_override = _mat(Color(0.45, 0.22, 0.20))
 	_head.add_child(mouth_inst)
 
 	# Sapka/sac/gozluk noktasi: kafa tabaninda (mini ile ayni cerceve)
