@@ -44,8 +44,10 @@ var _current_anim: String = ""
 var _model_scale: float = 1.0
 var _raw_height: float = 0.67  # modelin ham boyu (aksesuar olcek referansi)
 var _model_root: Node3D    # aktif karakter modeli
-var _tool_attach: Node3D   # eldeki aletin baglandigi nokta
-var _head_attach: Node3D   # sapka/gozluk baglanma noktasi (kafa kemigi)
+var _tool_attach: Node3D   # eldeki aletin baglandigi nokta (olcek=1 ayna)
+var _head_attach: Node3D   # sapka/gozluk baglanma noktasi (olcek=1 ayna)
+var _tool_src: Node3D      # el kemigi kaynagi (aynaya kopyalanir)
+var _head_src: Node3D      # kafa kemigi kaynagi (aynaya kopyalanir)
 var _held_tool_path: String = ""  # karakter degisince yeniden takmak icin
 var _hat_id: String = ""
 var _face_path: String = ""
@@ -72,6 +74,8 @@ func set_character(model_path: String) -> void:
 		_model_root = null
 	_tool_attach = null
 	_head_attach = null
+	_tool_src = null
+	_head_src = null
 	_anim = null
 	_custom_char = null
 	_current_anim = ""
@@ -106,30 +110,37 @@ func set_character(model_path: String) -> void:
 		if weapon != null and weapon is Node3D:
 			(weapon as Node3D).visible = false
 	# Model hangi olcekte gelirse gelsin boyunu TARGET_HEIGHT'a getir.
-	# En BUYUK gorunur mesh govdedir (ilk bulunan kucuk bir prop olabilir)
-	var mesh_node := _find_body_mesh(model)
-	if mesh_node != null:
-		var height: float = mesh_node.get_aabb().size.y
-		if height > 0.01:
-			_raw_height = height
-			_model_scale = TARGET_HEIGHT / height
-			model.scale = Vector3(_model_scale, _model_scale, _model_scale)
-	# Alet baglama noktasi: sag el kemigi (yoksa govde onunde yedek nokta)
+	# Boy, BIRIKIMLI donusumlerle olculur: bazi paketlerde (orn.
+	# Quaternius Sam) iskelet dugumu 100x olcek tasir, mesh verisi ise
+	# minicik - yerel kutuya bakmak devasa/minik karaktere yol acar.
+	var vis_aabb := _visual_aabb(model, Transform3D.IDENTITY)
+	if vis_aabb.size.y > 0.01:
+		_raw_height = vis_aabb.size.y
+		_model_scale = TARGET_HEIGHT / _raw_height
+		model.scale = Vector3(_model_scale, _model_scale, _model_scale)
+	# Alet baglama noktasi: sag el kemigi (yoksa govde onunde yedek nokta).
+	# Kemik baglantilari iskelet olcegini tasiyabilir; bu yuzden gorseller
+	# dogrudan kemige degil, olcegi 1 olan AYNA dugumlere takilir
+	# (_process her kare kemigin konum/donusunu aynaya kopyalar).
 	var skeleton: Skeleton3D = model.find_child("Skeleton3D", true, false)
 	if skeleton == null:
 		skeleton = model.find_child("*Skeleton*", true, false)
+	_tool_src = null
+	_head_src = null
 	if skeleton != null:
 		var bone_idx := _find_hand_bone(skeleton)
 		if bone_idx != -1:
 			var attach := BoneAttachment3D.new()
 			skeleton.add_child(attach)
 			attach.bone_name = skeleton.get_bone_name(bone_idx)
-			_tool_attach = attach
+			_tool_src = attach
+			_tool_attach = Node3D.new()
+			_visual.add_child(_tool_attach)
 	if _tool_attach == null:
 		_tool_attach = Node3D.new()
 		_tool_attach.position = Vector3(0.28, 0.75, 0.18)
 		_visual.add_child(_tool_attach)
-	# Sapka/gozluk baglanma noktasi: kafa kemigi
+	# Sapka/gozluk baglanma noktasi: kafa kemigi (yine ayna uzerinden)
 	_head_attach = null
 	if skeleton != null:
 		for i in skeleton.get_bone_count():
@@ -137,12 +148,15 @@ func set_character(model_path: String) -> void:
 				var head_att := BoneAttachment3D.new()
 				skeleton.add_child(head_att)
 				head_att.bone_name = skeleton.get_bone_name(i)
-				_head_attach = head_att
+				_head_src = head_att
+				_head_attach = Node3D.new()
+				_visual.add_child(_head_attach)
 				break
 	if _head_attach == null:
 		_head_attach = Node3D.new()
-		_head_attach.position = Vector3(0, _raw_height * 0.85, 0)
-		model.add_child(_head_attach)
+		_head_attach.position = Vector3(0, TARGET_HEIGHT * 0.85, 0)
+		_visual.add_child(_head_attach)
+	_sync_attach_mirrors()
 	# Animasyonlari otomatik bul (paketlerde adlar degisir) ve dongulet
 	_anim = model.find_child("AnimationPlayer", true, false)
 	_detect_animations()
@@ -154,22 +168,41 @@ func set_character(model_path: String) -> void:
 	set_face(_face_path)
 	set_hair(_hair_style, _hair_color)
 
-# Govde mesh'i: en yuksek sinir kutulu GORUNUR mesh (gizli proplar sayilmaz)
-func _find_body_mesh(node: Node) -> MeshInstance3D:
-	var best: MeshInstance3D = null
-	var best_h := 0.0
-	var stack: Array = [node]
-	while not stack.is_empty():
-		var n: Node = stack.pop_back()
-		if n is MeshInstance3D and (n as MeshInstance3D).mesh != null \
-				and (n as Node3D).visible:
-			var hgt: float = (n as MeshInstance3D).get_aabb().size.y
-			if hgt > best_h:
-				best_h = hgt
-				best = n
-		for c in n.get_children():
-			stack.append(c)
-	return best
+# Gorunur mesh'lerin BIRIKIMLI donusumlerle birlesik sinir kutusu
+# (iskelet dugumundeki 100x gibi olcekler dahil edilir)
+func _visual_aabb(node: Node, xform: Transform3D) -> AABB:
+	var result := AABB()
+	var found := false
+	var t := xform
+	if node is Node3D:
+		if not (node as Node3D).visible:
+			return AABB()
+		t = xform * (node as Node3D).transform
+	if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+		result = t * (node as MeshInstance3D).get_aabb()
+		found = true
+	for child in node.get_children():
+		var sub := _visual_aabb(child, t)
+		if sub.size != Vector3.ZERO or sub.position != Vector3.ZERO:
+			result = result.merge(sub) if found else sub
+			found = true
+	return result
+
+# Kemik kaynaklarinin konum/donusunu olcek-1 aynalara kopyalar
+# (iskeletteki dev olcekler aksesuarlara bulasmaz)
+func _sync_attach_mirrors() -> void:
+	if _tool_src != null and _tool_attach != null:
+		var gt := _tool_src.global_transform
+		_tool_attach.global_transform = Transform3D(gt.basis.orthonormalized(), gt.origin)
+	if _head_src != null and _head_attach != null:
+		var gt2 := _head_src.global_transform
+		_head_attach.global_transform = Transform3D(gt2.basis.orthonormalized(), gt2.origin)
+
+# Dugumun dunya olcegi (aksesuar boylarini normalize etmek icin)
+func _node_world_scale(n: Node3D) -> float:
+	if n == null or not n.is_inside_tree():
+		return 1.0
+	return maxf(n.global_transform.basis.get_scale().x, 0.0001)
 
 # Sag el kemigini bulur: once "handslot", sonra "hand", sonra "arm"
 # (Kenney mini karakterlerde el kemigi yok, "arm-right" var)
@@ -239,12 +272,13 @@ func set_held_tool(model_path: String) -> void:
 		return
 	var tool_model: Node3D = load(model_path).instantiate()
 	_tool_attach.add_child(tool_model)
-	# Alet gercek boyutta ~0.5 m gorunsun (iskelet olcegini telafi et)
+	# Alet gercek boyutta ~0.5 m gorunsun (baglanti noktasinin dunya
+	# olcegi ne olursa olsun)
 	var mesh_node := _find_mesh_instance(tool_model)
 	if mesh_node != null:
 		var size: float = mesh_node.get_aabb().get_longest_axis_size()
-		if size > 0.01 and _model_scale > 0.001:
-			var s := 0.5 / (size * _model_scale)
+		if size > 0.01:
+			var s := 0.5 / (size * _node_world_scale(_tool_attach))
 			tool_model.scale = Vector3(s, s, s)
 
 # --- Aksesuarlar (sapka + yuz) ------------------------------------------
@@ -285,7 +319,10 @@ func set_face(model_path: String) -> void:
 
 # Aksesuarlar mini boyuna (0.67) gore tasarlandi; baska govdede olcekle
 func _acc_scale() -> float:
-	return _raw_height / 0.67
+	# Aksesuarlar 0.67 birimlik mini kafaya gore cizildi; hedef dunya
+	# boyutu sabittir. Baglanma noktasinin dunya olcegine bolerek her
+	# karakterde ayni gercek boyut elde edilir.
+	return (TARGET_HEIGHT / 0.67) / _node_world_scale(_head_attach)
 
 ## Sac takar: stil ("" = modelin kendi saci) + renk. Kendi tasarimimiz
 ## olan sac modelleri kafanin ustune giydirilir; stil ve renk serbest.
@@ -508,6 +545,10 @@ func _find_mesh_instance(node: Node) -> MeshInstance3D:
 		if found != null:
 			return found
 	return null
+
+func _process(_delta: float) -> void:
+	# Kemik aynalarini her kare guncelle (animasyonla birlikte tasinir)
+	_sync_attach_mirrors()
 
 func _physics_process(delta: float) -> void:
 	var dir := _get_input_direction()

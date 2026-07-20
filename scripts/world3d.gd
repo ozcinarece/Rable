@@ -985,35 +985,31 @@ func _lake_material() -> ShaderMaterial:
 	var shader := Shader.new()
 	shader.code = """
 shader_type spatial;
-// Stilize gol: sigda turkuaz, derinde koyu mavi; kiyida dalgalanan
-// beyaz kopuk halkasi; ince piriltilar. Derinlik COLOR.r'den okunur
-// (mesh'e islenmis kiyi mesafesi) - depth texture gerektirmez.
-uniform vec4 deep_col : source_color = vec4(0.12, 0.34, 0.60, 1.0);
-uniform vec4 shallow_col : source_color = vec4(0.28, 0.60, 0.72, 1.0);
+// SAKIN gol (Longvinter usulu): duz, temiz su malzemesi. Abartili
+// dalga/kopuk yok - sadece kiyida ince bir kopuk cizgisi, cok hafif
+// salinim ve gunes parlamasi icin puruzsuz yuzey. Derinlik COLOR.r'de.
+uniform vec4 deep_col : source_color = vec4(0.15, 0.38, 0.62, 1.0);
+uniform vec4 shallow_col : source_color = vec4(0.25, 0.55, 0.72, 1.0);
 void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	VERTEX.y += sin(TIME * 1.9 + wp.x * 2.4 + wp.z * 1.7) * 0.018
-			+ cos(TIME * 1.3 + wp.z * 3.0) * 0.012;
+	// Cok hafif salinim: su oldugu belli olsun, dalga hissi olmasin
+	VERTEX.y += sin(TIME * 1.1 + wp.x * 1.6 + wp.z * 1.2) * 0.008;
 }
 void fragment() {
 	vec3 wp2 = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
 	float depth = COLOR.r;
-	vec3 col = mix(shallow_col.rgb, deep_col.rgb, smoothstep(0.05, 0.90, depth));
-	// Kiyi kopugu: kiyiyi izleyen, hafifce soluyup dalgalanan bant
-	float wobble = sin(wp2.x * 5.2 + wp2.z * 4.1 + TIME * 1.3) * 0.045
-			+ sin(wp2.x * 2.3 - wp2.z * 3.4 - TIME * 0.8) * 0.03;
-	float foam_edge = smoothstep(0.28, 0.08, depth + wobble);
-	// Ikinci ic halka: kiyidan biraz iceride kesik kesik kopuk cizgisi
-	float ring = smoothstep(0.05, 0.0, abs(depth + wobble - 0.50)) * 0.55
-			* step(0.0, sin(wp2.x * 3.0 + wp2.z * 2.6 + TIME * 0.6));
-	// Ince piriltilar (kocaman beyaz lekeler degil, minik parlamalar)
-	float sp = sin(wp2.x * 7.1 + TIME * 1.1) * sin(wp2.z * 8.3 - TIME * 0.9);
-	float sparkle = smoothstep(0.965, 1.0, sp) * 0.5;
-	col = mix(col, vec3(0.95, 0.98, 1.0),
-			clamp(foam_edge * 0.85 + ring + sparkle, 0.0, 1.0));
+	vec3 col = mix(shallow_col.rgb, deep_col.rgb, smoothstep(0.05, 0.85, depth));
+	// Kiyida INCE, yavas nefes alan kopuk cizgisi
+	float wobble = sin(wp2.x * 3.1 + wp2.z * 2.6 + TIME * 0.7) * 0.02;
+	float foam_edge = smoothstep(0.14, 0.05, depth + wobble);
+	col = mix(col, vec3(0.93, 0.97, 1.0), foam_edge * 0.6);
+	// Gunes yansimasi icin hafif yuzey kirisikligi (gorunmez ama
+	// parlamayi canli tutar)
+	NORMAL = normalize(NORMAL + vec3(sin(wp2.x * 2.2 + TIME * 0.6) * 0.02,
+			0.0, cos(wp2.z * 1.9 + TIME * 0.5) * 0.02));
 	ALBEDO = col;
-	ROUGHNESS = 0.30;
-	SPECULAR = 0.30;
+	ROUGHNESS = 0.12;
+	SPECULAR = 0.65;
 }
 """
 	_lake_mat = ShaderMaterial.new()
@@ -1037,7 +1033,7 @@ func _build_decor(grass_cells: Array) -> void:
 		var off := Vector3(sin(cell.x * 12.9) * 0.25, 0, cos(cell.y * 7.7) * 0.25)
 		groups[idx].append(Transform3D(_cell_variance(cell), _cell_center(cell) + off))
 	for idx in groups:
-		add_child(_make_mesh_multimesh(pool[idx], groups[idx]))
+		add_child(_make_mesh_multimesh(pool[idx], groups[idx], false))
 
 ## Bir dunya noktasindaki arazi yuksekligi (oyuncu ve nesneler icin)
 func ground_height(x: float, z: float) -> float:
@@ -1131,7 +1127,7 @@ func _build_pickups(cells: Array[Vector2i], kind: String) -> void:
 			groups[idx] = []
 		groups[idx].append(Transform3D(_cell_variance(cell), _cell_center(cell)))
 	for idx in groups:
-		_keep(_make_mesh_multimesh(pool[idx], groups[idx]))
+		_keep(_make_mesh_multimesh(pool[idx], groups[idx], false))
 
 func _build_bushes(full: Array[Vector2i], empty: Array[Vector2i]) -> void:
 	for v in BUSH_VARIANTS.size():
@@ -1242,7 +1238,8 @@ func _merge_into(node: Node, xform: Transform3D, result: ArrayMesh) -> void:
 	for child in node.get_children():
 		_merge_into(child, t, result)
 
-func _make_mesh_multimesh(mesh: Mesh, transforms: Array) -> MultiMeshInstance3D:
+func _make_mesh_multimesh(mesh: Mesh, transforms: Array,
+		shadows := true) -> MultiMeshInstance3D:
 	var multi := MultiMesh.new()
 	multi.transform_format = MultiMesh.TRANSFORM_3D
 	multi.mesh = mesh
@@ -1251,6 +1248,9 @@ func _make_mesh_multimesh(mesh: Mesh, transforms: Array) -> MultiMeshInstance3D:
 		multi.set_instance_transform(i, transforms[i])
 	var node := MultiMeshInstance3D.new()
 	node.multimesh = multi
+	if not shadows:
+		# Kucuk bitki ortusu golge cizmesin: telefonda bedava hiz
+		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return node
 
 func _keep(node: MultiMeshInstance3D) -> void:
