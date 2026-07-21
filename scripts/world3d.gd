@@ -280,6 +280,10 @@ func _ready() -> void:
 	hud.move_toggled.connect(func(on: bool): _move_mode = on)
 	hud.drop_item_requested.connect(_on_drop_item)
 	hud.eat_requested.connect(_on_eat_requested)
+	# YASAM cila: cig et bulantisi geri bildirimi (UI_DESIGN 4.5 dili)
+	PlayerStats.nausea_started.connect(func():
+		_spawn_floating_text(_player_cell(), "Midem bulandı", Color(0.7, 0.85, 0.5)))
+	PlayerStats.player_died.connect(func(_c: int): _play_sfx("death"))
 	hud.chest_transfer_requested.connect(_on_chest_transfer)
 	hud.chest_transfer_all_requested.connect(_on_chest_transfer_all)
 	hud.chest_dismantle_requested.connect(_on_chest_dismantle)
@@ -520,8 +524,52 @@ func _setup_screenshot(save_path: String) -> void:
 	await get_tree().create_timer(0.4).timeout
 	_snap(save_path.replace(".png", "_yer_esya.png"))
 	await _run_base_selftest(save_path)  # BASE (Bolum 14): sandik/yatak/ocak/platform
+	await _run_survival_selftest(save_path)  # YASAM: can/aclik/yeme/pisirme/olum
 	_run_save_load_selftest()
 	get_tree().quit()
+
+## YASAM self-test: yeme doyma, açlık->can erimesi, ölüm+doğuş+envanter,
+## pişirme istasyon kapısı. CI log'unda EAT/STARVE/DEATH/COOK satırları.
+func _run_survival_selftest(save_path: String) -> void:
+	# Yeme -> doyma uygulanir
+	Inventory.reset()
+	Hunger.value = 50.0
+	var before := int(Hunger.value)
+	PlayerStats.apply_food("meyve")  # +12
+	print("EATTEST: aclik %d->%d edible(meyve=%s odun=%s)" % [
+		before, int(Hunger.value), str(PlayerStats.is_edible("meyve")),
+		str(PlayerStats.is_edible("odun"))])
+	# Açlık 0 -> can erir
+	Hunger.value = 0.0
+	Health.value = 100.0
+	for i in 20:
+		PlayerStats._tick_health(0.1)
+	print("STARVETEST: aclik0 can=%.1f (100'den dusmeli)" % Health.value)
+	# Can 0 -> ölüm + doğuş; envanter KORUNUR
+	Inventory.add_item("kalas", 5)
+	var inv_before := Inventory.get_count("kalas")
+	var dc := PlayerStats.death_count
+	Health.value = 0.0
+	PlayerStats._tick_health(0.1)
+	print("DEATHTEST: sayac %d->%d can=%.0f aclik=%.0f envanter_korundu=%s" % [
+		dc, PlayerStats.death_count, Health.value, Hunger.value,
+		str(Inventory.get_count("kalas") == inv_before)])
+	# Pişirme: ocak yakınlık kapısı
+	Inventory.reset()
+	Inventory.add_item("cig_et", 2)
+	Crafting.near_hearth = false
+	var n0 := Crafting.max_craftable("pismis_et")
+	Crafting.near_hearth = true
+	var n1 := Crafting.max_craftable("pismis_et")
+	print("COOKTEST: ocaksiz=%d ocakli=%d" % [n0, n1])
+	Crafting.near_hearth = false
+	# Kare: düşük açlık/can (uyarı nabzı + vinyet görünsün)
+	Hunger.value = 20.0; Hunger.changed.emit()
+	Health.value = 22.0; Health.changed.emit()
+	PlayerStats.hunger_warning.emit()
+	await get_tree().create_timer(0.4).timeout
+	_snap(save_path.replace(".png", "_yasam.png"))
+	Hunger.value = 80.0; Health.value = 100.0  # sonraki testler icin toparla
 
 ## BASE (Bolum 14 A kismi) self-test: dort yapiyi kurar, davranislari dogrular
 ## ve _base.png karesini alir. CI log'unda CHEST/BED/HEARTH/PLATFORM satirlari.

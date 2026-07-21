@@ -592,6 +592,11 @@ func _update_health() -> void:
 	if _damage_flash != null and Health.value < _prev_hp:
 		_damage_flash.color.a = 0.3
 		create_tween().tween_property(_damage_flash, "color:a", 0.0, 0.4)
+	# YASAM cila: dusuk canda ÇOK hafif kirmizi vinyet (mobilde rahatsiz etmez).
+	# <30 canda basar, 0'da en fazla ~0.12 alfa.
+	if _low_hp_vignette != null:
+		var lo: float = clampf((30.0 - Health.value) / 30.0, 0.0, 1.0)
+		_low_hp_vignette.color.a = lo * 0.12
 	_prev_hp = Health.value
 
 func _update_day_label() -> void:
@@ -979,8 +984,17 @@ func _setup_damage_flash() -> void:
 	_death_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(_death_fade)  # en ustte (panelleri de kapatir)
 	PlayerStats.player_died.connect(_on_player_died)
+	# YASAM: dusuk-can vinyeti (cok hafif kirmizi, kenar hissi icin dunyanin
+	# ustunde ama panellerin altinda)
+	_low_hp_vignette = ColorRect.new()
+	_low_hp_vignette.color = Color(0.6, 0.05, 0.05, 0.0)
+	_low_hp_vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_low_hp_vignette.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_low_hp_vignette)
+	move_child(_low_hp_vignette, 1)  # damage_flash'in hemen ustu, panel alti
 
 var _death_fade: ColorRect
+var _low_hp_vignette: ColorRect
 
 ## Olum: kisa kararma (respawn_player kararmanin altinda isinlar).
 func _on_player_died(_count: int) -> void:
