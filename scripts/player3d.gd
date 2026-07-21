@@ -21,6 +21,18 @@ const BODY_RADIUS: float = 0.27   # duvarlara bu kadar yaklasabilir
 ## Yaratik davranisi (tirmanamama vb.) 11.6 ile gelecek.
 var water_factor: float = 1.0
 
+## Eylem carpani (12.3): alet sallarken hareket yavaslar (World okur).
+var action_factor: float = 1.0
+
+const ToolProfiles = preload("res://scripts/tool_profiles.gd")
+
+## Alet eylemi sirasinda aletin baglandigi doner pivot (ToolPivot).
+## _tool_attach el kemigine yapisir; pivot onun icinde donerek uc fazli
+## sallanmayi olusturur. Model pivot'un cocugudur.
+var _tool_pivot: Node3D
+var _swinging: bool = false
+signal swing_finished  # bir sonraki eylem/kombo icin (Asama 4 kilic)
+
 var world: Node3D  # world3d atar; is_walkable(cell) saglar
 var facing := Vector2(0, 1)  # son yuruyus yonu (aksiyon butonu hedefi)
 
@@ -269,19 +281,26 @@ func _detect_animations() -> void:
 ## "spear" ozel degeri: pakette mizrak yok, basit bir tane insa edilir.
 func set_held_tool(model_path: String) -> void:
 	_held_tool_path = model_path
+	_swinging = false
+	_tool_pivot = null
 	if _tool_attach == null:
 		return
 	for child in _tool_attach.get_children():
 		child.queue_free()
+	# ToolPivot: fazlar bunu dondurur; model onun cocugu. Bos elde bile
+	# olusturulur ki yumruk sallamasi (fist) animasyonu oynayabilsin.
+	_tool_pivot = Node3D.new()
+	_tool_pivot.name = "ToolPivot"
+	_tool_attach.add_child(_tool_pivot)
 	if model_path == "":
 		return
 	if model_path == "spear":
-		_tool_attach.add_child(_make_spear())
+		_tool_pivot.add_child(_make_spear())
 		return
 	if not ResourceLoader.exists(model_path):
 		return
 	var tool_model: Node3D = load(model_path).instantiate()
-	_tool_attach.add_child(tool_model)
+	_tool_pivot.add_child(tool_model)
 	# Alet gercek boyutta ~0.5 m gorunsun (baglanti noktasinin dunya
 	# olcegi ne olursa olsun)
 	var mesh_node := _find_mesh_instance(tool_model)
@@ -290,6 +309,59 @@ func set_held_tool(model_path: String) -> void:
 		if size > 0.01:
 			var s := 0.5 / (size * _node_world_scale(_tool_attach))
 			tool_model.scale = Vector3(s, s, s)
+
+## Uc fazli alet sallamasi (12.3). Profil pozlarini Tween ile oynatir;
+## strike aninda on_strike cagrilir (ETKI orada uygulanir, buton aninda
+## DEGIL). Zaten sallaniyorsa false doner (spam korumasi). tier: sure
+## kirpma kademesi. combo_second: kilic ikinci kesigi (ters yon).
+func play_swing(profile: Dictionary, on_strike: Callable,
+		tier: int = 0, combo_second: bool = false) -> bool:
+	if _swinging or _tool_pivot == null:
+		return false
+	_swinging = true
+	action_factor = 0.6  # eylem sirasinda %40 yavasla
+	var f: float = ToolProfiles.tier_factor(tier)
+	var windup: float = maxf(0.03, float(profile.get("windup", 0.14)) * f)
+	var strike: float = maxf(0.03, float(profile.get("strike", 0.10)))
+	var recover: float = maxf(0.03, float(profile.get("recover", 0.20)) * f)
+	if combo_second:
+		recover = 0.12
+	var rest: Vector3 = profile.get("rest", Vector3.ZERO)
+	var wind: Vector3 = profile.get("wind", Vector3.ZERO)
+	var hit: Vector3 = profile.get("hit", Vector3.ZERO)
+	var push_z: float = float(profile.get("push_z", 0.0))
+	if combo_second:
+		# Ikinci kesik ters yon: yatay bileseni aynala
+		wind = Vector3(wind.x, -wind.y, -wind.z)
+		hit = Vector3(hit.x, -hit.y, -hit.z)
+	_tool_pivot.rotation_degrees = rest
+	_tool_pivot.position = Vector3.ZERO
+	var tw := create_tween()
+	# HAZIRLIK: geri cekil
+	tw.tween_property(_tool_pivot, "rotation_degrees", wind, windup) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	# VURUS: hizli in; bitiminde ETKI
+	tw.tween_property(_tool_pivot, "rotation_degrees", hit, strike) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	if push_z > 0.001:
+		tw.parallel().tween_property(_tool_pivot, "position:z", push_z, strike) \
+				.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_callback(func():
+		if on_strike.is_valid():
+			on_strike.call())
+	# TOPARLANMA: dinlenmeye don
+	tw.tween_property(_tool_pivot, "rotation_degrees", rest, recover) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	if push_z > 0.001:
+		tw.parallel().tween_property(_tool_pivot, "position:z", 0.0, recover)
+	tw.tween_callback(func():
+		_swinging = false
+		action_factor = 1.0
+		swing_finished.emit())
+	return true
+
+func is_swinging() -> bool:
+	return _swinging
 
 # --- Aksesuarlar (sapka + yuz) ------------------------------------------
 
@@ -569,7 +641,7 @@ func _physics_process(delta: float) -> void:
 	# Kosma: parmagi uzaga cek (veya klavyede Shift)
 	var running := _wants_run()
 	_play(_anim_run if running else _anim_walk)
-	var speed := (RUN_SPEED if running else SPEED) * water_factor
+	var speed := (RUN_SPEED if running else SPEED) * water_factor * action_factor
 	_try_move(Vector3(dir.x, 0, dir.y) * speed * delta)
 	# Yuruyus yonune yumusakca don (model +Z yonune bakar)
 	var target_angle := atan2(dir.x, dir.y)

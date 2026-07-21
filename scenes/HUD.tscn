@@ -136,6 +136,19 @@ grow_horizontal = 0
 grow_vertical = 0
 expand_icon = true
 
+[node name="AttackButton" type="Button" parent="."]
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -122.0
+offset_top = -300.0
+offset_right = -50.0
+offset_bottom = -228.0
+grow_horizontal = 0
+grow_vertical = 0
+expand_icon = true
+
 [node name="MoveButton" type="Button" parent="."]
 anchor_left = 1.0
 anchor_top = 1.0

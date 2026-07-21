@@ -16,6 +16,7 @@ const Player3DScript = preload("res://scripts/player3d.gd")
 const DigRules = preload("res://scripts/dig_rules.gd")
 const WaterRules = preload("res://scripts/water_rules.gd")
 const WaterSim = preload("res://scripts/water_sim.gd")
+const ToolProfiles = preload("res://scripts/tool_profiles.gd")
 const Items = preload("res://scripts/items.gd")
 
 ## Zemin turleri: renk + ust yuzey yuksekligi. "speckled": true olan
@@ -174,6 +175,13 @@ var _chests: Dictionary = {}       # sandik hucresi -> icerik {esya: adet}
 var _move_mode: bool = false       # Tasi butonu: yapiyi geri alma modu
 var _open_chest := Vector2i(-999, -999)
 var _ground_items: Array = []      # yere birakilanlar [{cell,id,count,node}]
+# ALET SISTEMI (Bolum 12)
+var _dummies: Dictionary = {}      # test kuklalari: hucre -> {node, hp, ...}
+var _target_ring: MeshInstance3D   # paylasilan hedef vurgu halkasi
+var _projectiles: Array = []       # ucan mermiler [{node, vel, ...}]
+var _aiming: bool = false          # menzilli silah nisan modu aktif mi
+var _aim_charge: float = 0.0       # yay/sapan gerdirme orani (0..1)
+var _aim_guide: MeshInstance3D     # nisan yay/cizgi gostergesi
 var _station_timer: float = 0.0
 var _regrow: Dictionary = {}       # hucre -> yeniden bitmeye kalan sure
 var _regrow_type: Dictionary = {}  # hucre -> bitince donusecegi nesne
@@ -220,6 +228,9 @@ func _ready() -> void:
 	hud = load("res://scenes/HUD.tscn").instantiate()
 	add_child(hud)
 	hud.action_pressed.connect(_on_action_pressed)
+	hud.attack_pressed.connect(_on_attack_pressed)
+	hud.attack_hold_started.connect(_on_attack_hold_started)
+	hud.attack_hold_released.connect(_on_attack_hold_released)
 	hud.hold_requested.connect(_on_hold_requested)
 	hud.move_toggled.connect(func(on: bool): _move_mode = on)
 	hud.drop_item_requested.connect(_on_drop_item)
@@ -339,6 +350,13 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(Vector3(float(kc.x) + 0.5, -0.8, float(kc.y) - 1.5))
 	await get_tree().create_timer(0.6).timeout
 	_snap(save_path.replace(".png", "_su2.png"))
+	# ALET SISTEMI (Bolum 12): sallanma yolunu calistir (crash yakala)
+	_held_item = "kurek"
+	player.set_held_tool(TOOL_MODELS.get("kurek", ""))
+	_perform_tool_action(_describe_target(kc + Vector2i(1, 0)))
+	print("SWINGTEST: ok swinging=%s" % str(player.is_swinging()))
+	await get_tree().create_timer(0.6).timeout
+	_snap(save_path.replace(".png", "_alet_swing.png"))
 	_run_save_load_selftest()
 	get_tree().quit()
 
@@ -612,7 +630,11 @@ func _process(delta: float) -> void:
 	if not _cam_locked:
 		var target := player.position + _camera_offset()
 		camera.position = camera.position.lerp(target, minf(1.0, 6.0 * delta))
-	hud.set_action_state(_compute_action_state())
+	_update_targeting()  # 12.1/12.2: baglam ikonu + hedef vurgusu
+	if not _projectiles.is_empty():
+		_tick_projectiles(delta)
+	if _aiming:
+		_tick_aim(delta)
 	_tick_regrow(delta)
 	_station_timer += delta
 	if _station_timer >= 0.25:
@@ -1924,6 +1946,7 @@ func _spawn_player() -> void:
 	player.set_hat(hat_id)
 	player.set_face(face_path)
 	player.set_hair(hair_style, hair_color)
+	player.set_held_tool("")  # ToolPivot olussun (yumruk sallamasi icin)
 	player.world_tapped.connect(_on_world_tapped)
 	camera.position = player.position + _camera_offset()
 
@@ -1951,9 +1974,9 @@ func _on_world_tapped(screen_pos: Vector2) -> void:
 	if maxi(diff.x, diff.y) > 1:
 		return
 	if _ground_char.get(cell, "") == "~" and not _objects.has(cell):
-		# Elde bos kova varsa icmek yerine doldur (11.2)
+		# Elde bos kova varsa icmek yerine doldur (11.2 -> 12.3 cercevesi)
 		if _held_item == "kova":
-			_try_scoop(cell)
+			_perform_tool_action(_describe_target(cell))
 			return
 		Thirst.drink()
 		_spawn_floating_text(cell, "Su içtin!", Color(0.6, 0.85, 1.0))
@@ -1984,19 +2007,18 @@ func _on_world_tapped(screen_pos: Vector2) -> void:
 	# Elde yerlestirilebilir yapi: yere kur
 	if PLACE_MODELS.has(_held_item) and _try_place(cell):
 		return
-	# KAZI MODULU (11.1/11.3): kurek/kazma ile kademeli kaz,
-	# toprakla doldur/yukselt
-	if _held_item == "toprak" and _try_pile(cell):
-		return
-	if (DigRules.SHOVEL_LIMITS.has(_held_item)
-			or DigRules.PICKAXE_LIMITS.has(_held_item)) and _try_dig(cell):
-		return
-	# SU MODELI (11.2): kova ile su tasi (dolu -> cukura dok, bos -> al)
-	if _held_item == "kova_dolu" and _try_pour(cell):
-		return
-	if _held_item == "kova" and _try_scoop(cell):
-		return
-	_try_harvest(cell)
+	# ALET EYLEMLERI (12.3 cercevesi): kazi/yigma/su/hasat artik tek
+	# noktadan (uc fazli sallanma) gecer; ETKI strike aninda uygulanir.
+	# Kazi/kova davranisi AYNI, sadece animasyonla sarmalandi.
+	var desc := _describe_target(cell)
+	if desc["type"] != "none":
+		_perform_tool_action(desc)
+	else:
+		# Bos hedefte alet varsa bosa sallama (whoosh); yoksa hasat dene
+		if _held_item != "" and ToolProfiles.PROFILES.has(_held_item):
+			_perform_tool_action(desc)
+		else:
+			_try_harvest(cell)
 
 # --- Kazi modulu (KAZI_SU_MODULU.md 11.1 + 11.3 + 11.4) --------------------
 # Kazi SADECE hucre verisini (_depth) degistirir; gorunum _cell_props
@@ -2471,20 +2493,244 @@ func _try_pickup_ground(cell: Vector2i) -> bool:
 	_dirty = true
 	return true
 
-func _on_action_pressed() -> void:
+# --- HEDEFLEME (12.2) + BAGLAM BUTONU (12.1) -------------------------------
+
+## Oyuncunun onunde ~90 derece koni: baktigi hucre once, sonra komsular.
+func _candidate_cells() -> Array:
 	var pc := _player_cell()
-	var facing_offset := Vector2i(player.facing.round())
-	if facing_offset == Vector2i.ZERO:
-		facing_offset = Vector2i(0, 1)
-	var offsets: Array[Vector2i] = [facing_offset]
+	var fo := Vector2i(player.facing.round())
+	if fo == Vector2i.ZERO:
+		fo = Vector2i(0, 1)
+	var front := pc + fo
+	var cells: Array = [front]
 	for oy in [-1, 0, 1]:
 		for ox in [-1, 0, 1]:
 			var o := Vector2i(ox, oy)
-			if o != Vector2i.ZERO and o != facing_offset:
-				offsets.append(o)
-	for o in offsets:
-		if _try_harvest(pc + o):
+			var c := pc + o
+			if o != Vector2i.ZERO and c != front:
+				cells.append(c)
+	return cells
+
+func _facing_cell() -> Vector2i:
+	var fo := Vector2i(player.facing.round())
+	if fo == Vector2i.ZERO:
+		fo = Vector2i(0, 1)
+	return _player_cell() + fo
+
+## Kazi hucresi su anki aletle isleve uygun mu? (kilit rozeti icin)
+func _dig_valid(cell: Vector2i, tool: String) -> bool:
+	var d := int(_depth.get(cell, 0))
+	if d >= 4:
+		return false
+	if d >= DigRules.ROCK_DEPTH:
+		return DigRules.PICKAXE_LIMITS.has(tool) \
+				and d < int(DigRules.PICKAXE_LIMITS[tool])
+	return DigRules.SHOVEL_LIMITS.has(tool) \
+			and d < int(DigRules.SHOVEL_LIMITS[tool])
+
+## Bir hucrenin elde tutulan esyaya gore eylem tanimi (12.1 tablosu).
+## {type, cell, icon, valid, kind, [placed]}
+func _describe_target(cell: Vector2i) -> Dictionary:
+	var held := _held_item
+	# Yerdeki esya: elde ne olursa olsun toplanir
+	if _ground_item_at(cell) != -1:
+		return {"type": "ground", "cell": cell, "icon": "grab",
+				"valid": true, "kind": "grab"}
+	# Yerlestirilmis istasyon/etkilesim
+	var placed := String(_placed.get(cell, ""))
+	if placed in ["sandik", "arastirma_masasi", "yatak"]:
+		return {"type": "station", "cell": cell, "icon": "open",
+				"valid": true, "kind": "open", "placed": placed}
+	# Test kuklasi (Asama 4)
+	if _dummies.has(cell):
+		return {"type": "dummy", "cell": cell, "icon": "attack",
+				"valid": true, "kind": "attack"}
+	# Silah elde: dunya nesnesi hedeflenmez (agac kesilmez) — saldiri
+	if ToolProfiles.is_weapon(held):
+		return {"type": "none", "cell": cell, "icon": "attack",
+				"valid": false, "kind": "attack"}
+	# Nesneler (agac/kaya/cali/cicek/mantar)
+	var obj := String(_objects.get(cell, ""))
+	if obj != "" and OBJECT_DEFS.has(obj):
+		if obj == "T":
+			return {"type": "tree", "cell": cell, "icon": "chop",
+					"valid": true, "kind": "chop"}
+		if obj == "#":
+			return {"type": "rock", "cell": cell, "icon": "mine",
+					"valid": held == "kazma", "kind": "mine"}
+		# Cali/cicek/mantar: hasat (bicak daha iyi ama el de toplar)
+		return {"type": "plant", "cell": cell, "icon": "harvest",
+				"valid": true, "kind": "harvest"}
+	# Hucre bazli: kova/kurek/toprak
+	if held == "kova" and (is_water_source(cell) or pool_at(cell) >= 0):
+		return {"type": "scoop", "cell": cell, "icon": "fill",
+				"valid": true, "kind": "scoop"}
+	if held == "kova_dolu":
+		return {"type": "pour", "cell": cell, "icon": "pour",
+				"valid": int(_depth.get(cell, 0)) >= 1, "kind": "pour"}
+	if held == "toprak" and _diggable(cell):
+		return {"type": "pile", "cell": cell, "icon": "pile",
+				"valid": true, "kind": "pile"}
+	if (DigRules.SHOVEL_LIMITS.has(held) or DigRules.PICKAXE_LIMITS.has(held)) \
+			and _diggable(cell):
+		return {"type": "dig", "cell": cell, "icon": "dig",
+				"valid": _dig_valid(cell, held), "kind": "dig"}
+	return {"type": "none", "cell": cell, "icon": "fist",
+			"valid": false, "kind": "none"}
+
+## Bakis konisindeki en oncelikli hedef (yoksa silahsa saldiri / bos).
+func _acquire_target() -> Dictionary:
+	for cell: Vector2i in _candidate_cells():
+		var d := _describe_target(cell)
+		if d["type"] != "none":
+			return d
+	var fc := _facing_cell()
+	if ToolProfiles.is_weapon(_held_item):
+		return {"type": "attack", "cell": fc, "icon": "attack",
+				"valid": true, "kind": "attack"}
+	return {"type": "none", "cell": fc, "icon": "fist",
+			"valid": false, "kind": "none"}
+
+## Ana butonun bagalam ikonu + hedef vurgusu (her karede _process'ten).
+func _update_targeting() -> void:
+	var t := _acquire_target()
+	hud.set_action_context(String(t["icon"]), bool(t["valid"]),
+			ToolProfiles.is_weapon(_held_item))
+	_update_target_highlight(t)
+
+func _on_action_pressed() -> void:
+	_perform_tool_action(_acquire_target())
+
+## Bir hedef tanimina gore eylemi baslatir. Anlik etkilesimler (istasyon/
+## toplama) dogrudan; alet eylemleri uc fazli sallanmayla (etki=strike).
+func _perform_tool_action(t: Dictionary) -> void:
+	var cell: Vector2i = t["cell"]
+	match String(t["type"]):
+		"ground":
+			_try_pickup_ground(cell)
 			return
+		"station":
+			_interact_station(cell, String(t.get("placed", "")))
+			return
+	if player.is_swinging():
+		return
+	var kind := String(t.get("kind", "none"))
+	var prof := ToolProfiles.get_profile(_held_item)
+	var started: bool = player.play_swing(prof,
+			func(): _apply_strike(kind, cell))
+	if started and not bool(t.get("valid", true)):
+		hud.shake_action_button()
+
+## Strike aninda cagrilir: gercek oyun etkisi burada uygulanir (12.3).
+func _apply_strike(kind: String, cell: Vector2i) -> void:
+	match kind:
+		"chop", "harvest", "mine":
+			_try_harvest(cell)
+		"dig":
+			_try_dig(cell)
+		"pile":
+			_try_pile(cell)
+		"scoop":
+			_try_scoop(cell)
+		"pour":
+			_try_pour(cell)
+		"attack":
+			_melee_hit(cell)
+		_:
+			pass  # bosa sallama (whoosh) — etki yok
+
+## Yerlestirilmis yapiyla etkilesim (tap match'inin ortak yolu).
+func _interact_station(cell: Vector2i, placed: String) -> void:
+	match placed:
+		"sandik":
+			_open_chest_at(cell)
+		"arastirma_masasi":
+			hud.research_button.button_pressed = true
+		"yatak":
+			if DayNight.is_night:
+				DayNight.sleep_to_morning()
+				Health.heal(30.0)
+				_spawn_floating_text(cell, "Sabah oldu! +30 can",
+						Color(0.8, 1.0, 0.8))
+			else:
+				_spawn_floating_text(cell, "Sadece gece uyunur",
+						Color(1, 0.9, 0.6))
+
+# --- Hedef vurgusu (12.2): paylasilan halka, her kare hedefe tasinir ------
+const _HL_OK := Color(0.42, 0.78, 0.40)     # UI success
+const _HL_WARN := Color(0.93, 0.62, 0.26)   # UI warning
+
+func _update_target_highlight(t: Dictionary) -> void:
+	if _target_ring == null:
+		var torus := TorusMesh.new()
+		torus.inner_radius = 0.40
+		torus.outer_radius = 0.50
+		torus.rings = 6
+		torus.ring_segments = 20
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.albedo_color = _HL_OK
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		torus.material = mat
+		_target_ring = MeshInstance3D.new()
+		_target_ring.mesh = torus
+		_target_ring.rotation_degrees = Vector3(90, 0, 0)  # yere yatir
+		add_child(_target_ring)
+	var typ := String(t["type"])
+	# Hedefsiz (bos / saldiri) durumunda halka gizli — ekran sade kalsin
+	if typ == "none" or typ == "attack":
+		_target_ring.visible = false
+		return
+	_target_ring.visible = true
+	_target_ring.position = _cell_center(Vector2i(t["cell"])) + Vector3(0, 0.06, 0)
+	var col: Color = _HL_OK if bool(t.get("valid", true)) else _HL_WARN
+	col.a = 0.85
+	var mat2 := _target_ring.mesh.material as StandardMaterial3D
+	if mat2 != null:
+		mat2.albedo_color = col
+
+# --- Yakin dovus (12.5) — hitbox stub; Asama 4'te doldurulur --------------
+## strike aninda onundeki hitbox: kukla + kirilabilir nesne. Yaratik YOK;
+## take_hit(damage, knockback_dir) arayuzu onlarin kapisi.
+func _melee_hit(cell: Vector2i) -> void:
+	_apply_hitbox(cell)
+
+## Asama 4 stub'lari (mermi/nisan) — su an bos, ilgili asamada dolar.
+func _tick_projectiles(_delta: float) -> void:
+	pass
+
+func _tick_aim(_delta: float) -> void:
+	pass
+
+func _apply_hitbox(_cell: Vector2i) -> void:
+	pass  # Asama 4: kukla + kirilabilir take_hit
+
+# --- Saldiri butonu (12.1/12.5) -------------------------------------------
+func _on_attack_pressed() -> void:
+	if player.is_swinging():
+		return
+	var prof := ToolProfiles.get_profile(_held_item)
+	var target := _acquire_target()
+	var cell: Vector2i = target["cell"] if target["type"] == "dummy" \
+			else _facing_cell()
+	player.play_swing(prof, func(): _melee_hit(cell))
+
+func _on_attack_hold_started() -> void:
+	# Menzilli silahsa nisan modu (Asama 5); degilse normal saldiri gibi
+	if ToolProfiles.ranged_kind(_held_item) == "":
+		return
+	_begin_aim()
+
+func _on_attack_hold_released() -> void:
+	if _aiming:
+		_release_aim()
+
+## Asama 5 stub'lari — nisan/firlatma ilgili asamada doldurulur.
+func _begin_aim() -> void:
+	pass
+
+func _release_aim() -> void:
+	pass
 
 func _try_harvest(cell: Vector2i) -> bool:
 	var ch: String = _objects.get(cell, "")

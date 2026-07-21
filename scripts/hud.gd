@@ -11,6 +11,12 @@ extends CanvasLayer
 ## Sag alttaki aksiyon butonuna basilinca yayinlanir.
 signal action_pressed
 
+## Saldiri butonu (12.1): sadece elde silahken gorunur. press = kisa
+## dokunma (tek saldiri); hold_started/hold_released = basili tut (nisan)
+signal attack_pressed
+signal attack_hold_started
+signal attack_hold_released
+
 ## Sandik paneli: esya tasima istegi (to_chest: true = sandiga koy)
 signal chest_transfer_requested(item_id: String, to_chest: bool)
 ## Bos sandigi sokme istegi
@@ -40,7 +46,26 @@ const ICON_MOVE := preload("res://assets/ui/move.png")
 const ICON_SPEAR := preload("res://assets/ui/spear.png")
 const ICON_CLOSE := preload("res://assets/ui/close_x.png")
 
+## Baglam-duyarli ana buton ikonlari (12.1): eylem turu -> doku.
+## Yer tutucu (UI_DESIGN placeholder kurali); eksikse fist'e duser.
+const ACTION_ICONS := {
+	"chop": preload("res://assets/ui/axe.png"),
+	"mine": preload("res://assets/ui/pick.png"),
+	"dig": preload("res://assets/ui/shovel.png"),
+	"pile": preload("res://assets/ui/shovel.png"),
+	"fill": preload("res://assets/ui/fill.png"),
+	"pour": preload("res://assets/ui/pour.png"),
+	"harvest": preload("res://assets/ui/grab.png"),
+	"grab": preload("res://assets/ui/grab.png"),
+	"repair": preload("res://assets/ui/hammer.png"),
+	"open": preload("res://assets/ui/open.png"),
+	"attack": preload("res://assets/ui/attack.png"),
+	"spear": preload("res://assets/ui/spear.png"),
+	"fist": preload("res://assets/ui/fist.png"),
+}
+
 @onready var action_button: Button = $ActionButton
+@onready var attack_button: Button = $AttackButton
 @onready var move_button: Button = $MoveButton
 @onready var reset_button: Button = $ResetButton
 @onready var stats_box: VBoxContainer = $StatsPanel/HBox
@@ -113,8 +138,15 @@ func _ready() -> void:
 	Thirst.changed.connect(_update_thirst)
 	Health.changed.connect(_update_health)
 	DayNight.changed.connect(_update_day_label)
-	action_button.pressed.connect(func(): action_pressed.emit())
+	action_button.pressed.connect(func():
+		_pop_button(action_button)
+		action_pressed.emit())
 	action_button.icon = ICON_FIST
+	# Saldiri butonu: kisa dokunma = saldiri; basili tut = nisan (menzilli)
+	attack_button.icon = ACTION_ICONS["attack"]
+	attack_button.visible = false
+	attack_button.button_down.connect(_on_attack_down)
+	attack_button.button_up.connect(_on_attack_up)
 	move_button.icon = ICON_MOVE
 	move_button.toggled.connect(func(pressed: bool): move_toggled.emit(pressed))
 	_build_stats()
@@ -911,23 +943,70 @@ func _add_chest_row(item_id: String, count: int, button_text: String, to_chest: 
 
 # --- Aksiyon butonu -----------------------------------------------------
 
-## World tarafindan cagrilir; ikon sadece durum degisince guncellenir.
+## Baglam-duyarli ana buton durumu (12.1). World her karede cagirir;
+## icon/solukluk yalnizca degisince yenilenir. icon_name ACTION_ICONS
+## anahtari; valid=false ise buton solar (ink_faint); weapon=true ise
+## saldiri butonu gorunur.
+var _ctx_icon := ""
+var _ctx_valid := true
+var _ctx_weapon := false
+
+func set_action_context(icon_name: String, valid: bool, weapon: bool) -> void:
+	if icon_name != _ctx_icon:
+		_ctx_icon = icon_name
+		action_button.icon = ACTION_ICONS.get(icon_name, ICON_FIST)
+	if valid != _ctx_valid:
+		_ctx_valid = valid
+		action_button.modulate = Color(1, 1, 1, 1) if valid \
+				else Color(1, 1, 1, 0.45)
+	if weapon != _ctx_weapon:
+		_ctx_weapon = weapon
+		_fade_attack_button(weapon)
+
+## Geriye donuk: eski cagri noktasi kalirsa bozulmasin
 func set_action_state(state: String) -> void:
-	if state == _action_state:
-		return
-	_action_state = state
-	match state:
-		"gather":
-			action_button.icon = ICON_GATHER
-		"build":
-			action_button.icon = ICON_BUILD
-		"dig":
-			action_button.icon = ICON_DIG
-		"move":
-			action_button.icon = ICON_MOVE
-		"attack_spear":
-			action_button.icon = ICON_SPEAR
-		"attack":
-			action_button.icon = ICON_FIST
-		_:
-			action_button.icon = ICON_FIST
+	set_action_context(state, true, false)
+
+func _fade_attack_button(show: bool) -> void:
+	var tw := create_tween()
+	if show:
+		attack_button.visible = true
+		attack_button.modulate.a = 0.0
+		tw.tween_property(attack_button, "modulate:a", 1.0, 0.18)
+	else:
+		tw.tween_property(attack_button, "modulate:a", 0.0, 0.15)
+		tw.tween_callback(func(): attack_button.visible = false)
+
+# --- Saldiri butonu basili-tut algilama (12.5 nisan modu) ---------------
+var _attack_hold_timer: SceneTreeTimer
+var _attack_is_hold := false
+
+func _on_attack_down() -> void:
+	_pop_button(attack_button)
+	_attack_is_hold = false
+	_attack_hold_timer = get_tree().create_timer(0.25)
+	_attack_hold_timer.timeout.connect(func():
+		_attack_is_hold = true
+		attack_hold_started.emit())
+
+func _on_attack_up() -> void:
+	if _attack_is_hold:
+		attack_hold_released.emit()
+	else:
+		attack_pressed.emit()
+	_attack_is_hold = false
+
+## Buton basis geri bildirimi (12.6): 0.9 scale pop.
+func _pop_button(btn: Control) -> void:
+	btn.pivot_offset = btn.size * 0.5
+	btn.scale = Vector2(0.9, 0.9)
+	var tw := create_tween()
+	tw.tween_property(btn, "scale", Vector2.ONE, 0.16) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+## Gecersiz eylem geri bildirimi (12.6): yatay minik sallanma.
+func shake_action_button() -> void:
+	var base := action_button.position.x
+	var tw := create_tween()
+	for dx in [-6.0, 6.0, -4.0, 4.0, 0.0]:
+		tw.tween_property(action_button, "position:x", base + dx, 0.05)
