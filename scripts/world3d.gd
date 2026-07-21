@@ -387,7 +387,7 @@ func _setup_screenshot(save_path: String) -> void:
 	_snap(save_path.replace(".png", "_su2.png"))
 	# ALET SISTEMI (Bolum 12): sallanma yolunu calistir (crash yakala)
 	_held_item = "kurek"
-	player.set_held_tool(TOOL_MODELS.get("kurek", ""))
+	player.set_held_tool("kurek")
 	_perform_tool_action(_describe_target(kc + Vector2i(1, 0)))
 	print("SWINGTEST: ok swinging=%s" % str(player.is_swinging()))
 	await get_tree().create_timer(0.6).timeout
@@ -398,7 +398,7 @@ func _setup_screenshot(save_path: String) -> void:
 	if not _dummies.has(dcell) and not _objects.has(dcell):
 		_spawn_dummy(dcell)
 	_held_item = "sopa"
-	player.set_held_tool("club")
+	player.set_held_tool("sopa")
 	player.facing = Vector2(1, 0)
 	await get_tree().create_timer(0.2).timeout
 	_on_attack_pressed()
@@ -415,7 +415,7 @@ func _setup_screenshot(save_path: String) -> void:
 		_spawn_dummy(fcell)
 	Inventory.add_item("mizrak", 1)
 	_held_item = "mizrak"
-	player.set_held_tool("spear")
+	player.set_held_tool("mizrak")
 	player.facing = Vector2(1, 0)
 	_aim_charge = 1.0
 	_launch_projectile("spear", Vector3(1, 0, 0), 11.0, 2.2, -12.0, 30,
@@ -3669,28 +3669,14 @@ func _tick_regrow(delta: float) -> void:
 	_rebuild_objects()
 	_dirty = true
 
-## Eline alinan aletin 3D modeli (Kenney Survival Kit)
-const TOOL_MODELS := {
-	"balta": "res://assets/models/tools/tool-axe.glb",
-	"kazma": "res://assets/models/tools/tool-pickaxe.glb",
-	"kurek": "res://assets/models/tools/tool-shovel.glb",
-	"cekic": "res://assets/models/tools/tool-hammer.glb",
-	"kova": "res://assets/models/tools/bucket.glb",
-	"kova_dolu": "res://assets/models/tools/bucket.glb",
-	"mizrak": "spear",  # ozel: player3d basit mesh insa eder
-	"bicak": "knife",
-	"sopa": "club",
-	"kilic": "sword",
-	"yay": "bow",
-	"sapan": "sling",
-}
-
 func _on_hold_requested(item_id: String) -> void:
 	if item_id != "" and Inventory.get_count(item_id) <= 0:
 		return
 	_held_item = item_id
 	hud.set_held_item(item_id)
-	player.set_held_tool(TOOL_MODELS.get(item_id, ""))
+	# #2: esya id'sini dogrudan ver — player3d GLB varsa yukler, yoksa
+	# prosedurel low-poly placeholder uretir (kademe rengiyle).
+	player.set_held_tool(item_id)
 	if not _loading:
 		_dirty = true
 

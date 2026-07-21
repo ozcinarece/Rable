@@ -26,6 +26,25 @@ var action_factor: float = 1.0
 
 const ToolProfiles = preload("res://scripts/tool_profiles.gd")
 
+## Eldeki alet gorseli (test bulgusu #2): esya id -> prosedurel govde turu.
+## GLB yoksa bu ture gore basit low-poly placeholder uretilir. Legacy CI
+## anahtarlari (spear/knife/club/sword/bow/sling) da desteklenir.
+const TOOL_KIND := {
+	"balta": "axe", "kazma": "pick", "kurek": "shovel", "bicak": "knife",
+	"cekic": "hammer", "mizrak": "spear", "kilic": "sword", "sopa": "club",
+	"yay": "bow", "sapan": "sling", "kova": "bucket", "kova_dolu": "bucket",
+	# CI / eski anahtarlar
+	"spear": "spear", "knife": "knife", "club": "club", "sword": "sword",
+	"bow": "bow", "sling": "sling",
+}
+
+## Esya id -> assets/models/tools/ altindaki gercek GLB dosya adi (uzantisiz).
+## Bu id'ler icin hazir Kenney modeli var; digerleri prosedurele duser.
+const TOOL_GLB := {
+	"balta": "tool-axe", "kazma": "tool-pickaxe", "kurek": "tool-shovel",
+	"cekic": "tool-hammer", "kova": "bucket", "kova_dolu": "bucket",
+}
+
 ## Alet eylemi sirasinda aletin baglandigi doner pivot (ToolPivot).
 ## _tool_attach el kemigine yapisir; pivot onun icinde donerek uc fazli
 ## sallanmayi olusturur. Model pivot'un cocugudur.
@@ -294,22 +313,27 @@ func set_held_tool(model_path: String) -> void:
 	_tool_attach.add_child(_tool_pivot)
 	if model_path == "":
 		return
-	# Prosedurel (Kenney'de olmayan) alet/silahlar: kod ile insa edilir
-	if model_path in ["spear", "knife", "club", "sword", "bow", "sling"]:
-		_tool_pivot.add_child(_make_weapon(model_path))
-		return
-	if not ResourceLoader.exists(model_path):
-		return
-	var tool_model: Node3D = load(model_path).instantiate()
-	_tool_pivot.add_child(tool_model)
-	# Alet gercek boyutta ~0.5 m gorunsun (baglanti noktasinin dunya
-	# olcegi ne olursa olsun)
-	var mesh_node := _find_mesh_instance(tool_model)
-	if mesh_node != null:
-		var size: float = mesh_node.get_aabb().get_longest_axis_size()
-		if size > 0.01:
-			var s := 0.5 / (size * _node_world_scale(_tool_attach))
-			tool_model.scale = Vector3(s, s, s)
+	# GORSEL SECIMI (test bulgusu #2): once gercek GLB (ileride Meshy),
+	# yoksa PROSEDUREL low-poly placeholder (UI ikon placeholder kuralinin
+	# 3D karsiligi). Legacy anahtarlar (spear/knife/...) da desteklenir.
+	var visual: Node3D = null
+	var glb_base := String(TOOL_GLB.get(model_path, model_path))
+	var glb := "res://assets/models/tools/%s.glb" % glb_base
+	if ResourceLoader.exists(glb):
+		visual = load(glb).instantiate()
+	else:
+		var kind := String(TOOL_KIND.get(model_path, ""))
+		if kind == "":
+			return  # gorseli olmayan esya (toprak, dolu kova vb.)
+		visual = _make_tool(kind, _tool_head_color(model_path))
+	_tool_pivot.add_child(visual)
+	# ~0.5 m dunya boyu (baglanti dunya olcegi ne olursa olsun); TUM
+	# alt mesh'leri kapsayan AABB ile olcekle (tek mesh'e bakma)
+	var aabb := _scene_aabb(visual)
+	var size := aabb.get_longest_axis_size()
+	if size > 0.01:
+		var s := 0.5 / (size * _node_world_scale(_tool_attach))
+		visual.scale = Vector3(s, s, s)
 
 ## Uc fazli alet sallamasi (12.3). Profil pozlarini Tween ile oynatir;
 ## strike aninda on_strike cagrilir (ETKI orada uygulanir, buton aninda
@@ -578,108 +602,90 @@ func _hat_part(mesh: Mesh, color: Color, pos: Vector3,
 	part.material_override = material
 	return part
 
-# Basit mizrak: ahsap sap + gri sivri uc (elde ~0.9 m gorunur)
-func _make_spear() -> Node3D:
-	var spear := Node3D.new()
-	var shaft := MeshInstance3D.new()
-	var shaft_mesh := CylinderMesh.new()
-	shaft_mesh.top_radius = 0.02
-	shaft_mesh.bottom_radius = 0.02
-	shaft_mesh.height = 0.75
-	shaft.mesh = shaft_mesh
-	var wood := StandardMaterial3D.new()
-	wood.albedo_color = Color(0.55, 0.38, 0.22)
-	shaft.material_override = wood
-	spear.add_child(shaft)
-	var tip := MeshInstance3D.new()
-	var tip_mesh := CylinderMesh.new()
-	tip_mesh.top_radius = 0.0
-	tip_mesh.bottom_radius = 0.045
-	tip_mesh.height = 0.16
-	tip.mesh = tip_mesh
-	tip.position = Vector3(0, 0.45, 0)
-	var metal := StandardMaterial3D.new()
-	metal.albedo_color = Color(0.72, 0.74, 0.78)
-	tip.material_override = metal
-	spear.add_child(tip)
-	# Iskelet olcegini telafi et
-	if _model_scale > 0.001:
-		var s := 1.0 / _model_scale
-		spear.scale = Vector3(s, s, s)
-	return spear
+## Alet kademesine gore bas rengi (#2): sap hep ahsap, bas kademe rengi.
+## Su an tek kademe (tas) var; ust kademe id'leri (bakir_/demir_/celik_)
+## geldiginde otomatik cozulur. Bilinmeyen -> tas grisi.
+func _tool_head_color(id: String) -> Color:
+	if id.begins_with("celik") or id.ends_with("celik"):
+		return Color(0.62, 0.68, 0.78)   # celik: mavi-gri
+	if id.begins_with("demir") or id.ends_with("demir"):
+		return Color(0.78, 0.80, 0.83)   # demir: acik gri
+	if id.begins_with("bakir") or id.ends_with("bakir"):
+		return Color(0.78, 0.50, 0.30)   # bakir: turuncu-kahve
+	return Color(0.55, 0.56, 0.60)       # tas: gri (varsayilan)
 
-## Kenney kitinde olmayan alet/silahlarin basit prosedurel modelleri.
-## Hepsi ~0.5 m; iskelet olcegini telafi eder. (Yer tutucu; ileride GLB
-## ile degistirilebilir — TOOL_MODELS'te yolu degistirmek yeter.)
-func _make_weapon(kind: String) -> Node3D:
+## Kenney kitinde olmayan alet/silahlarin basit prosedurel low-poly
+## placeholder'lari (#2). Sap = ahsap kahvesi, bas = kademe rengi (head).
+## Boyut set_held_tool'da AABB ile ~0.5 m'ye normalize edilir (burada
+## olcek telafisi YOK — GLB yolu ile ayni normalizasyon).
+func _make_tool(kind: String, head: Color) -> Node3D:
 	var root := Node3D.new()
-	var wood := StandardMaterial3D.new()
-	wood.albedo_color = Color(0.55, 0.38, 0.22)
-	var metal := StandardMaterial3D.new()
-	metal.albedo_color = Color(0.74, 0.76, 0.80)
+	var wood := Color(0.55, 0.38, 0.22)
 	match kind:
+		"axe":
+			root.add_child(_hat_part(_cyl(0.02, 0.022, 0.5), wood, Vector3(0, 0.1, 0)))
+			var hm := BoxMesh.new(); hm.size = Vector3(0.14, 0.12, 0.03)
+			root.add_child(_hat_part(hm, head, Vector3(0.06, 0.33, 0)))
+		"pick":
+			root.add_child(_hat_part(_cyl(0.02, 0.022, 0.5), wood, Vector3(0, 0.1, 0)))
+			var pm := BoxMesh.new(); pm.size = Vector3(0.36, 0.03, 0.03)
+			root.add_child(_hat_part(pm, head, Vector3(0, 0.35, 0), Vector3(0, 0, 18)))
+		"shovel":
+			root.add_child(_hat_part(_cyl(0.02, 0.022, 0.5), wood, Vector3(0, 0.1, 0)))
+			var sb := BoxMesh.new(); sb.size = Vector3(0.13, 0.16, 0.02)
+			root.add_child(_hat_part(sb, head, Vector3(0, 0.4, 0)))
+		"hammer":
+			root.add_child(_hat_part(_cyl(0.02, 0.022, 0.5), wood, Vector3(0, 0.1, 0)))
+			var hb := BoxMesh.new(); hb.size = Vector3(0.13, 0.08, 0.08)
+			root.add_child(_hat_part(hb, head, Vector3(0, 0.35, 0)))
 		"knife":
-			var blade := MeshInstance3D.new()
-			var bm := BoxMesh.new(); bm.size = Vector3(0.03, 0.22, 0.008)
-			blade.mesh = bm; blade.material_override = metal
-			blade.position = Vector3(0, 0.14, 0)
-			root.add_child(blade)
-			var grip := MeshInstance3D.new()
-			var gm := CylinderMesh.new(); gm.top_radius = 0.018
-			gm.bottom_radius = 0.018; gm.height = 0.10
-			grip.mesh = gm; grip.material_override = wood
-			root.add_child(grip)
-		"club":
-			var shaft := MeshInstance3D.new()
-			var sm := CylinderMesh.new(); sm.top_radius = 0.035
-			sm.bottom_radius = 0.02; sm.height = 0.55
-			shaft.mesh = sm; shaft.material_override = wood
-			shaft.position = Vector3(0, 0.12, 0)
-			root.add_child(shaft)
+			var kb := BoxMesh.new(); kb.size = Vector3(0.03, 0.22, 0.008)
+			root.add_child(_hat_part(kb, head, Vector3(0, 0.14, 0)))
+			root.add_child(_hat_part(_cyl(0.018, 0.018, 0.10), wood, Vector3.ZERO))
 		"sword":
-			var blade := MeshInstance3D.new()
-			var bm := BoxMesh.new(); bm.size = Vector3(0.05, 0.55, 0.012)
-			blade.mesh = bm; blade.material_override = metal
-			blade.position = Vector3(0, 0.32, 0)
-			root.add_child(blade)
-			var guard := MeshInstance3D.new()
-			var gm := BoxMesh.new(); gm.size = Vector3(0.18, 0.03, 0.03)
-			guard.mesh = gm; guard.material_override = metal
-			guard.position = Vector3(0, 0.05, 0)
-			root.add_child(guard)
-			var grip := MeshInstance3D.new()
-			var cm := CylinderMesh.new(); cm.top_radius = 0.02
-			cm.bottom_radius = 0.02; cm.height = 0.12
-			grip.mesh = cm; grip.material_override = wood
-			grip.position = Vector3(0, -0.04, 0)
-			root.add_child(grip)
+			var wb := BoxMesh.new(); wb.size = Vector3(0.05, 0.55, 0.012)
+			root.add_child(_hat_part(wb, head, Vector3(0, 0.32, 0)))
+			var gb := BoxMesh.new(); gb.size = Vector3(0.18, 0.03, 0.03)
+			root.add_child(_hat_part(gb, head, Vector3(0, 0.05, 0)))
+			root.add_child(_hat_part(_cyl(0.02, 0.02, 0.12), wood, Vector3(0, -0.04, 0)))
+		"club":
+			root.add_child(_hat_part(_cyl(0.035, 0.02, 0.55), wood, Vector3(0, 0.12, 0)))
+		"spear":
+			root.add_child(_hat_part(_cyl(0.02, 0.02, 0.75), wood, Vector3.ZERO))
+			root.add_child(_hat_part(_cyl(0.0, 0.045, 0.16), head, Vector3(0, 0.45, 0)))
 		"bow":
-			var arc := MeshInstance3D.new()
-			var tm := TorusMesh.new(); tm.inner_radius = 0.24
-			tm.outer_radius = 0.27; tm.rings = 6; tm.ring_segments = 12
-			arc.mesh = tm; arc.material_override = wood
-			arc.rotation_degrees = Vector3(0, 90, 0)
-			root.add_child(arc)
-			var string_line := MeshInstance3D.new()
-			var lm := CylinderMesh.new(); lm.top_radius = 0.004
-			lm.bottom_radius = 0.004; lm.height = 0.5
-			string_line.mesh = lm; string_line.material_override = metal
-			root.add_child(string_line)
+			var tm := TorusMesh.new(); tm.inner_radius = 0.24; tm.outer_radius = 0.27
+			tm.rings = 6; tm.ring_segments = 12
+			root.add_child(_hat_part(tm, wood, Vector3.ZERO, Vector3(0, 90, 0)))
+			root.add_child(_hat_part(_cyl(0.004, 0.004, 0.5), head, Vector3.ZERO))
 		"sling":
-			var handle := MeshInstance3D.new()
-			var hm := CylinderMesh.new(); hm.top_radius = 0.015
-			hm.bottom_radius = 0.015; hm.height = 0.16
-			handle.mesh = hm; handle.material_override = wood
-			root.add_child(handle)
-			var pouch := MeshInstance3D.new()
-			var pm := SphereMesh.new(); pm.radius = 0.04; pm.height = 0.06
-			pouch.mesh = pm; pouch.material_override = wood
-			pouch.position = Vector3(0, -0.12, 0)
-			root.add_child(pouch)
-	if _model_scale > 0.001:
-		var s := 1.0 / _model_scale
-		root.scale = Vector3(s, s, s)
+			root.add_child(_hat_part(_cyl(0.015, 0.015, 0.16), wood, Vector3.ZERO))
+			var slm := SphereMesh.new(); slm.radius = 0.04; slm.height = 0.06
+			root.add_child(_hat_part(slm, wood, Vector3(0, -0.12, 0)))
+		"bucket":
+			root.add_child(_hat_part(_cyl(0.10, 0.08, 0.16), head, Vector3(0, 0.08, 0)))
 	return root
+
+## Bir Node3D altindaki tum mesh'leri kapsayan AABB (local uzayda). Alet
+## gorselini el boyutuna normalize etmek icin (set_held_tool). world3d ile
+## ayni mantik.
+func _scene_aabb(node: Node, xform: Transform3D = Transform3D.IDENTITY) -> AABB:
+	var result := AABB()
+	var found := false
+	var t := xform
+	if node is Node3D:
+		if not (node as Node3D).visible:
+			return AABB()
+		t = xform * (node as Node3D).transform
+	if node is MeshInstance3D and (node as MeshInstance3D).mesh != null:
+		result = t * (node as MeshInstance3D).mesh.get_aabb()
+		found = true
+	for child in node.get_children():
+		var sub := _scene_aabb(child, t)
+		if sub.size != Vector3.ZERO or sub.position != Vector3.ZERO:
+			result = result.merge(sub) if found else sub
+			found = true
+	return result
 
 func _play(anim_name: String) -> void:
 	if anim_name == "" or _current_anim == anim_name:
