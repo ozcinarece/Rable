@@ -261,6 +261,9 @@ func _setup_screenshot(save_path: String) -> void:
 	_snap(save_path.replace(".png", "_arastirma.png"))
 	# Son kare: gece vinyeti + "Geliyorlar..." pili (UI Adim 6)
 	hud.research_button.button_pressed = false
+	# Kamera vitrin studyosundan oyuncuya doner
+	_apply_camera_angle()
+	camera.position = player.position + _camera_offset()
 	DayNight.is_night = true
 	DayNight.night_started.emit()
 	DayNight.changed.emit()
