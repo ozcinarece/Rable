@@ -32,6 +32,9 @@ signal move_toggled(enabled: bool)
 ## Envanterden bir esyayi eline alma istegi (bos string = birak)
 signal hold_requested(item_id: String)
 
+## YASAM: yeme istegi (world3d ~1 sn tuketme eylemi olarak calistirir)
+signal eat_requested(food_id: String)
+
 ## YAPI SISTEMI (13.2): yerlestirme modu istekleri
 signal place_requested(item_id: String)  # envanterde "Yerleştir"
 signal place_confirm                      # ONAYLA
@@ -402,7 +405,7 @@ func _update_detail() -> void:
 	item_name_label.text = "%s ×%d" % [Items.display_name(_selected_item),
 			Inventory.get_count(_selected_item)]
 	item_desc_label.text = Items.description(_selected_item)
-	panel_eat_button.visible = _selected_item == "meyve" or _selected_item == "mantar"
+	panel_eat_button.visible = PlayerStats.is_edible(_selected_item)
 	hold_button.visible = true
 	drop_button.visible = true
 	if place_button != null:
@@ -554,15 +557,20 @@ func _update_thirst() -> void:
 		return
 	_drop_bar.value = Thirst.value
 
+## Ye: secili esya yenebilirse onu, degilse envanterdeki ilk yiyecegi ye.
+## Yeme world3d'de ~1 sn'lik tuketme eylemi olarak calisir (eat_requested).
 func _on_eat_pressed() -> void:
-	# Panelde mantar seciliyken mantar yenir; hizli butonda once meyve
-	var order: Array[String] = ["meyve", "mantar"]
-	if _selected_item == "mantar":
-		order = ["mantar", "meyve"]
-	for food in order:
-		if Inventory.get_count(food) > 0 and Inventory.remove_item(food, 1):
-			Hunger.eat(25.0 if food == "meyve" else 15.0)
-			return
+	var food := ""
+	if _selected_item != "" and PlayerStats.is_edible(_selected_item) \
+			and Inventory.get_count(_selected_item) > 0:
+		food = _selected_item
+	else:
+		for slot in Inventory.slots:
+			if slot != null and PlayerStats.is_edible(String(slot["id"])):
+				food = String(slot["id"])
+				break
+	if food != "":
+		eat_requested.emit(food)
 
 # Kayitli oyunu silip sifirdan baslar.
 func _on_reset_pressed() -> void:

@@ -279,6 +279,7 @@ func _ready() -> void:
 	hud.hold_requested.connect(_on_hold_requested)
 	hud.move_toggled.connect(func(on: bool): _move_mode = on)
 	hud.drop_item_requested.connect(_on_drop_item)
+	hud.eat_requested.connect(_on_eat_requested)
 	hud.chest_transfer_requested.connect(_on_chest_transfer)
 	hud.chest_transfer_all_requested.connect(_on_chest_transfer_all)
 	hud.chest_dismantle_requested.connect(_on_chest_dismantle)
@@ -2271,6 +2272,39 @@ func respawn_player() -> void:
 	camera.position = player.position + _camera_offset()
 	_spawn_floating_text(cell, "Yeniden doğdun", Color(0.8, 1.0, 0.9))
 	_dirty = true
+
+# --- YASAM: yeme (Asama 2) ---------------------------------------------------
+## ~1 sn'lik tuketme pozu (ALET_SISTEMI uc-faz cercevesi); eli agza goturur.
+## Toplam sure ~SurvivalBalance.EAT_DURATION; ETKI strike aninda uygulanir.
+const _CONSUME_PROFILE := {
+	"windup": 0.30, "strike": 0.20, "recover": 0.50,
+	"rest": Vector3(0, 0, 0), "wind": Vector3(-48, 0, 0),
+	"hit": Vector3(-18, 0, 0), "push_z": 0.0,
+}
+
+func _on_eat_requested(food_id: String) -> void:
+	_try_eat(food_id)
+
+## Yiyecegi tuketir: ONCE 1 adet duser, ~1 sn eylem oynar (hareket yavaslar),
+## bitince doyma uygulanir (+ cig et %20 bulanti). Zaten eylem varsa reddeder.
+func _try_eat(food_id: String) -> bool:
+	if not PlayerStats.is_edible(food_id) or Inventory.get_count(food_id) <= 0:
+		return false
+	if player.is_swinging():
+		return false
+	if not Inventory.remove_item(food_id, 1):
+		return false
+	var cell := _player_cell()
+	var apply := func():
+		PlayerStats.apply_food(food_id)
+		_spawn_floating_text(cell, "+%d doyma" % int(PlayerStats.satiation_of(food_id)),
+				Color(0.8, 1.0, 0.7))
+		_spawn_particles(player.position + Vector3(0, 1.0, 0), Color(0.9, 0.85, 0.6), 4)
+		_play_sfx("eat")
+	var started: bool = player.play_swing(_CONSUME_PROFILE, apply)
+	if not started:
+		apply.call()  # eylem baslamadiysa etkiyi hemen uygula (item kaybolmasin)
+	return true
 
 # --- Etkilesim ----------------------------------------------------------
 

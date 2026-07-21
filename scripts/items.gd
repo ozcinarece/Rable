@@ -53,6 +53,9 @@ const ITEMS: Dictionary = {
 	# BASE (Bolum 14)
 	"ocak": {"name": "Ocak", "icon": "res://assets/items/ocak.png"},
 	"platform": {"name": "Savunma Platformu", "icon": "res://assets/items/platform.png"},
+	# YASAM (yiyecek): cig_et hayvandan (yaratik fazi), pismis_et ocakta pisirilir
+	"cig_et": {"name": "Çiğ Et", "icon": "res://assets/items/cig_et.png"},
+	"pismis_et": {"name": "Pişmiş Et", "icon": "res://assets/items/pismis_et.png"},
 }
 
 ## Elde tutulunca yere yerlestirilebilen yapilar: esya -> harita karakteri.
