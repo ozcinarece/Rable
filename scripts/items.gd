@@ -50,6 +50,9 @@ const ITEMS: Dictionary = {
 	"mesale": {"name": "Meşale", "icon": "res://assets/items/mesale.png"},
 	"yatak": {"name": "Yatak", "icon": "res://assets/tiles/yatak.png"},
 	"tuzak": {"name": "Tuzak", "icon": "res://assets/tiles/tuzak.png"},
+	# BASE (Bolum 14)
+	"ocak": {"name": "Ocak", "icon": "res://assets/items/ocak.png"},
+	"platform": {"name": "Savunma Platformu", "icon": "res://assets/items/platform.png"},
 }
 
 ## Elde tutulunca yere yerlestirilebilen yapilar: esya -> harita karakteri.
@@ -66,6 +69,10 @@ const PLACEABLE: Dictionary = {
 	"yatak": "Y",
 	"tuzak": "Z",
 	"zemin": "f",
+	# BASE (Bolum 14): 3D yerlestirme PLACE_MODELS'ten gecer; buradaki kayit
+	# yalniz "Yerleştir" butonunu gosterir (2D world.gd legacy, ana sahne degil).
+	"ocak": "O",
+	"platform": "P",
 }
 
 ## Ele alinabilen esyalar - artik her esya ele alinabilir; bu liste

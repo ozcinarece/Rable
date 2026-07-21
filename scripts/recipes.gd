@@ -76,12 +76,18 @@ const CRAFT_RECIPES: Dictionary = {
 			"station": "", "category": "yapi", "time": 2.5},
 	"mesale": {"output": {"mesale": 1}, "cost": {"cubuk": 1, "odun": 1},
 			"station": "", "category": "yapi", "time": 1.5},
-	"sandik": {"output": {"sandik": 1}, "cost": {"kalas": 4, "ip": 1},
-			"station": "", "category": "yapi", "time": 2.5},
+	# BASE yapilari (Bolum 14) tezgahta uretilir. "hide/deri" henuz yok
+	# (yaratiklardan gelecek); yatakta muhafazakar olarak ip+yaprak kullanildi.
+	"sandik": {"output": {"sandik": 1}, "cost": {"odun": 8, "ip": 1},
+			"station": "tezgah", "category": "yapi", "time": 3.0},
 	"tezgah": {"output": {"tezgah": 1}, "cost": {"kalas": 4, "cubuk": 2},
 			"station": "", "category": "yapi", "time": 4.0},
-	"yatak": {"output": {"yatak": 1}, "cost": {"kalas": 4, "ip": 2, "yaprak": 2},
-			"station": "", "category": "yapi", "time": 4.0},
+	"yatak": {"output": {"yatak": 1}, "cost": {"odun": 6, "ip": 2, "yaprak": 3},
+			"station": "tezgah", "category": "yapi", "time": 4.0},
+	"ocak": {"output": {"ocak": 1}, "cost": {"tas": 8, "kil": 4, "odun": 2},
+			"station": "tezgah", "category": "yapi", "time": 6.0},
+	"platform": {"output": {"platform": 1}, "cost": {"odun": 6, "ip": 2},
+			"station": "tezgah", "category": "yapi", "time": 4.0},
 	"kamp_evi": {"output": {"kamp_evi": 1}, "cost": {"kalas": 6, "ip": 2, "yaprak": 4},
 			"station": "", "category": "yapi", "time": 6.0},
 	# --- Tarim ---

@@ -21,6 +21,7 @@ const HittableDummy = preload("res://scripts/hittable_dummy.gd")
 const StructureManager = preload("res://scripts/structure_manager.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
+const ChestStore = preload("res://scripts/inventory.gd")  # 14.1 sandik deposu
 
 ## Zemin turleri: renk + ust yuzey yuksekligi. "speckled": true olan
 ## turler icin benekli doku CALISMA ANINDA kodla uretilir (dosya
@@ -70,7 +71,11 @@ const PLACE_MODELS := {
 			"h": 0.8, "solid": true, "long": 1.0,
 			"behavior": "station", "max_hp": 120},
 	"sandik": {"model": "res://assets/models/tools/chest.glb",
-			"h": 0.55, "solid": true, "behavior": "station", "max_hp": 120},
+			"h": 0.55, "solid": true, "behavior": "station", "max_hp": 60},
+	"ocak": {"model": "res://assets/models/tools/campfire-pit.glb",
+			"h": 0.9, "solid": true, "behavior": "hearth", "max_hp": 400},
+	"platform": {"model": "platform", "h": 1.5, "solid": false,
+			"behavior": "platform", "max_hp": 100, "rotatable": true},
 	"kamp_evi": {"model": "res://assets/models/tools/tent.glb",
 			"extra": "res://assets/models/tools/tent-canvas.glb",
 			"h": 1.3, "solid": true, "behavior": "tent", "max_hp": 200},
@@ -85,7 +90,7 @@ const PLACE_MODELS := {
 			"behavior": "door", "max_hp": 80, "rotatable": true},
 	"yatak": {"model": "res://assets/models/tools/bedroll.glb",
 			"h": 0.25, "solid": false, "long": 0.9,
-			"behavior": "bed", "max_hp": 40, "rotatable": true},
+			"behavior": "bed", "max_hp": 80, "rotatable": true},
 	"tuzak": {"model": "res://assets/models/tools/box-open.glb",
 			"h": 0.35, "solid": false,
 			"behavior": "trap", "max_hp": 30, "in_pit": true},
@@ -192,9 +197,14 @@ var _placed_nodes: Dictionary = {} # hucre -> yapi gorseli (Node3D)
 # YAPI SISTEMI (Bolum 13): yapi ornekleri meta (yon/hp/durum). _placed id'yi,
 # bu ise per-instance veriyi tutar (sidecar; mevcut sistem korunur).
 var _structures = StructureManager.new()
-var _chests: Dictionary = {}       # sandik hucresi -> icerik {esya: adet}
+var _chests: Dictionary = {}       # sandik hucresi -> Inventory ornegi (14.1 depo)
 var _move_mode: bool = false       # Tasi butonu: yapiyi geri alma modu
 var _open_chest := Vector2i(-999, -999)
+# BASE (Bolum 14)
+var _home_bed := Vector2i(-999, -999)   # 14.2 aktif dogus noktasi (son yatak)
+var _hearth_cell := Vector2i(-999, -999) # 14.3 tek aktif ocak
+var _hearth_light: OmniLight3D = null    # ocagin oncelikli (butcesiz) isigi
+var _platform_cells: Dictionary = {}     # 14.4 platform hucresi -> true (yukseklik)
 var _ground_items: Array = []      # yere birakilanlar [{cell,id,count,node}]
 # ALET SISTEMI (Bolum 12)
 var _dummies: Dictionary = {}      # test kuklalari: hucre -> {node, hp, ...}
@@ -270,6 +280,7 @@ func _ready() -> void:
 	hud.move_toggled.connect(func(on: bool): _move_mode = on)
 	hud.drop_item_requested.connect(_on_drop_item)
 	hud.chest_transfer_requested.connect(_on_chest_transfer)
+	hud.chest_transfer_all_requested.connect(_on_chest_transfer_all)
 	hud.chest_dismantle_requested.connect(_on_chest_dismantle)
 	hud.chest_closed.connect(func(): _open_chest = Vector2i(-999, -999))
 	_build_camera_ui()
@@ -507,8 +518,68 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(_cell_center(gpc + Vector2i(0, 1)) + Vector3(0, 0.1, 0))
 	await get_tree().create_timer(0.4).timeout
 	_snap(save_path.replace(".png", "_yer_esya.png"))
+	await _run_base_selftest()  # BASE (Bolum 14): sandik/yatak/ocak/platform
 	_run_save_load_selftest()
 	get_tree().quit()
+
+## BASE (Bolum 14 A kismi) self-test: dort yapiyi kurar, davranislari dogrular
+## ve _base.png karesini alir. CI log'unda CHEST/BED/HEARTH/PLATFORM satirlari.
+func _run_base_selftest() -> void:
+	Inventory.reset()
+	DayNight.is_night = false
+	var bpc := _player_cell()
+	# Temiz calisma alani (yapilar/nesneler/su kaldir)
+	for oy in range(-3, 4):
+		for ox in range(-3, 4):
+			var c := bpc + Vector2i(ox, oy)
+			_objects.erase(c); _dummies.erase(c); _depth.erase(c)
+			_water_level.erase(c); _solid_cells.erase(c)
+			if _placed.has(c):
+				_release_structure_cell(c)
+			_ground_char[c] = "."
+	# --- 14.1 SANDIK: doldur, dolu iken sokulmez, yikilinca sacilir ---
+	var chest_cell := bpc + Vector2i(2, 0)
+	_set_placed(chest_cell, "sandik")
+	var store = _chests[chest_cell]
+	store.add_item("odun", 10)
+	store.add_item("tas", 5)
+	print("CHESTTEST: dolu_slot=%d odun=%d bos=%s" % [
+		store.get_used_slots(), store.get_count("odun"),
+		str(_chest_is_empty(chest_cell))])
+	_remove_placed(chest_cell)  # dolu -> reddedilmeli
+	print("CHESTLOCK: dolu_sandik_duruyor=%s" % str(_placed.has(chest_cell)))
+	var gi_before := _ground_items.size()
+	_destroy_structure(chest_cell)  # yikim -> icerik yere sacilir
+	print("CHESTSPILL: sacildi=%s (%d->%d)" % [
+		str(_ground_items.size() > gi_before), gi_before, _ground_items.size()])
+	# --- 14.2 YATAK: yerlestirince aktif dogus noktasi ---
+	var bed_cell := bpc + Vector2i(-2, 0)
+	_set_placed(bed_cell, "yatak")
+	print("BEDTEST: home=%s eslesti=%s" % [
+		str(get_spawn()), str(get_spawn() == bed_cell)])
+	# --- 14.3 OCAK: tek aktif + oncelikli isik ---
+	var hearth_cell := bpc + Vector2i(0, -2)
+	_set_placed(hearth_cell, "ocak")
+	print("HEARTHTEST: hearth=%s aktif_isik=%s" % [
+		str(get_hearth()),
+		str(_hearth_light != null and _hearth_light.visible)])
+	# --- 14.4 PLATFORM: uzerine cik (yukseklik) + menzilli atis ---
+	var plat_cell := bpc + Vector2i(0, 2)
+	_set_placed(plat_cell, "platform")
+	var base_y := ground_height(float(bpc.x) + 0.5, float(bpc.y) + 0.5)
+	var plat_y := ground_height(float(plat_cell.x) + 0.5, float(plat_cell.y) + 0.5)
+	print("PLATFORMTEST: yukseklik_farki=%.2f (beklenen ~1.5)" % (plat_y - base_y))
+	player.position = _cell_center(plat_cell)
+	player.facing = Vector2(1, 0)
+	_launch_projectile("spear", Vector3(1, 0, 0), 11.0, 2.2, -12.0, 30, "mizrak", 1.0)
+	print("PLATFORMSHOT: projectiles=%d oyuncu_y=%.2f" % [
+		_projectiles.size(), player.position.y])
+	# Kare: base'i genis acidan goster
+	_cam_locked = true
+	camera.position = _cell_center(bpc) + Vector3(5.0, 4.5, 6.0)
+	camera.look_at(_cell_center(bpc) + Vector3(0, 0.5, 0))
+	await get_tree().create_timer(0.5).timeout
+	_snap(save_path.replace(".png", "_base.png"))
 
 # Kaydet -> bellegi boz -> yukle -> karsilastir. CI job log'unda
 # "SAVELOAD:" satiri sonucu gosterir; kalicilik bozulursa aninda yakalanir.
@@ -536,7 +607,7 @@ func _run_save_load_selftest() -> void:
 	_depth.clear(); _water_level.clear(); _placed.clear()
 	for n in _placed_nodes.values():
 		n.queue_free()
-	_placed_nodes.clear(); _chests.clear(); _objects.clear()
+	_placed_nodes.clear(); _clear_chests(); _objects.clear()
 	# 4) Yukle
 	_load_game_3d()
 	# 5) Karsilastir
@@ -790,6 +861,11 @@ func _process(delta: float) -> void:
 		_tick_aim(delta)
 	if not _torch_lights.is_empty():
 		_update_torches(delta)  # 13.5 isik butcesi + flicker
+	if _hearth_light != null and is_instance_valid(_hearth_light) \
+			and _hearth_light.visible:
+		# 14.3 ocak: butcesiz, her zaman yanan; hafif canli titresim
+		var ht := Time.get_ticks_msec() / 1000.0
+		_hearth_light.light_energy = 3.0 * (0.9 + 0.1 * sin(ht * 8.0))
 	_tick_regrow(delta)
 	if not _ground_items.is_empty():
 		_tick_ground_items(delta)  # #1: suzulme + donme
@@ -877,7 +953,8 @@ func _save_game_3d() -> void:
 		return
 	var chest_json: Dictionary = {}
 	for cell: Vector2i in _chests:
-		chest_json["%d,%d" % [cell.x, cell.y]] = _chests[cell]
+		# 14.1: depo Inventory ornegi -> slots/hotbar (to_save)
+		chest_json["%d,%d" % [cell.x, cell.y]] = _chests[cell].to_save()
 	var ground_json: Array = []
 	for entry in _ground_items:
 		ground_json.append({"x": entry["cell"].x, "y": entry["cell"].y,
@@ -909,6 +986,7 @@ func _save_game_3d() -> void:
 		"day": DayNight.day,
 		"is_night": DayNight.is_night,
 		"cycle_elapsed": DayNight.elapsed,
+		"home_bed": [_home_bed.x, _home_bed.y],  # 14.2 aktif dogus noktasi
 	}
 	var file := FileAccess.open(SAVE3D_PATH, FileAccess.WRITE)
 	if file == null:
@@ -958,19 +1036,35 @@ func _load_game_3d() -> void:
 		cell.queue_free()
 	_placed.clear()
 	_placed_nodes.clear()
-	_chests.clear()
+	_clear_chests()          # 14.1 depo dugumlerini serbest birak
+	_platform_cells.clear()  # 14.4 _set_placed yeniden dolduracak
+	_hearth_cell = Vector2i(-999, -999)
+	_hearth_light = null
+	# 14.2 aktif dogus noktasi (yatak _loading iken set_spawn cagirmaz)
+	var hb: Array = data.get("home_bed", [-999, -999])
+	_home_bed = Vector2i(int(hb[0]), int(hb[1])) if hb.size() == 2 \
+			else Vector2i(-999, -999)
 	# 13.6: yapi metasini (yon/hp) once yukle ki _set_placed korusun; eski
 	# kayitlarda "structures" yoksa _set_placed tam-can yeni ornek uretir
 	_structures.from_save_data(data.get("structures", []))
 	for key in data.get("placed", {}):
 		var item_id := String(data["placed"][key])
 		if PLACE_MODELS.has(item_id):
-			_set_placed(_key_to_cell(key), item_id)
+			_set_placed(_key_to_cell(key), item_id)  # sandik icin bos depo kurar
+	# 14.1: sandik iceriklerini mevcut depolara yukle (yeni format=slots dict;
+	# eski format=duz {esya:adet} -> load_from_dict ile geriye uyumlu)
 	for key in data.get("chests", {}):
-		var contents: Dictionary = {}
-		for item_id in data["chests"][key]:
-			contents[item_id] = int(data["chests"][key][item_id])
-		_chests[_key_to_cell(key)] = contents
+		var cell := _key_to_cell(key)
+		if not _chests.has(cell):
+			_chests[cell] = _new_chest_store()
+		var saved = data["chests"][key]
+		if saved is Dictionary and saved.has("slots"):
+			_chests[cell].load_save(saved)
+		elif saved is Dictionary:
+			var flat: Dictionary = {}
+			for item_id in saved:
+				flat[item_id] = int(saved[item_id])
+			_chests[cell].load_from_dict(flat)
 	# Yerdeki esyalar
 	for entry in data.get("ground_items", []):
 		if entry is Dictionary and Items.ITEMS.has(entry.get("id", "")):
@@ -1825,9 +1919,16 @@ func _build_decor(grass_cells: Array) -> void:
 		add_child(node)
 		_decor_nodes.append(node)
 
-## Bir dunya noktasindaki arazi yuksekligi (oyuncu ve nesneler icin)
+## Bir dunya noktasindaki arazi yuksekligi (oyuncu ve nesneler icin).
+## 14.4: platform hucresinde deck ust yuzu (arazi + PLATFORM_HEIGHT) doner —
+## oyuncu platformun ustunde durur (menzilli atis yuksekten). Dusme hasari yok.
 func ground_height(x: float, z: float) -> float:
-	return float(_sample_terrain(x, z)[0])
+	var base := float(_sample_terrain(x, z)[0])
+	if not _platform_cells.is_empty():
+		var cell := Vector2i(floori(x), floori(z))
+		if _platform_cells.has(cell):
+			return base + PLATFORM_HEIGHT
+	return base
 
 func _cell_center(cell: Vector2i) -> Vector3:
 	var x := cell.x + 0.5
@@ -2207,7 +2308,8 @@ func _on_world_tapped(screen_pos: Vector2) -> void:
 				Health.heal(30.0)
 				_spawn_floating_text(cell, "Sabah oldu! +30 can", Color(0.8, 1.0, 0.8))
 			else:
-				_spawn_floating_text(cell, "Sadece gece uyunur", Color(1, 0.9, 0.6))
+				# 14.2 gunduz: "burayi ev yap" -> aktif dogus noktasi ata
+				set_spawn(cell)
 			return
 	# Yere birakilmis esya varsa topla
 	if _try_pickup_ground(cell):
@@ -2570,8 +2672,8 @@ func _set_placed(cell: Vector2i, item_id: String, rot: int = 0) -> void:
 	if _structures.hp_ratio(cell) < 0.5:
 		_apply_damaged_look(cell)
 	if item_id == "sandik" and not _chests.has(cell):
-		_chests[cell] = {}
-	# 13.5 ozel davranislar: kapi katiligi/aciligi + mesale isigi
+		_chests[cell] = _new_chest_store()  # 14.1 bos 16-slot depo
+	# 13.5 + 14.x ozel davranislar
 	var behavior := String(def.get("behavior", ""))
 	if behavior == "door":
 		var is_open: bool = _structures.is_open(cell)
@@ -2582,11 +2684,21 @@ func _set_placed(cell: Vector2i, item_id: String, rot: int = 0) -> void:
 			_solid_cells[cell] = true  # kapali kapi katidir
 	elif behavior == "torch":
 		_add_torch_light(cell, holder)
+	elif behavior == "hearth":
+		_activate_hearth(cell, holder)   # 14.3 tek aktif ocak + oncelikli isik
+	elif behavior == "platform":
+		_platform_cells[cell] = true     # 14.4 uzerine cikilir (yukseklik)
+	elif behavior == "bed" and not _loading:
+		set_spawn(cell)                  # 14.2 son yatak = aktif dogus noktasi
 
 ## Bir yapinin olcekli 3D gorselini (holder+bundle) origin'de kurar; konum/
 ## donme cagirana kalir. Hem yerlestirme hem hayalet onizleme kullanir.
 func _build_structure_visual(item_id: String) -> Node3D:
 	var def: Dictionary = PLACE_MODELS[item_id]
+	# 14.4 platform: GLB yok, prosedurel (deck 1.5 birim + ayaklar + basamak).
+	# ground_height ile eslesir; oyuncu deck ustunde durur.
+	if item_id == "platform":
+		return _build_platform_visual()
 	var holder := Node3D.new()
 	var bundle := Node3D.new()
 	holder.add_child(bundle)
@@ -2604,25 +2716,81 @@ func _build_structure_visual(item_id: String) -> Node3D:
 				-aabb.get_center().z * s)
 	return holder
 
+## 14.4 Savunma platformu: ~1.5 birim yuksek, uzerine cikilir deck + 4 ayak +
+## bir kenarda basamak (holder donunce basamak yonu secilir). Prosedurel;
+## boyut ground_height ile eslesir (deck ust yuzu local y=1.5).
+const PLATFORM_HEIGHT := 1.5
+func _build_platform_visual() -> Node3D:
+	var holder := Node3D.new()
+	var wood := Color(0.58, 0.40, 0.24)
+	var wood_d := Color(0.44, 0.30, 0.18)
+	var top := PLATFORM_HEIGHT
+	# Deck (ust dosseme)
+	var deck := MeshInstance3D.new()
+	var dm := BoxMesh.new(); dm.size = Vector3(0.92, 0.16, 0.92)
+	deck.mesh = dm
+	deck.position = Vector3(0, top - 0.08, 0)
+	deck.material_override = _flat_mat(wood)
+	holder.add_child(deck)
+	# 4 ayak
+	for sx in [-1, 1]:
+		for sz in [-1, 1]:
+			var leg := MeshInstance3D.new()
+			var lm := BoxMesh.new(); lm.size = Vector3(0.12, top - 0.16, 0.12)
+			leg.mesh = lm
+			leg.position = Vector3(sx * 0.36, (top - 0.16) * 0.5, sz * 0.36)
+			leg.material_override = _flat_mat(wood_d)
+			holder.add_child(leg)
+	# Basamaklar: +z kenarinda 3 kademe (holder rotasyonu yonu belirler)
+	for i in 3:
+		var step := MeshInstance3D.new()
+		var sm := BoxMesh.new(); sm.size = Vector3(0.7, 0.16, 0.26)
+		step.mesh = sm
+		var h := top - (i + 1) * (top / 4.0)
+		step.position = Vector3(0, h - 0.08, 0.5 + i * 0.24)
+		step.material_override = _flat_mat(wood if i % 2 == 0 else wood_d)
+		holder.add_child(step)
+	return holder
+
+func _flat_mat(c: Color) -> StandardMaterial3D:
+	var m := StandardMaterial3D.new()
+	m.albedo_color = c
+	m.roughness = 0.9
+	return m
+
 func _remove_placed(cell: Vector2i) -> void:
 	var item_id: String = _placed[cell]
-	if item_id == "sandik" and not (_chests.get(cell, {}) as Dictionary).is_empty():
+	# 14.1: dolu sandik sokulmez (item kaybi/duplikasyon riskini sifirla)
+	if item_id == "sandik" and not _chest_is_empty(cell):
 		_spawn_floating_text(cell, "Önce sandığı boşalt!", Color(1, 0.6, 0.6))
 		return
 	if not Inventory.can_add_all({item_id: 1}):
 		_spawn_floating_text(cell, "Envanter dolu!", Color(1, 0.6, 0.6))
 		return
 	Inventory.add_item(item_id, 1)
+	_release_structure_cell(cell)
+	_spawn_floating_text(cell, "Geri alındı", Color(0.95, 0.9, 0.7))
+	_dirty = true
+
+## Bir yapi hucresinin TUM kayitlarini temizler (sokme + yikim ortak yol).
+## Sandik deposu/ocak isigi/platform yuksekligi burada birakilir.
+func _release_structure_cell(cell: Vector2i) -> void:
 	_placed.erase(cell)
 	_structures.remove(cell)
 	_torch_lights.erase(cell)
 	_solid_cells.erase(cell)
-	_chests.erase(cell)
+	_platform_cells.erase(cell)
+	if _chests.has(cell):
+		var store = _chests[cell]
+		if store != null and is_instance_valid(store):
+			store.queue_free()
+		_chests.erase(cell)
+	if cell == _hearth_cell:
+		_hearth_cell = Vector2i(-999, -999)
+		_hearth_light = null  # dugumle birlikte free edilir (holder cocugu)
 	if _placed_nodes.has(cell):
 		_placed_nodes[cell].queue_free()
 		_placed_nodes.erase(cell)
-	_spawn_floating_text(cell, "Geri alındı", Color(0.95, 0.9, 0.7))
-	_dirty = true
 
 # --- YAPI YERLESTIRME MODU (YAPI_SISTEMI.md 13.2 + 13.3) -------------------
 const _PLACE_OK := Color(0.42, 0.80, 0.42)
@@ -2764,6 +2932,7 @@ func _update_station_proximity() -> void:
 	var pc := _player_cell()
 	var near_bench := false
 	var near_res := false
+	var near_hearth := false
 	for dy in range(-1, 2):
 		for dx in range(-1, 2):
 			match _placed.get(pc + Vector2i(dx, dy), ""):
@@ -2771,46 +2940,160 @@ func _update_station_proximity() -> void:
 					near_bench = true
 				"arastirma_masasi":
 					near_res = true
+				"ocak":
+					near_hearth = true  # 14.3 pisirme istasyonu (arayuz)
 	Crafting.near_station = near_bench
 	Crafting.near_research = near_res
+	Crafting.near_hearth = near_hearth
 	# SU MODELI (11.2): yuzulur hucrede oyuncu yavaslar (tek placeholder)
 	player.water_factor = WaterRules.SWIM_SPEED_FACTOR if is_swimmable(pc) else 1.0
 
 # --- Sandik ------------------------------------------------------------------
 
+# --- 14.1 Sandik deposu (oyuncu envanteriyle AYNI slot/stack altyapisi) ------
+
+## Bos bir 16-slot depo (Inventory ornegi) olusturur ve agaca ekler.
+## container_mode = baslangic seti verilmez. In-tree oldugu icin add/remove
+## ve changed sinyali sorunsuz calisir.
+func _new_chest_store() -> Node:
+	var store := ChestStore.new()
+	store.container_mode = true
+	add_child(store)
+	return store
+
+## UI icin depoyu {esya: adet} gorunumune cevirir (HUD dict bekler).
+func _chest_display(cell: Vector2i) -> Dictionary:
+	var out: Dictionary = {}
+	var store = _chests.get(cell, null)
+	if store == null:
+		return out
+	for item_id: String in Items.ITEMS:
+		var c: int = store.get_count(item_id)
+		if c > 0:
+			out[item_id] = c
+	return out
+
+func _chest_is_empty(cell: Vector2i) -> bool:
+	var store = _chests.get(cell, null)
+	return store == null or store.get_used_slots() == 0
+
+## Tum sandik depolarini serbest birak (yeni oyun / yukleme oncesi).
+func _clear_chests() -> void:
+	for store in _chests.values():
+		if store != null and is_instance_valid(store):
+			store.queue_free()
+	_chests.clear()
+
 func _open_chest_at(cell: Vector2i) -> void:
 	_open_chest = cell
-	hud.show_chest(_chests.get(cell, {}))
+	hud.show_chest(_chest_display(cell))
 
 func _on_chest_transfer(item_id: String, to_chest: bool) -> void:
 	if not _chests.has(_open_chest):
 		return
-	var chest: Dictionary = _chests[_open_chest]
+	var store = _chests[_open_chest]
 	if to_chest:
-		var count := Inventory.get_count(item_id)
-		if count > 0 and Inventory.remove_item(item_id, count):
-			chest[item_id] = int(chest.get(item_id, 0)) + count
+		# Envanterdeki tum yigini sandiga; sigmazsa sigan kadar
+		var count: int = Inventory.get_count(item_id)
+		var moved := 0
+		while moved < count and store.add_item(item_id, 1):
+			Inventory.remove_item(item_id, 1)
+			moved += 1
+		if moved < count:
+			hud.show_chest(_chest_display(_open_chest), "Sandık dolu!")
+			_dirty = true
+			return
 	else:
-		var have := int(chest.get(item_id, 0))
+		# Sandiktaki tum yigini envantere; sigmazsa sigan kadar
+		var have: int = store.get_count(item_id)
 		var moved := 0
 		while moved < have and Inventory.add_item(item_id, 1):
+			store.remove_item(item_id, 1)
 			moved += 1
-		if moved == have:
-			chest.erase(item_id)
-		elif moved > 0:
-			chest[item_id] = have - moved
-		else:
-			hud.show_chest(chest, "Envanter dolu!")
+		if moved == 0:
+			hud.show_chest(_chest_display(_open_chest), "Envanter dolu!")
 			return
 	_dirty = true
-	hud.show_chest(chest)
+	hud.show_chest(_chest_display(_open_chest))
+
+## "Tümünü Koy" / "Tümünü Al" hizli butonlari (14.1).
+func _on_chest_transfer_all(to_chest: bool) -> void:
+	if not _chests.has(_open_chest):
+		return
+	var store = _chests[_open_chest]
+	var full := false
+	if to_chest:
+		for item_id: String in Items.ITEMS:
+			var count: int = Inventory.get_count(item_id)
+			for i in count:
+				if store.add_item(item_id, 1):
+					Inventory.remove_item(item_id, 1)
+				else:
+					full = true
+					break
+	else:
+		for item_id: String in Items.ITEMS:
+			var have: int = store.get_count(item_id)
+			for i in have:
+				if Inventory.add_item(item_id, 1):
+					store.remove_item(item_id, 1)
+				else:
+					full = true
+					break
+	_dirty = true
+	var msg := ""
+	if full:
+		msg = "Sandık dolu!" if to_chest else "Envanter dolu!"
+	hud.show_chest(_chest_display(_open_chest), msg)
 
 func _on_chest_dismantle() -> void:
-	if _chests.has(_open_chest) and (_chests[_open_chest] as Dictionary).is_empty():
+	if _chests.has(_open_chest) and _chest_is_empty(_open_chest):
 		var cell := _open_chest
 		hud.close_chest()
 		_open_chest = Vector2i(-999, -999)
 		_remove_placed(cell)
+
+# --- 14.2 Dogus noktasi (yatak) ----------------------------------------------
+
+## Aktif dogus noktasini ayarlar (son yerlestirilen yatak devralir). Olum
+## sistemi gelince _respawn_cell() bunu kullanacak; simdilik arayuz + isaret.
+func set_spawn(cell: Vector2i) -> void:
+	_home_bed = cell
+	_spawn_floating_text(cell, "Ev burası oldu", Color(0.8, 1.0, 0.85))
+
+func get_spawn() -> Vector2i:
+	return _home_bed
+
+## Olumden sonra (ileride) donulecek hucre: ev yatagi varsa orasi, yoksa
+## dunya dogus hucresi. Arayuz hazir; olum sistemi B/yaratik fazinda baglanir.
+func _respawn_cell() -> Vector2i:
+	return _home_bed if _home_bed != Vector2i(-999, -999) else _spawn_cell
+
+# --- 14.3 Ocak (hearth) ------------------------------------------------------
+
+## Yeni ocagi aktif yapar; onceki ocak pasiflesir (tek aktif kural). Isik
+## mesale butcesinden BAGIMSIZ, her zaman yanar (base'in kalbi).
+func _activate_hearth(cell: Vector2i, holder: Node3D) -> void:
+	# Onceki aktif ocak varsa pasiflesir (isigi soner, ama yapi durur)
+	if _hearth_cell != Vector2i(-999, -999) and _hearth_cell != cell \
+			and _placed.has(_hearth_cell):
+		if _hearth_light != null and is_instance_valid(_hearth_light):
+			_hearth_light.visible = false
+		_spawn_floating_text(cell, "Yeni ocak aktif (eski pasif)", Color(1, 0.9, 0.6))
+	_hearth_cell = cell
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.66, 0.32)
+	light.light_energy = 3.0
+	light.omni_range = 7.5           # genis: base'in kalbi
+	light.position = Vector3(0, 1.0, 0)
+	light.shadow_enabled = false
+	holder.add_child(light)
+	_hearth_light = light
+
+## Global sorgu (14.3): yaratik sistemi (B kismi) gece hedefi icin kullanacak.
+## Aktif ocak yoksa gecersiz hucre doner.
+func get_hearth() -> Vector2i:
+	return _hearth_cell
 
 # --- Yere birakilan esyalar ---------------------------------------------------
 
@@ -3419,15 +3702,19 @@ func _destroy_structure(cell: Vector2i) -> void:
 		var n := int(floor(float(cost[mat]) * 0.25))
 		if n > 0:
 			drops[mat] = n
-	# Yapiyi kaldir (iade yok — yikim)
-	_placed.erase(cell)
-	_structures.remove(cell)
-	_torch_lights.erase(cell)
-	_solid_cells.erase(cell)
-	_chests.erase(cell)
-	if _placed_nodes.has(cell):
-		_placed_nodes[cell].queue_free()
-		_placed_nodes.erase(cell)
+	# 14.1: sandik yikilirsa ICINDEKI TUM item'lar yere sacilir (kayip yok)
+	if item_id == "sandik" and _chests.has(cell):
+		var store = _chests[cell]
+		for spill_id: String in Items.ITEMS:
+			var have: int = store.get_count(spill_id)
+			if have > 0:
+				var st := _first_free_neighbor(cell)
+				if st == Vector2i(-999, -999):
+					st = cell
+				_add_ground_item(st, spill_id, have)
+	# Yapiyi kaldir (iade yok — yikim). _release_structure_cell sandik deposunu,
+	# ocak isigini, platform yuksekligini de temizler.
+	_release_structure_cell(cell)
 	_spawn_particles(_cell_center(cell) + Vector3(0, 0.5, 0),
 			Color(0.5, 0.4, 0.3), 10)
 	_play_sfx("break")  # 13.5 cila: yikim sesi (dosya yoksa sessiz)

@@ -30,6 +30,15 @@ var near_station: bool = false:
 		near_station = value
 		station_changed.emit()
 
+## Ocak (14.3) yakinligi: pisirme istasyonu arayuzu. Pisirme tarifleri
+## yaratik/yiyecek faziyla gelecek; simdilik bayrak hazir (kod tekrari yok).
+var near_hearth: bool = false:
+	set(value):
+		if near_hearth == value:
+			return
+		near_hearth = value
+		station_changed.emit()
+
 ## Siradaki isler: her biri {"id": tarif, "remaining": kalan adet,
 ## "progress": ilk urunun gecen suresi}
 var queue: Array = []

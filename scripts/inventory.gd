@@ -25,13 +25,19 @@ const HOTBAR_UNLOCKED: int = 4  # kalani seviye atlayinca acilacak
 var slots: Array = []   # TOTAL_SLOTS eleman; null veya {"id","count"}
 var hotbar: Array = []  # HOTBAR_SIZE eleman; "" veya item_id
 
+## Kap modu (14.1 sandik): true ise bu ornek bir DEPO'dur (sandik) —
+## baslangic seti verilmez. Ayni slot/stack altyapisi kullanilir (kod
+## tekrari yok). Ornekleme + add_child'dan ONCE ayarla; _ready guard okur.
+var container_mode: bool = false
+
 ## Baslangic seti: temel aletler hazir gelir (her seferinde uretmek yok).
 ## Hem ilk aciliste hem "Yeni Oyun"da verilir; kayit varsa uzerine yuklenir.
 const STARTER_KIT := {"balta": 1, "kazma": 1, "kurek": 1}
 
 func _ready() -> void:
 	_init_arrays()
-	_give_starter_kit()
+	if not container_mode:
+		_give_starter_kit()
 
 func _give_starter_kit() -> void:
 	for item_id in STARTER_KIT:

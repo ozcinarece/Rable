@@ -19,6 +19,8 @@ signal attack_hold_released
 
 ## Sandik paneli: esya tasima istegi (to_chest: true = sandiga koy)
 signal chest_transfer_requested(item_id: String, to_chest: bool)
+## 14.1 hizli aktarim: "Tümünü Koy"/"Tümünü Al" (to_chest: true = koy)
+signal chest_transfer_all_requested(to_chest: bool)
 ## Bos sandigi sokme istegi
 signal chest_dismantle_requested
 ## Panel X ile kapatildi (World acik sandik kaydini temizler)
@@ -942,6 +944,23 @@ func show_chest(contents: Dictionary, message: String = "") -> void:
 	craft_button.button_pressed = false
 	for child in chest_rows.get_children():
 		child.queue_free()
+
+	# 14.1 hizli butonlar: Tümünü Koy / Tümünü Al
+	var quick := HBoxContainer.new()
+	quick.add_theme_constant_override("separation", 10)
+	var put_all := Button.new()
+	put_all.text = "Tümünü Koy"
+	put_all.add_theme_font_size_override("font_size", 20)
+	put_all.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	put_all.pressed.connect(func(): chest_transfer_all_requested.emit(true))
+	quick.add_child(put_all)
+	var take_all := Button.new()
+	take_all.text = "Tümünü Al"
+	take_all.add_theme_font_size_override("font_size", 20)
+	take_all.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	take_all.pressed.connect(func(): chest_transfer_all_requested.emit(false))
+	quick.add_child(take_all)
+	chest_rows.add_child(quick)
 
 	_add_chest_section_title("Sandıktakiler:")
 	if contents.is_empty():
