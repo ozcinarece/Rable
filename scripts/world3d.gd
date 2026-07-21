@@ -518,13 +518,13 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(_cell_center(gpc + Vector2i(0, 1)) + Vector3(0, 0.1, 0))
 	await get_tree().create_timer(0.4).timeout
 	_snap(save_path.replace(".png", "_yer_esya.png"))
-	await _run_base_selftest()  # BASE (Bolum 14): sandik/yatak/ocak/platform
+	await _run_base_selftest(save_path)  # BASE (Bolum 14): sandik/yatak/ocak/platform
 	_run_save_load_selftest()
 	get_tree().quit()
 
 ## BASE (Bolum 14 A kismi) self-test: dort yapiyi kurar, davranislari dogrular
 ## ve _base.png karesini alir. CI log'unda CHEST/BED/HEARTH/PLATFORM satirlari.
-func _run_base_selftest() -> void:
+func _run_base_selftest(save_path: String) -> void:
 	Inventory.reset()
 	DayNight.is_night = false
 	var bpc := _player_cell()
