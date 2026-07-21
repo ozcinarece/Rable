@@ -984,6 +984,27 @@ func _setup_damage_flash() -> void:
 	_death_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
 	add_child(_death_fade)  # en ustte (panelleri de kapatir)
 	PlayerStats.player_died.connect(_on_player_died)
+	# kayit-sistemi: kayit aninda kosede minik "kaydedildi" isareti
+	_save_label = Label.new()
+	_save_label.text = "✓ Kaydedildi"
+	_save_label.add_theme_font_size_override("font_size", 20)
+	_save_label.modulate = Color(1, 1, 1, 0.0)
+	_save_label.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	_save_label.position = Vector2(-190, 96)
+	_save_label.add_theme_color_override("font_color", Color(0.5, 0.75, 0.5))
+	add_child(_save_label)
+	SaveManager.saved.connect(_on_saved)
+
+var _save_label: Label
+
+## Kayit aninda 0.5 sn görünüp sönen "kaydedildi" işareti (UI_DESIGN 4.5).
+func _on_saved() -> void:
+	if _save_label == null:
+		return
+	_save_label.modulate.a = 1.0
+	var tw := create_tween()
+	tw.tween_interval(0.5)
+	tw.tween_property(_save_label, "modulate:a", 0.0, 0.4)
 	# YASAM: dusuk-can vinyeti (cok hafif kirmizi, kenar hissi icin dunyanin
 	# ustunde ama panellerin altinda)
 	_low_hp_vignette = ColorRect.new()

@@ -303,10 +303,10 @@ func _ready() -> void:
 	_build_camera_ui()
 	# kayit-sistemi: SaveManager bu sahneyi (dünya durumu) kaydeder/yükler.
 	SaveManager.world = self
-	# Kayitli oyunu geri yukle (varsa). CI modunda atlanir ki sahneler
-	# hep temiz baslasin. (Açılış "Devam Et/Yeni Oyun" akışı: Aşama 3.)
-	if not OS.has_environment("RABLE_SCREENSHOT"):
-		SaveManager.load_game()
+	# Açılışta kayıt varsa "Devam Et / Yeni Oyun" seçimi; yoksa taze dünya
+	# (zaten kuruldu). CI modunda atlanır ki sahneler hep temiz başlasın.
+	if not OS.has_environment("RABLE_SCREENSHOT") and SaveManager.has_save():
+		_show_start_menu()
 	# CI ekran goruntusu modu: birkac saniye sonra kare kaydet ve cik
 	if OS.has_environment("RABLE_SCREENSHOT"):
 		_setup_screenshot(OS.get_environment("RABLE_SCREENSHOT"))
@@ -1190,6 +1190,69 @@ func from_save_data(data: Dictionary) -> bool:
 		_on_hold_requested(held)
 	_loading = false
 	return true
+
+# --- kayit-sistemi Aşama 3: Açılış "Devam Et / Yeni Oyun" ekranı -----------
+## Kayıt varsa gösterilir. Dünya arkada zaten TAZE kuruldu; "Devam Et" kaydı
+## yükler, "Yeni Oyun" onay sonrası eski kaydı siler (taze dünya kalır).
+func _show_start_menu() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 80
+	add_child(layer)
+	var dim := ColorRect.new()
+	dim.color = Color(0, 0, 0, 0.45)
+	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(dim)
+	var panel := PanelContainer.new()
+	panel.theme = load("res://theme_main.tres")
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.custom_minimum_size = Vector2(360, 0)
+	layer.add_child(panel)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 14)
+	panel.add_child(vb)
+	var title := Label.new()
+	title.text = "Kayıtlı oyun bulundu"
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.add_theme_font_size_override("font_size", 24)
+	vb.add_child(title)
+	var cont := _pill_button("Devam Et")
+	cont.pressed.connect(func():
+		SaveManager.load_game()
+		layer.queue_free())
+	vb.add_child(cont)
+	var neu := _pill_button("Yeni Oyun")
+	neu.pressed.connect(func(): _confirm_new_game(vb, layer))
+	vb.add_child(neu)
+
+## Yeni Oyun onayı: eski kaydın üstüne yazmadan ÖNCE sorar (veri kaybı önlemi).
+func _confirm_new_game(vb: VBoxContainer, layer: CanvasLayer) -> void:
+	for c in vb.get_children():
+		c.queue_free()
+	var q := Label.new()
+	q.text = "Eski kayıt silinecek. Emin misin?"
+	q.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	q.add_theme_font_size_override("font_size", 20)
+	vb.add_child(q)
+	var yes := _pill_button("Evet, yeni oyun")
+	yes.pressed.connect(func():
+		SaveManager.delete_save()
+		Inventory.reset(); Research.reset(); Crafting.reset()
+		Hunger.reset(); Thirst.reset(); Health.reset()
+		PlayerStats.reset(); DayNight.reset()
+		layer.queue_free())
+	vb.add_child(yes)
+	var no := _pill_button("Vazgeç")
+	no.pressed.connect(func():
+		layer.queue_free()
+		_show_start_menu())
+	vb.add_child(no)
+
+func _pill_button(text: String) -> Button:
+	var b := Button.new()
+	b.text = text
+	b.add_theme_font_size_override("font_size", 22)
+	b.custom_minimum_size = Vector2(0, 48)
+	return b
 
 ## _solid_cells'i sifirdan kurar: zemin (su/tepe) + kati nesneler + yapilar.
 ## Yukleme sonrasi ve durum bozulmasin diye tek kaynaktan turetilir.
