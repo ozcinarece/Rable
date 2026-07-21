@@ -49,18 +49,27 @@ func _tick_hunger(delta: float) -> void:
 		hunger_recovered.emit()
 	_was_warning = warn
 
+func _ready() -> void:
+	# Combat/ani olum (Health.damage -> 0) da yeniden dogusu tetiklesin.
+	if not Health.died.is_connected(_on_health_died):
+		Health.died.connect(_on_health_died)
+
+func _on_health_died() -> void:
+	_die()
+
 ## Açlık 0 -> can erir (ölüme kadar). Açlık > eşik -> yavaş can yenilenir.
+## Can 0 (açlık VEYA savaş) -> ölüm + yeniden doğuş.
 func _tick_health(delta: float) -> void:
 	if Hunger.value <= 0.0:
 		Health.value = maxf(0.0, Health.value - Balance.STARVE_HEALTH_LOSS_PER_SEC * delta)
 		Health.changed.emit()
-		if Health.value <= 0.0:
-			_die()
 	elif Hunger.value > Balance.REGEN_HUNGER_THRESHOLD \
 			and Health.value < Balance.HEALTH_MAX:
 		Health.value = minf(Balance.HEALTH_MAX,
 				Health.value + Balance.HEALTH_REGEN_PER_SEC * delta)
 		Health.changed.emit()
+	if Health.value <= 0.0:
+		_die()
 
 ## Bir yiyeceğin doyma değeri (yenebilir mi kontrolü için de kullanılır).
 func is_edible(item_id: String) -> bool:

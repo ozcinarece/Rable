@@ -990,6 +990,7 @@ func _save_game_3d() -> void:
 		"is_night": DayNight.is_night,
 		"cycle_elapsed": DayNight.elapsed,
 		"home_bed": [_home_bed.x, _home_bed.y],  # 14.2 aktif dogus noktasi
+		"death_count": PlayerStats.death_count,  # yasam: olum sayaci
 	}
 	var file := FileAccess.open(SAVE3D_PATH, FileAccess.WRITE)
 	if file == null:
@@ -1103,6 +1104,7 @@ func _load_game_3d() -> void:
 	Thirst.changed.emit()
 	Health.value = clampf(float(data.get("hp", Health.value)), 0.0, Health.MAX_VALUE)
 	Health.changed.emit()
+	PlayerStats.death_count = int(data.get("death_count", 0))  # yasam sayaci
 	DayNight.load_state(int(data.get("day", DayNight.day)),
 			bool(data.get("is_night", DayNight.is_night)),
 			float(data.get("cycle_elapsed", DayNight.elapsed)))

@@ -972,6 +972,24 @@ func _setup_damage_flash() -> void:
 	add_child(_damage_flash)
 	move_child(_damage_flash, 0)  # panellerin altinda kalsin
 	_prev_hp = Health.value
+	# YASAM (Asama 4): olum kararmasi (her seyin ustunde, kisa siyah gecis)
+	_death_fade = ColorRect.new()
+	_death_fade.color = Color(0, 0, 0, 0.0)
+	_death_fade.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_death_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
+	add_child(_death_fade)  # en ustte (panelleri de kapatir)
+	PlayerStats.player_died.connect(_on_player_died)
+
+var _death_fade: ColorRect
+
+## Olum: kisa kararma (respawn_player kararmanin altinda isinlar).
+func _on_player_died(_count: int) -> void:
+	if _death_fade == null:
+		return
+	_death_fade.color.a = 1.0  # aninda siyah: isinlanmayi gizler
+	var tw := create_tween()
+	tw.tween_interval(0.35)
+	tw.tween_property(_death_fade, "color:a", 0.0, 0.7)
 
 # --- Sandik paneli ------------------------------------------------------
 
