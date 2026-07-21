@@ -424,6 +424,7 @@ func _setup_screenshot(save_path: String) -> void:
 	await get_tree().create_timer(0.8).timeout
 	_snap(save_path.replace(".png", "_menzil.png"))
 	# YAPI YERLESTIRME (Asama 2/3): hayalet + onayla + hasar/yikim
+	Inventory.reset()  # onceki testler envanteri doldurmus olabilir (yer ac)
 	Inventory.add_item("ahsap_duvar", 3)
 	player.facing = Vector2(0, 1)
 	_on_hold_requested("")
@@ -431,19 +432,24 @@ func _setup_screenshot(save_path: String) -> void:
 	var tcell := ppc + Vector2i(0, 1)
 	# Hedef hucreyi garanti bos yap (CI'da _b3 yapilariyla dolu olmasin)
 	_objects.erase(tcell); _dummies.erase(tcell); _depth.erase(tcell)
+	_water_level.erase(tcell)
 	if _placed.has(tcell):
 		_remove_placed(tcell)
 	_ground_char[tcell] = "."
 	_solid_cells.erase(tcell)
 	_enter_place_mode("ahsap_duvar")
+	print("ENTERDBG: pm=%s ghost=%s ctrl=%s ppc=%s tcell=%s face=%s reason=%s" % [
+		str(_place_mode), str(_ghost != null),
+		str(hud._place_controls.visible), str(ppc), str(tcell),
+		str(player.facing), str(_place_valid(tcell))])
 	_cam_locked = true
 	camera.position = _cell_center(ppc) + Vector3(0, 3.2, 4.0)
 	camera.look_at(_cell_center(tcell) + Vector3(0, 0.4, 0))
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_yapi_hayalet.png"))
-	print("PLACEUI: controls=%s action=%s valid=%s" % [
+	print("PLACEUI: controls=%s action=%s valid=%s pcell=%s" % [
 		str(hud._place_controls.visible), str(hud.action_button.visible),
-		str(_ghost_valid)])
+		str(_ghost_valid), str(_place_cell)])
 	_place_confirm()
 	await get_tree().create_timer(0.4).timeout
 	_snap(save_path.replace(".png", "_yapi.png"))
