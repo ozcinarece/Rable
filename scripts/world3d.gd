@@ -241,6 +241,7 @@ var _map_w: int = 0
 var _map_h: int = 0
 var _map_seed: int = MapBalance.SEED_DEFAULT  # harita-v2 (sabit; aynı harita)
 var _clay_cells: Dictionary = {}   # kil-işaretli kum hücreleri (kürek kaynağı)
+var _base_objects: Dictionary = {} # kayit-sistemi: seed tabanı (diff için)
 var _spawn_cell := Vector2i(5, 5)
 var _held_item: String = ""
 
@@ -248,6 +249,7 @@ var _held_item: String = ""
 # autoload'lari periyodik ve arka plana alininca kaydedilir. Arastirma
 # kendi dosyasina yazar (research.json), buraya dahil degil.
 const SAVE3D_PATH := "user://save3d.json"
+const AUTOSAVE_INTERVAL := 120.0  # kayit-sistemi: her 2 dk otomatik kayit
 var _dirty: bool = false       # son kayittan beri degisiklik oldu mu
 var _autosave_timer: float = 0.0
 var _loading: bool = false     # yukleme sirasinda autosave/kirlilik bastir
@@ -299,10 +301,12 @@ func _ready() -> void:
 	hud.chest_dismantle_requested.connect(_on_chest_dismantle)
 	hud.chest_closed.connect(func(): _open_chest = Vector2i(-999, -999))
 	_build_camera_ui()
+	# kayit-sistemi: SaveManager bu sahneyi (dünya durumu) kaydeder/yükler.
+	SaveManager.world = self
 	# Kayitli oyunu geri yukle (varsa). CI modunda atlanir ki sahneler
-	# hep temiz baslasin.
+	# hep temiz baslasin. (Açılış "Devam Et/Yeni Oyun" akışı: Aşama 3.)
 	if not OS.has_environment("RABLE_SCREENSHOT"):
-		_load_game_3d()
+		SaveManager.load_game()
 	# CI ekran goruntusu modu: birkac saniye sonra kare kaydet ve cik
 	if OS.has_environment("RABLE_SCREENSHOT"):
 		_setup_screenshot(OS.get_environment("RABLE_SCREENSHOT"))
@@ -659,55 +663,69 @@ func _run_base_selftest(save_path: String) -> void:
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_base.png"))
 
-# Kaydet -> bellegi boz -> yukle -> karsilastir. CI job log'unda
-# "SAVELOAD:" satiri sonucu gosterir; kalicilik bozulursa aninda yakalanir.
+# kayit-sistemi Aşama 4: save -> bellegi boz -> load -> TEKRAR save; iki JSON
+# anlamsal (sırasız) DERİN eşleşmeli. Eşleşmezse ilk farklı yol yazdırılır.
 func _run_save_load_selftest() -> void:
-	# 1) Bilinen bir durum olustur: bir yapi + sandik icerigi + esya
+	# 1) Zengin durum: kazi + yapi + dolu sandik + arastirma dugumu
 	var pc := _player_cell()
 	var tcell := pc + Vector2i(2, 0)
 	if _diggable(tcell):
 		_held_item = "tezgah"
 		Inventory.add_item("tezgah", 1)
 		_try_place(tcell)
-	var before := {
-		"depth": _depth.size(), "water": _water_level.size(),
-		"placed": _placed.size(), "objects": _objects.size(),
-		"inv_odun": Inventory.get_count("odun"),
-		"depth_sum": 0.0, "water_sum": 0.0,
-	}
-	for c in _depth:
-		before["depth_sum"] += float(_depth[c])
-	for c in _water_level:
-		before["water_sum"] += float(_water_level[c])
-	# 2) Kaydet
-	_save_game_3d()
-	# 3) Bellegi boz (yukleme gercekten dosyadan mi geliyor?)
+	Research.unlocked["stone_tools"] = true   # arastirma kayit kapsaminda
+	# 2) save1 (dosya icerigini oku)
+	SaveManager.save()
+	var json1 := FileAccess.get_file_as_string(SaveManager.SAVE3D_PATH)
+	# 3) Bellegi boz (yukleme gercekten dosyadan mi?)
 	_depth.clear(); _water_level.clear(); _placed.clear()
 	for n in _placed_nodes.values():
 		n.queue_free()
 	_placed_nodes.clear(); _clear_chests(); _objects.clear()
+	Inventory.load_save({}); Health.value = 1.0; Hunger.value = 1.0
+	Research.unlocked.erase("stone_tools")
 	# 4) Yukle
-	_load_game_3d()
-	# 5) Karsilastir
-	var after_dsum := 0.0
-	for c in _depth:
-		after_dsum += float(_depth[c])
-	var after_wsum := 0.0
-	for c in _water_level:
-		after_wsum += float(_water_level[c])
-	var ok: bool = (_depth.size() == int(before["depth"])
-			and _water_level.size() == int(before["water"])
-			and _placed.size() == int(before["placed"])
-			and _objects.size() == int(before["objects"])
-			and absf(after_dsum - float(before["depth_sum"])) < 0.001
-			and absf(after_wsum - float(before["water_sum"])) < 0.001
-			and Inventory.get_count("odun") == int(before["inv_odun"]))
-	print("SAVELOAD: %s depth=%d/%d water=%d/%d placed=%d/%d obj=%d/%d dsum=%.2f/%.2f wsum=%.2f/%.2f odun=%d/%d" % [
-		"PASS" if ok else "FAIL",
-		_depth.size(), before["depth"], _water_level.size(), before["water"],
-		_placed.size(), before["placed"], _objects.size(), before["objects"],
-		after_dsum, before["depth_sum"], after_wsum, before["water_sum"],
-		Inventory.get_count("odun"), before["inv_odun"]])
+	SaveManager.load_game()
+	# 5) TEKRAR save + derin karsilastir (sirasiz)
+	SaveManager.save()
+	var json2 := FileAccess.get_file_as_string(SaveManager.SAVE3D_PATH)
+	var d1: Variant = JSON.parse_string(json1)
+	var d2: Variant = JSON.parse_string(json2)
+	var diff := _first_diff(d1, d2, "")
+	print("SAVELOAD: %s bytes=%d research_ok=%s inv_odun=%d" % [
+		"PASS" if diff == "" else "FAIL", json1.length(),
+		str(Research.unlocked.has("stone_tools")), Inventory.get_count("odun")])
+	if diff != "":
+		print("SAVELOAD_MISMATCH: %s" % diff)
+
+## İki JSON değerini sırasız (deep) karşılaştırır; ilk farklı yolu döndürür
+## ("" = eşit). Sözlük anahtar sırası önemsiz.
+func _first_diff(a: Variant, b: Variant, path: String) -> String:
+	if a is Dictionary and b is Dictionary:
+		if a.size() != b.size():
+			return "%s: dict boyut %d!=%d" % [path, a.size(), b.size()]
+		for k in a:
+			if not b.has(k):
+				return "%s.%s: eksik" % [path, str(k)]
+			var sub := _first_diff(a[k], b[k], "%s.%s" % [path, str(k)])
+			if sub != "":
+				return sub
+		return ""
+	if a is Array and b is Array:
+		if a.size() != b.size():
+			return "%s: dizi boyut %d!=%d" % [path, a.size(), b.size()]
+		for i in a.size():
+			var sub := _first_diff(a[i], b[i], "%s[%d]" % [path, i])
+			if sub != "":
+				return sub
+		return ""
+	if typeof(a) == TYPE_FLOAT or typeof(b) == TYPE_FLOAT:
+		if absf(float(a) - float(b)) > 0.0001:
+			return "%s: %s != %s" % [path, str(a), str(b)]
+		return ""
+	if a != b:
+		return "%s: %s != %s" % [path, str(a), str(b)]
+	return ""
 
 # Tema test sayfasi: paneller, sekme, butonlar, kategori daireleri.
 # Sadece CI ekran goruntusu modunda kurulur.
@@ -956,21 +974,22 @@ func _process(delta: float) -> void:
 	# Eldeki esya envanterden ciktiysa birak
 	if _held_item != "" and Inventory.get_count(_held_item) <= 0:
 		_on_hold_requested("")
-	# Periyodik otomatik kayit (yalnizca degisiklik olduysa)
+	# Otomatik kayit: her 2 dk'da bir (yalnizca degisiklik olduysa)
 	_autosave_timer += delta
-	if _autosave_timer >= 5.0:
+	if _autosave_timer >= AUTOSAVE_INTERVAL:
 		_autosave_timer = 0.0
 		if _dirty:
-			_save_game_3d()
+			SaveManager.save()
 
 # Uygulama arka plana alininca / kapatilinca son durumu kaydet.
-# Android'de kritik: kullanici oyundan cikinca APPLICATION_PAUSED gelir.
+# Android'de KRITIK: kullanici oyundan cikinca APPLICATION_PAUSED gelir
+# (telefonlarda oyun boyle "kapanir"). Cikista da kaydeder.
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED \
 			or what == NOTIFICATION_WM_CLOSE_REQUEST \
 			or what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		if _map_w > 0 and not OS.has_environment("RABLE_SCREENSHOT"):
-			_save_game_3d()
+			SaveManager.save()
 
 func is_walkable(cell: Vector2i) -> bool:
 	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
@@ -1029,9 +1048,12 @@ func _key_to_cell(key: String) -> Vector2i:
 	var parts := key.split(",")
 	return Vector2i(int(parts[0]), int(parts[1]))
 
-func _save_game_3d() -> void:
+## kayit-sistemi: SAHNE durumunu (dünya) döndürür. Autoload'lar (envanter/
+## can/gün...) SaveManager tarafından AYRI toplanır — burada YOK. Nesneler
+## seed tabanına göre DIFF olarak yazılır (dosya küçük). SaveManager çağırır.
+func to_save_data() -> Dictionary:
 	if _map_w == 0:
-		return
+		return {}
 	var chest_json: Dictionary = {}
 	for cell: Vector2i in _chests:
 		# 14.1: depo Inventory ornegi -> slots/hotbar (to_save)
@@ -1043,12 +1065,23 @@ func _save_game_3d() -> void:
 	var dummy_json: Array = []
 	for cell: Vector2i in _dummies:
 		dummy_json.append([cell.x, cell.y])
-	var data := {
-		"v": 1,
-		"w": _map_w, "h": _map_h,
+	# Nesne DIFF: taban(seed) ile fark. removed=tabanda vardı yok oldu (kesim);
+	# changed=şimdi tabandan farklı (yeniden büyüme/kütük vb. + tabanda olmayan).
+	var obj_removed: Array = []
+	for cell: Vector2i in _base_objects:
+		if not _objects.has(cell):
+			obj_removed.append("%d,%d" % [cell.x, cell.y])
+	var obj_changed: Dictionary = {}
+	for cell: Vector2i in _objects:
+		if String(_base_objects.get(cell, "")) != String(_objects[cell]):
+			obj_changed["%d,%d" % [cell.x, cell.y]] = _objects[cell]
+	_dirty = false
+	return {
+		"seed": _map_seed, "w": _map_w, "h": _map_h,
 		"depth": _cells_to_json(_depth),
 		"water": _cells_to_json(_water_level),
-		"objects": _cells_to_json(_objects),
+		"obj_removed": obj_removed,
+		"obj_changed": obj_changed,
 		"object_hits": _cells_to_json(_object_hits),
 		"regrow": _cells_to_json(_regrow),
 		"regrow_type": _cells_to_json(_regrow_type),
@@ -1059,39 +1092,16 @@ func _save_game_3d() -> void:
 		"dummies": dummy_json,
 		"player": [player.position.x, player.position.z],
 		"held": _held_item,
-		"inventory": Inventory.to_save(),
-		"craft_queue": Crafting.to_save(),
-		"hunger": Hunger.value,
-		"thirst": Thirst.value,
-		"hp": Health.value,
-		"day": DayNight.day,
-		"is_night": DayNight.is_night,
-		"cycle_elapsed": DayNight.elapsed,
 		"home_bed": [_home_bed.x, _home_bed.y],  # 14.2 aktif dogus noktasi
-		"death_count": PlayerStats.death_count,  # yasam: olum sayaci
 	}
-	var file := FileAccess.open(SAVE3D_PATH, FileAccess.WRITE)
-	if file == null:
-		push_warning("3D kayit yazilamadi: " + str(FileAccess.get_open_error()))
-		return
-	file.store_string(JSON.stringify(data))
-	file.close()
-	_dirty = false
 
-func _load_game_3d() -> void:
-	if not FileAccess.file_exists(SAVE3D_PATH):
-		return
-	var file := FileAccess.open(SAVE3D_PATH, FileAccess.READ)
-	if file == null:
-		return
-	var parsed = JSON.parse_string(file.get_as_text())
-	file.close()
-	if not (parsed is Dictionary):
-		return
-	var data: Dictionary = parsed
-	# Harita boyutu degistiyse eski kaydi yok say (hucre koordinatlari kayar)
+## kayit-sistemi: SAHNE durumunu (dünya) geri yükler. SaveManager çağırır;
+## envanter/can/gün AYRI yüklenir (bu fonksiyon onlara dokunmaz — eldeki alet
+## yeniden takılırken envanterin ZATEN yüklü olması gerekir, sıra SaveManager'da).
+## Harita boyutu uyuşmazsa false (eski kayıt reddi). Nesneler: taban + DIFF.
+func from_save_data(data: Dictionary) -> bool:
 	if int(data.get("w", 0)) != _map_w or int(data.get("h", 0)) != _map_h:
-		return
+		return false
 	_loading = true
 	# Kazi + su
 	_depth.clear()
@@ -1100,10 +1110,12 @@ func _load_game_3d() -> void:
 	_water_level.clear()
 	for key in data.get("water", {}):
 		_water_level[_key_to_cell(key)] = float(data["water"][key])
-	# Nesneler (kesilmis agac/kaya, yeniden buyume)
-	_objects.clear()
-	for key in data.get("objects", {}):
-		_objects[_key_to_cell(key)] = String(data["objects"][key])
+	# Nesneler: seed tabanından başla, DIFF uygula (removed sil, changed yaz)
+	_objects = _base_objects.duplicate()
+	for key in data.get("obj_removed", []):
+		_objects.erase(_key_to_cell(String(key)))
+	for key in data.get("obj_changed", {}):
+		_objects[_key_to_cell(key)] = String(data["obj_changed"][key])
 	_object_hits.clear()
 	for key in data.get("object_hits", {}):
 		_object_hits[_key_to_cell(key)] = int(data["object_hits"][key])
@@ -1166,31 +1178,18 @@ func _load_game_3d() -> void:
 	_recompute_water()
 	_build_decor(_decor_cells)
 	_rebuild_objects()
-	# Oyuncu konumu + eldeki alet
+	# Oyuncu konumu (envanter/can/gün SaveManager tarafından ZATEN yüklendi)
 	var ppos = data.get("player", null)
 	if ppos is Array and ppos.size() == 2:
 		player.position = Vector3(float(ppos[0]),
 				player.position.y, float(ppos[1]))
 		camera.position = player.position + _camera_offset()
-	# Hayatta kalma autoload'lari
-	if data.has("inventory"):
-		Inventory.load_save(data["inventory"])
-	Crafting.load_save(data.get("craft_queue", []))
-	Hunger.value = clampf(float(data.get("hunger", Hunger.value)), 0.0, Hunger.MAX_VALUE)
-	Hunger.changed.emit()
-	Thirst.value = clampf(float(data.get("thirst", Thirst.value)), 0.0, Thirst.MAX_VALUE)
-	Thirst.changed.emit()
-	Health.value = clampf(float(data.get("hp", Health.value)), 0.0, Health.MAX_VALUE)
-	Health.changed.emit()
-	PlayerStats.death_count = int(data.get("death_count", 0))  # yasam sayaci
-	DayNight.load_state(int(data.get("day", DayNight.day)),
-			bool(data.get("is_night", DayNight.is_night)),
-			float(data.get("cycle_elapsed", DayNight.elapsed)))
-	# Eldeki alet gecerliyse tekrar tak
+	# Eldeki alet gecerliyse tekrar tak (envanter yuklu olmali — sira dogru)
 	var held := String(data.get("held", ""))
 	if held != "" and Inventory.get_count(held) > 0:
 		_on_hold_requested(held)
 	_loading = false
+	return true
 
 ## _solid_cells'i sifirdan kurar: zemin (su/tepe) + kati nesneler + yapilar.
 ## Yukleme sonrasi ve durum bozulmasin diye tek kaynaktan turetilir.
@@ -1564,6 +1563,10 @@ func _build_world() -> void:
 			_objects[cell] = "cicek"
 		elif h < 7:
 			_objects[cell] = "mantar"
+
+	# kayit-sistemi: taban nesne anlik goruntusu (seed'den uretilen ilk durum).
+	# Kayitta yalniz bundan FARKLI hucreler yazilir (dosya kucuk kalir).
+	_base_objects = _objects.duplicate()
 
 	_recompute_water()  # 11.2: haritadaki hazir cukurlar havuz olur (kuru)
 	_build_terrain()

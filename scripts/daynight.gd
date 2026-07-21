@@ -45,6 +45,15 @@ func load_state(new_day: int, new_is_night: bool, new_elapsed: float) -> void:
 	elapsed = new_elapsed
 	changed.emit()
 
+## Tek çatı (SaveManager) serileştirme. "elapsed" = faz içi geçen süre
+## (gün/gece saati buradan türer; ayrı "hour" alanı ileride eklenebilir).
+func to_save_data() -> Dictionary:
+	return {"day": day, "is_night": is_night, "elapsed": elapsed}
+
+func from_save_data(data: Dictionary) -> void:
+	load_state(int(data.get("day", day)), bool(data.get("is_night", is_night)),
+			float(data.get("elapsed", elapsed)))
+
 func reset() -> void:
 	day = 1
 	is_night = false

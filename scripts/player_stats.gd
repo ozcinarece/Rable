@@ -112,6 +112,13 @@ func _die() -> void:
 	_dead = false
 	respawned.emit()
 
+## Tek çatı (SaveManager) serileştirme. Ölüm sayısı (+ ileride ekonomi/gün özeti).
+func to_save_data() -> Dictionary:
+	return {"death_count": death_count}
+
+func from_save_data(data: Dictionary) -> void:
+	death_count = int(data.get("death_count", 0))
+
 ## "Yeni Oyun" / reset: sayaç ve durum sıfırlanır (Health/Hunger.reset ayrı).
 func reset() -> void:
 	death_count = 0

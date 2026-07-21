@@ -169,6 +169,20 @@ func debug_print_state() -> void:
 				can_research(node_id)])
 
 ## --- Kayit ------------------------------------------------------------------
+## Tek çatı (SaveManager) için veri tabanlı çift. Eski research.json self-save
+## korunur (anlık kalıcılık); yüklemede tek kaynak SaveManager verisidir.
+
+func to_save_data() -> Dictionary:
+	return {"unlocked": unlocked.keys(), "revealed": revealed.keys()}
+
+func from_save_data(data: Dictionary) -> void:
+	unlocked.clear()
+	revealed.clear()
+	for node_id in data.get("unlocked", []):
+		unlocked[String(node_id)] = true
+	for node_id in data.get("revealed", []):
+		revealed[String(node_id)] = true
+	changed.emit()
 
 func _save() -> void:
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
