@@ -209,24 +209,24 @@ func _make_card(node_id: String) -> Button:
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(box)
 	var circle := Panel.new()
-	circle.name = "Circle"
 	circle.custom_minimum_size = Vector2(44, 44)
 	circle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	circle.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(circle)
 	var name_label := Label.new()
-	name_label.name = "NameLabel"
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.add_theme_font_size_override("font_size", 14)
 	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(name_label)
 	var badge := Label.new()
-	badge.name = "Badge"
 	badge.add_theme_font_size_override("font_size", 13)
 	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(badge)
+	card.set_meta("circle", circle)
+	card.set_meta("name_label", name_label)
+	card.set_meta("badge", badge)
 	return card
 
 # --- Durum yenileme ---------------------------------------------------------
@@ -242,9 +242,9 @@ func _refresh_all() -> void:
 func _refresh_card(node_id: String) -> void:
 	var card: Button = _cards[node_id]
 	var node: Dictionary = Research.NODES[node_id]
-	var circle: Panel = card.get_node("Circle")
-	var name_label: Label = card.get_node("NameLabel")
-	var badge: Label = card.get_node("Badge")
+	var circle: Panel = card.get_meta("circle")
+	var name_label: Label = card.get_meta("name_label")
+	var badge: Label = card.get_meta("badge")
 	var branch_col: Color = UIColors.branch_color(node["branch"])
 	var sb := StyleBoxFlat.new()
 	sb.set_corner_radius_all(999)
