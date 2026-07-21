@@ -197,6 +197,14 @@ var _open_chest := Vector2i(-999, -999)
 var _ground_items: Array = []      # yere birakilanlar [{cell,id,count,node}]
 # ALET SISTEMI (Bolum 12)
 var _dummies: Dictionary = {}      # test kuklalari: hucre -> {node, hp, ...}
+# YAPI YERLESTIRME MODU (13.2)
+var _place_mode: bool = false
+var _place_item: String = ""
+var _place_rot: int = 0
+var _place_cell := Vector2i(-999, -999)
+var _ghost: Node3D
+var _ghost_valid: bool = false
+var _ghost_needs_tint: bool = true
 var _target_ring: MeshInstance3D   # paylasilan hedef vurgu halkasi
 var _projectiles: Array = []       # ucan mermiler [{node, vel, ...}]
 var _aiming: bool = false          # menzilli silah nisan modu aktif mi
@@ -251,6 +259,10 @@ func _ready() -> void:
 	hud.attack_pressed.connect(_on_attack_pressed)
 	hud.attack_hold_started.connect(_on_attack_hold_started)
 	hud.attack_hold_released.connect(_on_attack_hold_released)
+	hud.place_requested.connect(_enter_place_mode)
+	hud.place_confirm.connect(_place_confirm)
+	hud.place_rotate.connect(_place_rotate)
+	hud.place_cancel.connect(_exit_place_mode)
 	hud.hold_requested.connect(_on_hold_requested)
 	hud.move_toggled.connect(func(on: bool): _move_mode = on)
 	hud.drop_item_requested.connect(_on_drop_item)
@@ -408,6 +420,22 @@ func _setup_screenshot(save_path: String) -> void:
 	print("RANGEDTEST: projectiles=%d" % _projectiles.size())
 	await get_tree().create_timer(0.8).timeout
 	_snap(save_path.replace(".png", "_menzil.png"))
+	# YAPI YERLESTIRME (Asama 2): hayalet onizleme + onayla
+	Inventory.add_item("ahsap_duvar", 3)
+	player.facing = Vector2(0, 1)
+	_on_hold_requested("")
+	_enter_place_mode("ahsap_duvar")
+	_cam_locked = true
+	var ppc := _player_cell()
+	camera.position = _cell_center(ppc) + Vector3(0, 3.2, 4.0)
+	camera.look_at(_cell_center(ppc + Vector2i(0, 1)) + Vector3(0, 0.4, 0))
+	await get_tree().create_timer(0.5).timeout
+	_snap(save_path.replace(".png", "_yapi_hayalet.png"))
+	_place_confirm()
+	await get_tree().create_timer(0.4).timeout
+	_snap(save_path.replace(".png", "_yapi.png"))
+	print("PLACETEST: valid=%s placed=%d" % [str(_ghost_valid), _placed.size()])
+	_exit_place_mode()
 	_run_save_load_selftest()
 	get_tree().quit()
 
@@ -681,7 +709,10 @@ func _process(delta: float) -> void:
 	if not _cam_locked:
 		var target := player.position + _camera_offset()
 		camera.position = camera.position.lerp(target, minf(1.0, 6.0 * delta))
-	_update_targeting()  # 12.1/12.2: baglam ikonu + hedef vurgusu
+	if _place_mode:
+		_update_ghost()  # 13.2: hayalet onizleme onde takip eder
+	else:
+		_update_targeting()  # 12.1/12.2: baglam ikonu + hedef vurgusu
 	if not _projectiles.is_empty():
 		_tick_projectiles(delta)
 	if _aiming:
@@ -937,6 +968,11 @@ func _unhandled_input(event: InputEvent) -> void:
 			Research.debug_print_state()
 		elif event.keycode == KEY_F10:
 			Research.debug_research("stone_tools")
+		# YAPI YERLESTIRME klavye testi (13.2): R dondur, Esc iptal
+		elif _place_mode and event.keycode == KEY_R:
+			_place_rotate()
+		elif _place_mode and event.keycode == KEY_ESCAPE:
+			_exit_place_mode()
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			_touches[event.index] = event.position
@@ -2037,6 +2073,9 @@ func _screen_to_cell(screen_pos: Vector2) -> Vector2i:
 	return Vector2i(floori(hit.x), floori(hit.z))
 
 func _on_world_tapped(screen_pos: Vector2) -> void:
+	# Yerlestirme modunda dunya dokunuslari yok sayilir (Onayla butonu kurar)
+	if _place_mode:
+		return
 	var cell := _screen_to_cell(screen_pos)
 	var pc := _player_cell()
 	var diff := (cell - pc).abs()
@@ -2422,11 +2461,19 @@ func _set_placed(cell: Vector2i, item_id: String, rot: int = 0) -> void:
 	# korunur; degilse tam can ile yeni ornek olustur.
 	if not _structures.has(cell):
 		_structures.place(cell, item_id, rot, int(def.get("max_hp", 100)))
-	var holder := Node3D.new()
+	var holder := _build_structure_visual(item_id)
 	holder.position = _cell_center(cell)
 	holder.rotation_degrees.y = float(_structures.rotation_of(cell))
 	add_child(holder)
-	# Cok parcali yapilar (orn. cadir govde + tente) tek pakette olceklenir
+	_placed_nodes[cell] = holder
+	if item_id == "sandik" and not _chests.has(cell):
+		_chests[cell] = {}
+
+## Bir yapinin olcekli 3D gorselini (holder+bundle) origin'de kurar; konum/
+## donme cagirana kalir. Hem yerlestirme hem hayalet onizleme kullanir.
+func _build_structure_visual(item_id: String) -> Node3D:
+	var def: Dictionary = PLACE_MODELS[item_id]
+	var holder := Node3D.new()
 	var bundle := Node3D.new()
 	holder.add_child(bundle)
 	bundle.add_child(load(def["model"]).instantiate())
@@ -2441,9 +2488,7 @@ func _set_placed(cell: Vector2i, item_id: String, rot: int = 0) -> void:
 		bundle.scale = Vector3.ONE * s
 		bundle.position = Vector3(-aabb.get_center().x * s, -aabb.position.y * s,
 				-aabb.get_center().z * s)
-	_placed_nodes[cell] = holder
-	if item_id == "sandik" and not _chests.has(cell):
-		_chests[cell] = {}
+	return holder
 
 func _remove_placed(cell: Vector2i) -> void:
 	var item_id: String = _placed[cell]
@@ -2463,6 +2508,137 @@ func _remove_placed(cell: Vector2i) -> void:
 		_placed_nodes.erase(cell)
 	_spawn_floating_text(cell, "Geri alındı", Color(0.95, 0.9, 0.7))
 	_dirty = true
+
+# --- YAPI YERLESTIRME MODU (YAPI_SISTEMI.md 13.2 + 13.3) -------------------
+const _PLACE_OK := Color(0.42, 0.80, 0.42)
+const _PLACE_BAD := Color(0.88, 0.36, 0.32)
+
+func _enter_place_mode(item_id: String) -> void:
+	if not PLACE_MODELS.has(item_id) or Inventory.get_count(item_id) <= 0:
+		return
+	_exit_place_mode()  # varsa oncekini kapat
+	_place_mode = true
+	_place_item = item_id
+	_place_rot = 0
+	_build_ghost()
+	if _target_ring != null:
+		_target_ring.visible = false
+	hud.set_place_mode(true)
+
+func _exit_place_mode() -> void:
+	_place_mode = false
+	_place_item = ""
+	if _ghost != null:
+		_ghost.queue_free()
+		_ghost = null
+	hud.set_place_mode(false)
+
+func _build_ghost() -> void:
+	if _ghost != null:
+		_ghost.queue_free()
+	_ghost = _build_structure_visual(_place_item)
+	_ghost_needs_tint = true
+	# Neden rozeti (13.3): gecersizken hayaletin ustunde kisa etiket
+	var label := Label3D.new()
+	label.name = "GhostReason"
+	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	label.no_depth_test = true
+	label.font_size = 32
+	label.outline_size = 8
+	label.position = Vector3(0, 1.2, 0)
+	label.modulate = _PLACE_BAD
+	_ghost.add_child(label)
+	add_child(_ghost)
+
+## Hayaleti onde takip ettirir + gecerlilik rengini/rozetini gunceller.
+func _update_ghost() -> void:
+	if _ghost == null:
+		return
+	var cell := _facing_cell()
+	_place_cell = cell
+	_ghost.position = _cell_center(cell)
+	_ghost.rotation_degrees.y = float(_place_rot)
+	var v := _place_valid(cell)
+	var nv := bool(v["valid"])
+	# Boyamayi yalnizca gecerlilik degisince yenile (kare basi materyal
+	# ayirmaktan kacin — mobil)
+	if nv != _ghost_valid or _ghost_needs_tint:
+		_ghost_valid = nv
+		_ghost_needs_tint = false
+		_tint_node(_ghost, _PLACE_OK if nv else _PLACE_BAD, 0.55)
+	var label := _ghost.get_node_or_null("GhostReason")
+	if label != null:
+		label.text = "" if nv else String(v["reason"])
+
+## Hucre yerlestirme icin gecerli mi? {valid, reason} (13.3 kurallari)
+func _place_valid(cell: Vector2i) -> Dictionary:
+	var def: Dictionary = PLACE_MODELS[_place_item]
+	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
+		return {"valid": false, "reason": "sınır"}
+	if _placed.has(cell) or _objects.has(cell) or _dummies.has(cell):
+		return {"valid": false, "reason": "dolu"}
+	if cell == _player_cell():
+		return {"valid": false, "reason": "meşgul"}
+	# Su hucresi (gol) ya da havuz suyu
+	if _ground_char.get(cell, "") == "~" or float(_water_level.get(cell, 0.0)) > 0.0:
+		if not bool(def.get("on_water", false)):
+			return {"valid": false, "reason": "su"}
+	# Kazilmis cukur (depth>=1): trap disi gecersiz; tumsek (depth<0) gecerli
+	if int(_depth.get(cell, 0)) >= 1 and not bool(def.get("in_pit", false)):
+		return {"valid": false, "reason": "çukur"}
+	# Zemin turu: cim/toprak/kum uzerine (su/tepe degil)
+	if not (_ground_char.get(cell, "") in [".", "d", "s"]):
+		return {"valid": false, "reason": "zemin"}
+	return {"valid": true, "reason": ""}
+
+func _place_rotate() -> void:
+	if not _place_mode:
+		return
+	_place_rot = (_place_rot + 90) % 360
+	if _ghost != null:
+		_ghost.rotation_degrees.y = float(_place_rot)
+
+func _place_confirm() -> void:
+	if not _place_mode:
+		return
+	var cell := _place_cell
+	if not _ghost_valid:
+		hud.shake_action_button()
+		_spawn_floating_text(cell, "Buraya olmaz", Color(1, 0.6, 0.6))
+		return
+	if not Inventory.remove_item(_place_item, 1):
+		_exit_place_mode()
+		return
+	_set_placed(cell, _place_item, _place_rot)
+	_place_pop(cell)  # 13.2 pop + toz (Asama 5'te zenginlesir)
+	_spawn_floating_text(cell, Items.display_name(_place_item) + " kuruldu",
+			Color(0.8, 1.0, 0.8))
+	_dirty = true
+	# Seri dizme: item bitince modu kapat
+	if Inventory.get_count(_place_item) <= 0:
+		_exit_place_mode()
+
+## Yerlesme pop animasyonu (Asama 5'te toz partikulu eklenir)
+func _place_pop(cell: Vector2i) -> void:
+	var node = _placed_nodes.get(cell, null)
+	if node == null:
+		return
+	node.scale = Vector3(0.6, 0.6, 0.6)
+	var tw := create_tween()
+	tw.tween_property(node, "scale", Vector3.ONE, 0.22) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
+## Bir dugumun (ve alt mesh'lerinin) yari saydam duz renge boyanmasi
+## (hayalet gorunum). material_override ile GLB materyallerini gecici gizler.
+func _tint_node(node: Node, color: Color, alpha: float) -> void:
+	if node is MeshInstance3D:
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.albedo_color = Color(color.r, color.g, color.b, alpha)
+		(node as MeshInstance3D).material_override = mat
+	for child in node.get_children():
+		_tint_node(child, color, alpha)
 
 # Oyuncu 3x3 cevresindeki istasyonlara gore uretim/arastirma yakinligi
 func _update_station_proximity() -> void:

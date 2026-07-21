@@ -30,6 +30,12 @@ signal move_toggled(enabled: bool)
 ## Envanterden bir esyayi eline alma istegi (bos string = birak)
 signal hold_requested(item_id: String)
 
+## YAPI SISTEMI (13.2): yerlestirme modu istekleri
+signal place_requested(item_id: String)  # envanterde "Yerleştir"
+signal place_confirm                      # ONAYLA
+signal place_rotate                       # DÖNDÜR 90°
+signal place_cancel                       # İPTAL
+
 ## Envanter slotu panel disina suruklendi: esya yere birakilsin
 signal drop_item_requested(slot_index: int)
 
@@ -159,6 +165,7 @@ func _ready() -> void:
 	panel_eat_button.pressed.connect(_on_eat_pressed)
 	hold_button.pressed.connect(_on_hold_pressed)
 	drop_button.pressed.connect(_on_drop_pressed)
+	_build_place_ui()
 
 	craft_button.toggled.connect(_on_craft_toggled)
 	research_button.toggled.connect(_on_research_toggled)
@@ -384,6 +391,8 @@ func _update_detail() -> void:
 		panel_eat_button.visible = false
 		hold_button.visible = false
 		drop_button.visible = false
+		if place_button != null:
+			place_button.visible = false
 		return
 	item_name_label.text = "%s ×%d" % [Items.display_name(_selected_item),
 			Inventory.get_count(_selected_item)]
@@ -391,12 +400,67 @@ func _update_detail() -> void:
 	panel_eat_button.visible = _selected_item == "meyve" or _selected_item == "mantar"
 	hold_button.visible = true
 	drop_button.visible = true
+	if place_button != null:
+		place_button.visible = Items.PLACEABLE.has(_selected_item)
 	hold_button.text = "Bırak" if _held_item == _selected_item else "Eline Al"
 
 func _on_hold_pressed() -> void:
 	if _selected_item == "":
 		return
 	hold_requested.emit("" if _held_item == _selected_item else _selected_item)
+
+# --- YAPI SISTEMI yerlestirme arayuzu (13.2) ------------------------------
+var place_button: Button
+var _place_controls: HBoxContainer
+var _place_confirm_btn: Button
+
+func _build_place_ui() -> void:
+	# Envanter bilgi seridine "Yerleştir" butonu (yerlestirilebilir item'da)
+	place_button = Button.new()
+	place_button.text = "Yerleştir"
+	place_button.theme_type_variation = "PrimaryButton"
+	place_button.visible = false
+	place_button.pressed.connect(func():
+		if _selected_item != "":
+			inventory_button.button_pressed = false  # paneli kapat
+			place_requested.emit(_selected_item))
+	drop_button.get_parent().add_child(place_button)
+	# Yerlestirme modu butonlari (ONAYLA / DÖNDÜR / İPTAL) — sag alt
+	_place_controls = HBoxContainer.new()
+	_place_controls.add_theme_constant_override("separation", 12)
+	_place_controls.set_anchors_preset(Control.PRESET_BOTTOM_RIGHT)
+	_place_controls.offset_left = -360
+	_place_controls.offset_top = -96
+	_place_controls.offset_right = -16
+	_place_controls.offset_bottom = -24
+	_place_controls.grow_horizontal = 0
+	_place_controls.grow_vertical = 0
+	_place_controls.visible = false
+	add_child(_place_controls)
+	var rotate_btn := Button.new()
+	rotate_btn.text = "Döndür"
+	rotate_btn.theme_type_variation = "PrimaryButton"
+	rotate_btn.pressed.connect(func(): place_rotate.emit())
+	var cancel_btn := Button.new()
+	cancel_btn.text = "İptal"
+	cancel_btn.theme_type_variation = "PrimaryButton"
+	cancel_btn.pressed.connect(func(): place_cancel.emit())
+	_place_confirm_btn = Button.new()
+	_place_confirm_btn.text = "Onayla"
+	_place_confirm_btn.theme_type_variation = "PrimaryButton"
+	_place_confirm_btn.custom_minimum_size = Vector2(120, 64)
+	_place_confirm_btn.pressed.connect(func(): place_confirm.emit())
+	_place_controls.add_child(cancel_btn)
+	_place_controls.add_child(rotate_btn)
+	_place_controls.add_child(_place_confirm_btn)
+
+## World cagirir: yerlestirme modu ac/kapa (normal butonlar gizlenir).
+func set_place_mode(on: bool) -> void:
+	_place_controls.visible = on
+	action_button.visible = not on
+	move_button.visible = not on
+	if on:
+		attack_button.visible = false
 
 ## World bildirir: eldeki esya degisti (vurgu + buton metni guncellenir)
 func set_held_item(item_id: String) -> void:
