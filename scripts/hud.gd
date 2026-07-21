@@ -43,17 +43,17 @@ const ICON_CLOSE := preload("res://assets/ui/close_x.png")
 @onready var action_button: Button = $ActionButton
 @onready var move_button: Button = $MoveButton
 @onready var reset_button: Button = $ResetButton
-@onready var stats_box: HBoxContainer = $StatsPanel/HBox
-@onready var day_label: Label = $DayLabel
+@onready var stats_box: VBoxContainer = $StatsPanel/HBox
+@onready var day_pill: PanelContainer = $DayPill
+@onready var day_dot: Panel = $DayPill/HBox/SunDot
+@onready var day_label: Label = $DayPill/HBox/DayText
+@onready var research_button: Button = $ResearchButton
 
-# Ikonlu durum gostergeleri (kalp/mide/damla) - _build_stats kurar
+# Durum barlari (kalp/mide/damla) - _build_stats kurar (UI_DESIGN 4.1)
 var eat_button: Button
-var _heart_bar: TextureProgressBar
-var _heart_label: Label
-var _stomach_bar: TextureProgressBar
-var _stomach_label: Label
-var _drop_bar: TextureProgressBar
-var _drop_label: Label
+var _heart_bar: ProgressBar
+var _stomach_bar: ProgressBar
+var _drop_bar: ProgressBar
 
 @onready var inventory_button: Button = $InventoryButton
 @onready var inventory_root: Control = $InventoryRoot
@@ -66,7 +66,8 @@ var _drop_label: Label
 @onready var drop_button: Button = $InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox/ButtonRow/DropButton
 @onready var capacity_label: Label = $InventoryRoot/InventoryPanel/VBox/CapacityRow/CapacityLabel
 
-@onready var hotbar_box: HBoxContainer = $HotBar
+@onready var hotbar_box: HBoxContainer = $HotbarStrip/HotBar
+@onready var hotbar_strip: PanelContainer = $HotbarStrip
 
 @onready var craft_button: Button = $CraftButton
 @onready var craft_mini_bar: ProgressBar = $CraftMiniBar
@@ -143,10 +144,6 @@ func _ready() -> void:
 	for child in get_children():
 		if child is Control:
 			(child as Control).theme = main_theme
-	# Gun etiketi panel disinda, dunyanin ustunde: beyaz + golge kalsin
-	day_label.add_theme_color_override("font_color", Color.WHITE)
-	day_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
-	day_label.add_theme_constant_override("shadow_offset_y", 2)
 	_setup_damage_flash()
 	_build_slots()
 	_build_category_buttons()
@@ -157,6 +154,7 @@ func _ready() -> void:
 	_update_hunger()
 
 func _process(_delta: float) -> void:
+	_update_day_pulse()
 	# Uretim kuyrugu ilerlemesi (her kare akici dolsun)
 	var progress := Crafting.get_progress()
 	var busy := progress >= 0.0
@@ -231,8 +229,8 @@ func _build_slots() -> void:
 		var slot := _make_slot("inv", i)
 		inventory_grid.add_child(slot)
 		_inv_slots.append(slot)
-	# Ekran altindaki hizli erisim cubugu
-	for i in Inventory.HOTBAR_SIZE:
+	# Ekran altindaki hizli erisim seridi: 5 gozluk (UI_DESIGN 4.1)
+	for i in 5:
 		var slot := _make_slot("hotbar", i)
 		hotbar_box.add_child(slot)
 		_mini_hotbar_slots.append(slot)
@@ -324,7 +322,11 @@ func _refresh_hotbar(slot_list: Array) -> void:
 		slot.set_locked(false)
 		var id: String = Inventory.hotbar[i]
 		slot.set_content(id, Inventory.get_count(id) if id != "" else 0)
-		slot.selected = id != "" and id == _held_item
+		var is_sel: bool = id != "" and id == _held_item
+		slot.selected = is_sel
+		# Secili slot hafif buyur (UI_DESIGN 4.1)
+		slot.pivot_offset = slot.size / 2.0
+		slot.scale = Vector2.ONE * (1.12 if is_sel else 1.0)
 
 func _update_detail() -> void:
 	if _selected_item == "" or Inventory.get_count(_selected_item) <= 0:
@@ -360,51 +362,49 @@ func set_held_item(item_id: String) -> void:
 # Ikonun ici degerle orantili dolar; ikona dokununca altinda "50/100"
 # gibi sayi acilir/kapanir.
 func _build_stats() -> void:
-	var heart := _make_stat_widget("kalp")
-	_heart_bar = heart[0]
-	_heart_label = heart[1]
-	var stomach := _make_stat_widget("mide")
-	_stomach_bar = stomach[0]
-	_stomach_label = stomach[1]
-	var drop := _make_stat_widget("damla")
-	_drop_bar = drop[0]
-	_drop_label = drop[1]
+	_heart_bar = _make_stat_bar("kalp", UIColors.DANGER)
+	_stomach_bar = _make_stat_bar("mide", UIColors.category_color("tool"))
+	_drop_bar = _make_stat_bar("damla", Color("#9FC5E8"))
 	eat_button = Button.new()
 	eat_button.text = "Ye"
-	eat_button.add_theme_font_size_override("font_size", 20)
-	eat_button.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	eat_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	stats_box.add_child(eat_button)
 	_update_thirst()
 
-# Tek gosterge: alttan dolan ikon + gizli deger etiketi. [bar, label] doner.
-func _make_stat_widget(icon_name: String) -> Array:
-	var box := VBoxContainer.new()
-	box.add_theme_constant_override("separation", 2)
-	var bar := TextureProgressBar.new()
-	bar.texture_under = load("res://assets/ui/%s_bos.png" % icon_name)
-	bar.texture_progress = load("res://assets/ui/%s_dolu.png" % icon_name)
-	bar.fill_mode = TextureProgressBar.FILL_BOTTOM_TO_TOP
+# Tek durum satiri: ikon + pastel dolgulu kisa bar (UI_DESIGN 4.1)
+func _make_stat_bar(icon_name: String, fill_color: Color) -> ProgressBar:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var icon := TextureRect.new()
+	icon.texture = load("res://assets/ui/%s_dolu.png" % icon_name)
+	icon.custom_minimum_size = Vector2(26, 26)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	row.add_child(icon)
+	var bar := ProgressBar.new()
 	bar.max_value = 100.0
 	bar.value = 100.0
-	bar.custom_minimum_size = Vector2(48, 48)
-	bar.mouse_filter = Control.MOUSE_FILTER_STOP
-	var label := Label.new()
-	label.visible = false
-	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	label.add_theme_font_size_override("font_size", 14)
-	bar.gui_input.connect(func(event: InputEvent):
-		if event is InputEventMouseButton and event.pressed:
-			label.visible = not label.visible)
-	box.add_child(bar)
-	box.add_child(label)
-	stats_box.add_child(box)
-	return [bar, label]
+	bar.show_percentage = false
+	bar.custom_minimum_size = Vector2(150, 20)
+	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = UIColors.PANEL_CREAM_DARK
+	bg.set_corner_radius_all(999)
+	bg.border_color = UIColors.INK_DARK
+	bg.set_border_width_all(1)
+	bar.add_theme_stylebox_override("background", bg)
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = fill_color
+	fill.set_corner_radius_all(999)
+	bar.add_theme_stylebox_override("fill", fill)
+	row.add_child(bar)
+	stats_box.add_child(row)
+	return bar
 
 func _update_hunger() -> void:
 	if _stomach_bar == null:
 		return
 	_stomach_bar.value = Hunger.value
-	_stomach_label.text = "%d/100" % int(Hunger.value)
 	eat_button.disabled = (Inventory.get_count("meyve") <= 0
 			and Inventory.get_count("mantar") <= 0) or Hunger.value >= Hunger.MAX_VALUE
 
@@ -412,7 +412,6 @@ func _update_thirst() -> void:
 	if _drop_bar == null:
 		return
 	_drop_bar.value = Thirst.value
-	_drop_label.text = "%d/100" % int(Thirst.value)
 
 func _on_eat_pressed() -> void:
 	# Panelde mantar seciliyken mantar yenir; hizli butonda once meyve
@@ -439,19 +438,40 @@ func _on_reset_pressed() -> void:
 func _update_health() -> void:
 	if _heart_bar != null:
 		_heart_bar.value = Health.value
-		_heart_label.text = "%d/100" % int(Health.value)
 	if _damage_flash != null and Health.value < _prev_hp:
 		_damage_flash.color.a = 0.3
 		create_tween().tween_property(_damage_flash, "color:a", 0.0, 0.4)
 	_prev_hp = Health.value
 
 func _update_day_label() -> void:
-	if DayNight.is_night:
-		day_label.text = "Gün %d - GECE!" % DayNight.day
-		day_label.modulate = Color(1, 0.75, 1)
+	day_label.text = "Gün %d" % DayNight.day
+	var dot := StyleBoxFlat.new()
+	dot.set_corner_radius_all(999)
+	# Gunes = sicak sari; ay = lavanta (UI_DESIGN 4.1)
+	dot.bg_color = Color("#B9A0E8") if DayNight.is_night else UIColors.WARNING
+	day_dot.add_theme_stylebox_override("panel", dot)
+
+# Gece yaklasiyor uyarisi: son 60 sn'de pill nabiz atar (1sn dongu)
+var _day_pulse: Tween
+var _pulsing := false
+
+func _update_day_pulse() -> void:
+	var closing: bool = not DayNight.is_night \
+			and DayNight.DAY_SECONDS - DayNight.elapsed <= 60.0
+	if closing == _pulsing:
+		return
+	_pulsing = closing
+	day_pill.pivot_offset = day_pill.size / 2.0
+	if closing:
+		_day_pulse = create_tween().set_loops()
+		_day_pulse.tween_property(day_pill, "scale", Vector2.ONE * 1.04, 0.5)
+		_day_pulse.tween_property(day_pill, "scale", Vector2.ONE, 0.5)
+		day_pill.modulate = Color(1.0, 0.86, 0.55)
 	else:
-		day_label.text = "Gün %d - Gündüz" % DayNight.day
-		day_label.modulate = Color.WHITE
+		if _day_pulse != null:
+			_day_pulse.kill()
+		day_pill.scale = Vector2.ONE
+		day_pill.modulate = Color.WHITE
 
 # --- Uretim paneli ------------------------------------------------------
 
