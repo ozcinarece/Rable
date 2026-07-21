@@ -985,12 +985,17 @@ func _sample_terrain(x: float, z: float) -> Array:
 	var fz := cz - float(j0)
 	var height := 0.0
 	var col := Color(0, 0, 0)
+	# Renk gecisi dar bantta yapilir (yukseklik yumusak kalir): kazilmis
+	# cukur/plaj gibi kenarlarin bulanik leke yerine okunur gorunmesi icin
+	var cfx := smoothstep(0.2, 0.8, fx)
+	var cfz := smoothstep(0.2, 0.8, fz)
 	for dj in 2:
 		for di in 2:
 			var wgt := (fx if di == 1 else 1.0 - fx) * (fz if dj == 1 else 1.0 - fz)
+			var cwgt := (cfx if di == 1 else 1.0 - cfx) * (cfz if dj == 1 else 1.0 - cfz)
 			var props := _cell_props(i0 + di, j0 + dj)
 			height += float(props[0]) * wgt
-			col += Color(props[1]) * wgt
+			col += Color(props[1]) * cwgt
 	return [height, col]
 
 # Arazi 8x8 hucrelik PARCALAR halinde kurulur: kazi yalnizca ilgili
@@ -1050,7 +1055,12 @@ func _build_chunk(ck: Vector2i) -> void:
 					absf(float(_sample_terrain(x, z + 0.5)[0]) - height))
 			steep = maxf(steep, absf(float(_sample_terrain(x - 0.5, z)[0]) - height))
 			steep = maxf(steep, absf(float(_sample_terrain(x, z - 0.5)[0]) - height))
-			if steep > 0.40:
+			# Kazilmis/yigilmis hucrede falez boyamasi yok: cukur duvari
+			# toprak/kaya katman rengini korur (okunabilirlik)
+			var dug: bool = _depth.get(Vector2i(floori(x), floori(z)), 0) != 0
+			if dug:
+				pass
+			elif steep > 0.40:
 				# Falez: net yatay katmanlar
 				var layer := int(floorf((height + 8.0) * 5.0))
 				var band := 0.30 if layer % 2 == 0 else 0.70
