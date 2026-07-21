@@ -19,6 +19,7 @@ const WaterSim = preload("res://scripts/water_sim.gd")
 const ToolProfiles = preload("res://scripts/tool_profiles.gd")
 const HittableDummy = preload("res://scripts/hittable_dummy.gd")
 const StructureManager = preload("res://scripts/structure_manager.gd")
+const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 
 ## Zemin turleri: renk + ust yuzey yuksekligi. "speckled": true olan
@@ -420,21 +421,39 @@ func _setup_screenshot(save_path: String) -> void:
 	print("RANGEDTEST: projectiles=%d" % _projectiles.size())
 	await get_tree().create_timer(0.8).timeout
 	_snap(save_path.replace(".png", "_menzil.png"))
-	# YAPI YERLESTIRME (Asama 2): hayalet onizleme + onayla
+	# YAPI YERLESTIRME (Asama 2/3): hayalet + onayla + hasar/yikim
 	Inventory.add_item("ahsap_duvar", 3)
 	player.facing = Vector2(0, 1)
 	_on_hold_requested("")
+	var ppc := _player_cell()
+	var tcell := ppc + Vector2i(0, 1)
+	# Hedef hucreyi garanti bos yap (CI'da _b3 yapilariyla dolu olmasin)
+	_objects.erase(tcell); _dummies.erase(tcell); _depth.erase(tcell)
+	if _placed.has(tcell):
+		_remove_placed(tcell)
+	_ground_char[tcell] = "."
+	_solid_cells.erase(tcell)
 	_enter_place_mode("ahsap_duvar")
 	_cam_locked = true
-	var ppc := _player_cell()
 	camera.position = _cell_center(ppc) + Vector3(0, 3.2, 4.0)
-	camera.look_at(_cell_center(ppc + Vector2i(0, 1)) + Vector3(0, 0.4, 0))
+	camera.look_at(_cell_center(tcell) + Vector3(0, 0.4, 0))
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_yapi_hayalet.png"))
+	print("PLACEUI: controls=%s action=%s valid=%s" % [
+		str(hud._place_controls.visible), str(hud.action_button.visible),
+		str(_ghost_valid)])
 	_place_confirm()
 	await get_tree().create_timer(0.4).timeout
 	_snap(save_path.replace(".png", "_yapi.png"))
-	print("PLACETEST: valid=%s placed=%d" % [str(_ghost_valid), _placed.size()])
+	print("PLACETEST: placed=%d" % _placed.size())
+	# Asama 3: kurulan duvara vur (hasar) x6, sonra yikim
+	if _placed.has(tcell):
+		for i in 6:
+			_structure_take_hit(tcell, 20, Vector3(0, 0, 1))
+		await get_tree().create_timer(0.3).timeout
+		_snap(save_path.replace(".png", "_yapi_hasar.png"))
+		print("HASARTEST: hp_ratio=%.2f placed=%d" % [
+			_structures.hp_ratio(tcell), _placed.size()])
 	_exit_place_mode()
 	_run_save_load_selftest()
 	get_tree().quit()
@@ -2466,6 +2485,9 @@ func _set_placed(cell: Vector2i, item_id: String, rot: int = 0) -> void:
 	holder.rotation_degrees.y = float(_structures.rotation_of(cell))
 	add_child(holder)
 	_placed_nodes[cell] = holder
+	# Kayittan gelen hasarli yapi egik gorunsun (13.4)
+	if _structures.hp_ratio(cell) < 0.5:
+		_apply_damaged_look(cell)
 	if item_id == "sandik" and not _chests.has(cell):
 		_chests[cell] = {}
 
@@ -2620,7 +2642,7 @@ func _place_confirm() -> void:
 
 ## Yerlesme pop animasyonu (Asama 5'te toz partikulu eklenir)
 func _place_pop(cell: Vector2i) -> void:
-	var node = _placed_nodes.get(cell, null)
+	var node: Node3D = _placed_nodes.get(cell, null)
 	if node == null:
 		return
 	node.scale = Vector3(0.6, 0.6, 0.6)
@@ -2796,6 +2818,10 @@ func _describe_target(cell: Vector2i) -> Dictionary:
 	# Cekic elde + yerlestirilmis yapi: SOKME (12.4). Istasyon acmadan once.
 	var placed := String(_placed.get(cell, ""))
 	if held == "cekic" and placed != "":
+		# Hasarli yapi -> TAMIR; saglam yapi -> SÖKME (13.4)
+		if _structures.hp_ratio(cell) < 0.999:
+			return {"type": "repair", "cell": cell, "icon": "repair",
+					"valid": true, "kind": "repair"}
 		return {"type": "dismantle", "cell": cell, "icon": "repair",
 				"valid": true, "kind": "dismantle"}
 	# Yerlestirilmis istasyon/etkilesim
@@ -2900,6 +2926,8 @@ func _apply_strike(kind: String, cell: Vector2i) -> void:
 		"dismantle":
 			if _placed.has(cell):
 				_remove_placed(cell)  # cekic: malzeme %100 iade (12.4)
+		"repair":
+			_structure_repair(cell)  # cekic: vurus basina +hp (13.4)
 		"attack":
 			_melee_hit(cell)
 		_:
@@ -3135,6 +3163,121 @@ func _apply_hitbox(cell: Vector2i) -> void:
 			_hit_stop(0.5, 0.05)  # 12.6 vurus durmasi
 			_play_sfx(String(prof.get("hit_sfx", "")))
 			return
+		# Yapilar da take_hit alir (13.4): yaratiklar da ayni yolu kullanacak
+		if _placed.has(c) and _structures.has(c):
+			_structure_take_hit(c, dmg, kdir)
+			_hit_stop(0.5, 0.05)
+			_play_sfx(String(prof.get("hit_sfx", "")))
+			return
+
+# --- YAPI DURUMLARI: take_hit / hasar / yikim / tamir (13.4) ---------------
+## Yapiya hasar uygula (yaratiklar geldiginde ayni fonksiyonu cagiracak).
+func _structure_take_hit(cell: Vector2i, damage: int, dir: Vector3) -> void:
+	var state := _structures.apply_damage(cell, damage)
+	# Sarsinti + malzeme partikulu (12.6 juice dili)
+	_structure_shake(cell, dir)
+	_spawn_particles(_cell_center(cell) + Vector3(0, 0.6, 0),
+			Color(0.55, 0.42, 0.30), 5)
+	if state == "destroyed":
+		_destroy_structure(cell)
+	elif state == "damaged":
+		_apply_damaged_look(cell)
+	_dirty = true
+
+## Vurus tepkisi: yapi gorseli kisa sure sarsilir.
+func _structure_shake(cell: Vector2i, dir: Vector3) -> void:
+	var node: Node3D = _placed_nodes.get(cell, null)
+	if node == null:
+		return
+	var base: Vector3 = node.position
+	var tw := create_tween()
+	tw.tween_property(node, "position", base + dir.normalized() * 0.06, 0.05)
+	tw.tween_property(node, "position", base, 0.16) \
+			.set_trans(Tween.TRANS_ELASTIC).set_ease(Tween.EASE_OUT)
+
+## hp<%50 gorunumu: hafif egim (13.4). Renk tonu GLB'de zor oldugundan
+## egim + hafif alcalma ile "hasarli" hissi verilir.
+func _apply_damaged_look(cell: Vector2i) -> void:
+	var node: Node3D = _placed_nodes.get(cell, null)
+	if node == null:
+		return
+	node.rotation_degrees.z = 7.0
+	node.position.y = _cell_center(cell).y - 0.04
+
+## hp 0: yapi yikilir, malzemenin %25'i yere sacilir, hucre bosalir (13.4).
+func _destroy_structure(cell: Vector2i) -> void:
+	var item_id := String(_placed.get(cell, ""))
+	# Malzemenin %25'i (tarif maliyetinden) yere dusuruluru
+	var cost: Dictionary = Recipes.CRAFT_RECIPES.get(item_id, {}).get("cost", {})
+	var drops: Dictionary = {}
+	for mat in cost:
+		var n := int(floor(float(cost[mat]) * 0.25))
+		if n > 0:
+			drops[mat] = n
+	# Yapiyi kaldir (iade yok — yikim)
+	_placed.erase(cell)
+	_structures.remove(cell)
+	_solid_cells.erase(cell)
+	_chests.erase(cell)
+	if _placed_nodes.has(cell):
+		_placed_nodes[cell].queue_free()
+		_placed_nodes.erase(cell)
+	_spawn_particles(_cell_center(cell) + Vector3(0, 0.5, 0),
+			Color(0.5, 0.4, 0.3), 10)
+	_spawn_floating_text(cell, "Yıkıldı!", Color(1, 0.6, 0.5))
+	# Enkaz: komsu bos hucrelere sacilir
+	for mat in drops:
+		var t := _first_free_neighbor(cell)
+		if t != Vector2i(-999, -999):
+			_add_ground_item(t, mat, drops[mat])
+	_dirty = true
+
+## Cekic tamiri: vurus basina +hp, tarifin en ucuz malzemesinden 1 duser.
+func _structure_repair(cell: Vector2i) -> void:
+	if not _structures.has(cell):
+		return
+	if _structures.hp_ratio(cell) >= 0.999:
+		_spawn_floating_text(cell, "Zaten sağlam", Color(0.8, 1, 0.8))
+		return
+	var item_id := String(_placed.get(cell, ""))
+	var cost: Dictionary = Recipes.CRAFT_RECIPES.get(item_id, {}).get("cost", {})
+	var mat := _cheapest_material(cost)
+	if mat != "" and Inventory.get_count(mat) <= 0:
+		_spawn_floating_text(cell, "%s gerek" % Items.display_name(mat),
+				Color(1, 0.9, 0.6))
+		return
+	if mat != "":
+		Inventory.remove_item(mat, 1)
+	var inst: Dictionary = _structures.get_inst(cell)
+	var full := _structures.apply_repair(cell, maxi(1, int(inst.get("max_hp", 100)) / 4))
+	# Gorunumu tazele (egim/alcalmayi geri al saglamsa)
+	var node: Node3D = _placed_nodes.get(cell, null)
+	if node != null and full:
+		node.rotation_degrees.z = 0.0
+		node.position.y = _cell_center(cell).y
+	_spawn_particles(_cell_center(cell) + Vector3(0, 0.6, 0),
+			Color(0.7, 0.9, 0.7), 4)
+	_spawn_floating_text(cell, "Tamir edildi" if full else "Tamir...",
+			Color(0.8, 1, 0.8))
+	_dirty = true
+
+func _cheapest_material(cost: Dictionary) -> String:
+	var best := ""
+	var best_n := 999999
+	for mat in cost:
+		if int(cost[mat]) < best_n:
+			best_n = int(cost[mat])
+			best = String(mat)
+	return best
+
+func _first_free_neighbor(cell: Vector2i) -> Vector2i:
+	for off in [Vector2i(0, 1), Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, -1),
+			Vector2i(1, 1), Vector2i(-1, -1), Vector2i(1, -1), Vector2i(-1, 1),
+			Vector2i(0, 0)]:
+		var c := cell + off
+		if is_walkable(c) and not _placed.has(c) and _ground_item_at(c) == -1:
+			return c
+	return Vector2i(-999, -999)
 
 ## Kukla yerlestir (12.7): elde "kukla" ile bos hucreye dokun.
 func _try_place_dummy(cell: Vector2i) -> bool:
