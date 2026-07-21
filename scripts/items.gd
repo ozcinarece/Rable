@@ -20,6 +20,15 @@ const ITEMS: Dictionary = {
 	"kurek": {"name": "Kürek", "icon": "res://assets/items/kurek.png"},
 	"kova": {"name": "Kova", "icon": "res://assets/items/kova.png"},
 	"kova_dolu": {"name": "Dolu Kova", "icon": "res://assets/items/kova_dolu.png"},
+	"bicak": {"name": "Bıçak", "icon": "res://assets/items/bicak.png"},
+	"cekic": {"name": "Çekiç", "icon": "res://assets/items/cekic.png"},
+	"sopa": {"name": "Sopa", "icon": "res://assets/items/sopa.png"},
+	"kilic": {"name": "Kılıç", "icon": "res://assets/items/kilic.png"},
+	"yay": {"name": "Yay", "icon": "res://assets/items/yay.png"},
+	"sapan": {"name": "Sapan", "icon": "res://assets/items/sapan.png"},
+	"ok": {"name": "Ok", "icon": "res://assets/items/ok.png"},
+	"cakil": {"name": "Çakıl", "icon": "res://assets/items/cakil.png"},
+	"kukla": {"name": "Kukla", "icon": "res://assets/items/kukla.png"},
 	"toprak": {"name": "Toprak", "icon": "res://assets/items/toprak.png"},
 	"kil": {"name": "Kil", "icon": "res://assets/items/kil.png"},
 	"bakir": {"name": "Bakır Cevheri", "icon": "res://assets/items/bakir.png"},
@@ -59,7 +68,8 @@ const PLACEABLE: Dictionary = {
 
 ## Ele alinabilen esyalar - artik her esya ele alinabilir; bu liste
 ## alet bonusu olanlari isaretler (bilgi amacli)
-const HOLDABLE: Array[String] = ["balta", "kazma", "kurek", "mizrak"]
+const HOLDABLE: Array[String] = ["balta", "kazma", "kurek", "mizrak",
+	"bicak", "cekic", "sopa", "kilic", "yay", "sapan", "kova", "kova_dolu"]
 
 ## Envanter panelinde gosterilen kisa aciklamalar
 const DESCRIPTIONS: Dictionary = {
@@ -79,6 +89,15 @@ const DESCRIPTIONS: Dictionary = {
 	"kurek": "Eline al: zemine dokununca kazar.",
 	"kova": "Eline al: golden ya da havuzdan su doldur.",
 	"kova_dolu": "Eline al: kazilmis cukura dokununca su doker.",
+	"bicak": "Eline al: caliyi/bitkiyi hizli hasat eder (2x lif).",
+	"cekic": "Eline al: yapiya vurunca soker (malzeme geri gelir).",
+	"sopa": "Basit yakin dovus silahi: 12 hasar.",
+	"kilic": "Yakin dovus: 18 hasar, pes pese basista 2'li kombo.",
+	"yay": "Saldiri butonunu basili tut: gerdir, birak ok atar.",
+	"sapan": "Saldiri butonunu basili tut: cakil firlatir.",
+	"ok": "Yay muhimmati.",
+	"cakil": "Sapan muhimmati.",
+	"kukla": "Egitim kuklasi: silahlari uzerinde dene.",
 	"toprak": "Eline al: cukuru doldurur ya da zemini yukseltir (en fazla +2).",
 	"kil": "Sig kazidan cikar; firin cagi tugla/comlek malzemesi.",
 	"bakir": "Derin kaya katmanindan cikar; demir cagina giden ilk maden.",

@@ -2536,8 +2536,12 @@ func _describe_target(cell: Vector2i) -> Dictionary:
 	if _ground_item_at(cell) != -1:
 		return {"type": "ground", "cell": cell, "icon": "grab",
 				"valid": true, "kind": "grab"}
-	# Yerlestirilmis istasyon/etkilesim
+	# Cekic elde + yerlestirilmis yapi: SOKME (12.4). Istasyon acmadan once.
 	var placed := String(_placed.get(cell, ""))
+	if held == "cekic" and placed != "":
+		return {"type": "dismantle", "cell": cell, "icon": "repair",
+				"valid": true, "kind": "dismantle"}
+	# Yerlestirilmis istasyon/etkilesim
 	if placed in ["sandik", "arastirma_masasi", "yatak"]:
 		return {"type": "station", "cell": cell, "icon": "open",
 				"valid": true, "kind": "open", "placed": placed}
@@ -2634,6 +2638,9 @@ func _apply_strike(kind: String, cell: Vector2i) -> void:
 			_try_scoop(cell)
 		"pour":
 			_try_pour(cell)
+		"dismantle":
+			if _placed.has(cell):
+				_remove_placed(cell)  # cekic: malzeme %100 iade (12.4)
 		"attack":
 			_melee_hit(cell)
 		_:
@@ -2689,6 +2696,35 @@ func _update_target_highlight(t: Dictionary) -> void:
 	if mat2 != null:
 		mat2.albedo_color = col
 
+# --- Partikuller (12.6 his) — ucuz, kisa omurlu CPUParticles -------------
+## Bir hucrede kucuk parcacik patlamasi. Renk malzemeye gore (odun kahve,
+## tas gri, toprak toprak). Kendini birkac saniyede siler.
+func _spawn_particles(pos: Vector3, color: Color, count: int = 5) -> void:
+	var p := CPUParticles3D.new()
+	p.position = pos
+	p.emitting = true
+	p.one_shot = true
+	p.amount = count
+	p.lifetime = 0.5
+	p.explosiveness = 1.0
+	p.direction = Vector3(0, 1, 0)
+	p.spread = 55.0
+	p.initial_velocity_min = 1.2
+	p.initial_velocity_max = 2.4
+	p.gravity = Vector3(0, -6.0, 0)
+	p.scale_amount_min = 0.04
+	p.scale_amount_max = 0.08
+	p.color = color
+	add_child(p)
+	get_tree().create_timer(1.2).timeout.connect(func():
+		if is_instance_valid(p):
+			p.queue_free())
+
+## Kivilcim (yanlis alet — tink). Kucuk parlak beyaz-sari patlama.
+func _spark_burst(cell: Vector2i) -> void:
+	_spawn_particles(_cell_center(cell) + Vector3(0, 0.5, 0),
+			Color(1.0, 0.95, 0.6), 4)
+
 # --- Yakin dovus (12.5) — hitbox stub; Asama 4'te doldurulur --------------
 ## strike aninda onundeki hitbox: kukla + kirilabilir nesne. Yaratik YOK;
 ## take_hit(damage, knockback_dir) arayuzu onlarin kapisi.
@@ -2738,6 +2774,12 @@ func _try_harvest(cell: Vector2i) -> bool:
 		return false
 	var def: Dictionary = OBJECT_DEFS[ch]
 	if ch == "#":
+		# KAZMA KILIDI (12.4): kayaya yalniz kazma isler. Yanlis aletle
+		# vurus "tink" geri sekmesi verir, hasar 0.
+		if _held_item != "kazma":
+			_spawn_floating_text(cell, "Tink! — kazma gerek", Color(0.8, 0.85, 0.9))
+			_spark_burst(cell)
+			return true
 		# Tas turune gore dusen esya degisir (normal/komur/altin)
 		var v := _stone_variant(cell)
 		def = {"drops": STONE_VARIANTS[v]["drops"], "hits": STONE_VARIANTS[v]["hits"],
@@ -2745,20 +2787,29 @@ func _try_harvest(cell: Vector2i) -> bool:
 	var hits_needed: int = def.get("hits", 1)
 	if def.has("tool") and _held_item == def["tool"]["item"]:
 		hits_needed = def["tool"]["hits"]
+	# BICAK (12.4): bitkileri hizli hasat eder (profil zaten hizli); tek
+	# vurusta biter (hits 1'e iner) — "hasat" hissi
+	if _held_item == "bicak" and ch in ["cicek", "mantar", "m"]:
+		hits_needed = 1
 	var damage: int = int(_object_hits.get(cell, 0)) + 1
 	if damage < hits_needed:
 		_object_hits[cell] = damage
 		_spawn_floating_text(cell, "%d/%d" % [damage, hits_needed], Color(1.0, 0.95, 0.6))
 		return true
-	if not Inventory.can_add_all(def["drops"]):
+	# BICAK 2x hasat verimi (12.4): bitkilerde dususlerini ikiye katla
+	var mult := 2 if (_held_item == "bicak" and ch in ["cicek", "mantar", "m"]) else 1
+	var drops: Dictionary = {}
+	for item_id in def["drops"]:
+		drops[item_id] = int(def["drops"][item_id]) * mult
+	if not Inventory.can_add_all(drops):
 		_spawn_floating_text(cell, "Envanter dolu!", Color(1, 0.6, 0.6))
 		return false
 	_object_hits.erase(cell)
 	var gained: PackedStringArray = []
 	var fly_from := camera.unproject_position(_cell_center(cell) + Vector3(0, 0.8, 0))
-	for item_id in def["drops"]:
-		Inventory.add_item(item_id, def["drops"][item_id])
-		gained.append("+%d %s" % [def["drops"][item_id], Items.display_name(item_id)])
+	for item_id in drops:
+		Inventory.add_item(item_id, drops[item_id])
+		gained.append("+%d %s" % [drops[item_id], Items.display_name(item_id)])
 		# Toplama geri bildirimi: ikon envanter butonuna ucar (UI 4.5)
 		if hud != null and hud.has_method("fly_pickup"):
 			hud.fly_pickup(item_id, fly_from)
@@ -2800,7 +2851,15 @@ const TOOL_MODELS := {
 	"balta": "res://assets/models/tools/tool-axe.glb",
 	"kazma": "res://assets/models/tools/tool-pickaxe.glb",
 	"kurek": "res://assets/models/tools/tool-shovel.glb",
-	"mizrak": "spear",  # ozel: player3d basit mizrak insa eder
+	"cekic": "res://assets/models/tools/tool-hammer.glb",
+	"kova": "res://assets/models/tools/bucket.glb",
+	"kova_dolu": "res://assets/models/tools/bucket.glb",
+	"mizrak": "spear",  # ozel: player3d basit mesh insa eder
+	"bicak": "knife",
+	"sopa": "club",
+	"kilic": "sword",
+	"yay": "bow",
+	"sapan": "sling",
 }
 
 func _on_hold_requested(item_id: String) -> void:

@@ -294,8 +294,9 @@ func set_held_tool(model_path: String) -> void:
 	_tool_attach.add_child(_tool_pivot)
 	if model_path == "":
 		return
-	if model_path == "spear":
-		_tool_pivot.add_child(_make_spear())
+	# Prosedurel (Kenney'de olmayan) alet/silahlar: kod ile insa edilir
+	if model_path in ["spear", "knife", "club", "sword", "bow", "sling"]:
+		_tool_pivot.add_child(_make_weapon(model_path))
 		return
 	if not ResourceLoader.exists(model_path):
 		return
@@ -606,6 +607,79 @@ func _make_spear() -> Node3D:
 		var s := 1.0 / _model_scale
 		spear.scale = Vector3(s, s, s)
 	return spear
+
+## Kenney kitinde olmayan alet/silahlarin basit prosedurel modelleri.
+## Hepsi ~0.5 m; iskelet olcegini telafi eder. (Yer tutucu; ileride GLB
+## ile degistirilebilir — TOOL_MODELS'te yolu degistirmek yeter.)
+func _make_weapon(kind: String) -> Node3D:
+	var root := Node3D.new()
+	var wood := StandardMaterial3D.new()
+	wood.albedo_color = Color(0.55, 0.38, 0.22)
+	var metal := StandardMaterial3D.new()
+	metal.albedo_color = Color(0.74, 0.76, 0.80)
+	match kind:
+		"knife":
+			var blade := MeshInstance3D.new()
+			var bm := BoxMesh.new(); bm.size = Vector3(0.03, 0.22, 0.008)
+			blade.mesh = bm; blade.material_override = metal
+			blade.position = Vector3(0, 0.14, 0)
+			root.add_child(blade)
+			var grip := MeshInstance3D.new()
+			var gm := CylinderMesh.new(); gm.top_radius = 0.018
+			gm.bottom_radius = 0.018; gm.height = 0.10
+			grip.mesh = gm; grip.material_override = wood
+			root.add_child(grip)
+		"club":
+			var shaft := MeshInstance3D.new()
+			var sm := CylinderMesh.new(); sm.top_radius = 0.035
+			sm.bottom_radius = 0.02; sm.height = 0.55
+			shaft.mesh = sm; shaft.material_override = wood
+			shaft.position = Vector3(0, 0.12, 0)
+			root.add_child(shaft)
+		"sword":
+			var blade := MeshInstance3D.new()
+			var bm := BoxMesh.new(); bm.size = Vector3(0.05, 0.55, 0.012)
+			blade.mesh = bm; blade.material_override = metal
+			blade.position = Vector3(0, 0.32, 0)
+			root.add_child(blade)
+			var guard := MeshInstance3D.new()
+			var gm := BoxMesh.new(); gm.size = Vector3(0.18, 0.03, 0.03)
+			guard.mesh = gm; guard.material_override = metal
+			guard.position = Vector3(0, 0.05, 0)
+			root.add_child(guard)
+			var grip := MeshInstance3D.new()
+			var cm := CylinderMesh.new(); cm.top_radius = 0.02
+			cm.bottom_radius = 0.02; cm.height = 0.12
+			grip.mesh = cm; grip.material_override = wood
+			grip.position = Vector3(0, -0.04, 0)
+			root.add_child(grip)
+		"bow":
+			var arc := MeshInstance3D.new()
+			var tm := TorusMesh.new(); tm.inner_radius = 0.24
+			tm.outer_radius = 0.27; tm.rings = 6; tm.ring_segments = 12
+			arc.mesh = tm; arc.material_override = wood
+			arc.rotation_degrees = Vector3(0, 90, 0)
+			root.add_child(arc)
+			var string_line := MeshInstance3D.new()
+			var lm := CylinderMesh.new(); lm.top_radius = 0.004
+			lm.bottom_radius = 0.004; lm.height = 0.5
+			string_line.mesh = lm; string_line.material_override = metal
+			root.add_child(string_line)
+		"sling":
+			var handle := MeshInstance3D.new()
+			var hm := CylinderMesh.new(); hm.top_radius = 0.015
+			hm.bottom_radius = 0.015; hm.height = 0.16
+			handle.mesh = hm; handle.material_override = wood
+			root.add_child(handle)
+			var pouch := MeshInstance3D.new()
+			var pm := SphereMesh.new(); pm.radius = 0.04; pm.height = 0.06
+			pouch.mesh = pm; pouch.material_override = wood
+			pouch.position = Vector3(0, -0.12, 0)
+			root.add_child(pouch)
+	if _model_scale > 0.001:
+		var s := 1.0 / _model_scale
+		root.scale = Vector3(s, s, s)
+	return root
 
 func _play(anim_name: String) -> void:
 	if anim_name == "" or _current_anim == anim_name:
