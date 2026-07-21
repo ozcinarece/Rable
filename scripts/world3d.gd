@@ -488,6 +488,24 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(_cell_center(ppc) + Vector3(0, 0.3, 0))
 	await get_tree().create_timer(0.6).timeout
 	_snap(save_path.replace(".png", "_yapi_isik.png"))
+	# #1: YERE DUSEN ESYA gorseli (kategori renkli low-poly + suzulme/donme)
+	Inventory.reset()
+	DayNight.is_night = false
+	DayNight.day_started.emit()
+	var gpc := _player_cell()
+	_add_ground_item(gpc + Vector2i(0, 1), "odun", 3)   # kutu, kahve
+	_add_ground_item(gpc + Vector2i(1, 1), "tas", 2)    # kutu, gri
+	_add_ground_item(gpc + Vector2i(-1, 1), "meyve", 1) # kure, kirmizi
+	_scatter_drops(gpc + Vector2i(0, 2), {"kalas": 2, "altin": 1})  # saci
+	_tick_ground_items(0.25)
+	print("GROUNDTEST: yer_esyasi=%d (beklenen 5)" % _ground_items.size())
+	var picked := _try_pickup_ground(gpc + Vector2i(0, 1))
+	print("PICKTEST: topla=%s kalan=%d" % [str(picked), _ground_items.size()])
+	_cam_locked = true
+	camera.position = _cell_center(gpc) + Vector3(0, 2.8, 3.4)
+	camera.look_at(_cell_center(gpc + Vector2i(0, 1)) + Vector3(0, 0.1, 0))
+	await get_tree().create_timer(0.4).timeout
+	_snap(save_path.replace(".png", "_yer_esya.png"))
 	_run_save_load_selftest()
 	get_tree().quit()
 
