@@ -28,3 +28,11 @@ func heal(amount: float) -> void:
 func reset() -> void:
 	value = MAX_VALUE
 	changed.emit()
+
+## Tek çatı (SaveManager) serileştirme.
+func to_save_data() -> Dictionary:
+	return {"value": value}
+
+func from_save_data(data: Dictionary) -> void:
+	value = clampf(float(data.get("value", value)), 0.0, MAX_VALUE)
+	changed.emit()

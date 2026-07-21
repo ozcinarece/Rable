@@ -13,18 +13,41 @@ extends Node
 signal changed
 
 const STACK_MAX: int = 50
-const BASE_SLOTS: int = 8
+# Varsayilan slot sayisi 16 (tek dogruluk kaynagi). Ileride "deri canta"
+# bu tabana ek slot acacak (SLOTS_PER_BAG * canta sayisi).
+const BASE_SLOTS: int = 16
 const SLOTS_PER_BAG: int = 4
 const MAX_BAGS: int = 2
-const TOTAL_SLOTS: int = BASE_SLOTS + MAX_BAGS * SLOTS_PER_BAG  # 16
+const TOTAL_SLOTS: int = BASE_SLOTS + MAX_BAGS * SLOTS_PER_BAG  # 24 (16 + cantalar)
 const HOTBAR_SIZE: int = 8
 const HOTBAR_UNLOCKED: int = 4  # kalani seviye atlayinca acilacak
 
 var slots: Array = []   # TOTAL_SLOTS eleman; null veya {"id","count"}
 var hotbar: Array = []  # HOTBAR_SIZE eleman; "" veya item_id
 
+## Kap modu (14.1 sandik): true ise bu ornek bir DEPO'dur (sandik) —
+## baslangic seti verilmez. Ayni slot/stack altyapisi kullanilir (kod
+## tekrari yok). Ornekleme + add_child'dan ONCE ayarla; _ready guard okur.
+var container_mode: bool = false
+
+## Baslangic seti: temel aletler hazir gelir (her seferinde uretmek yok).
+## Hem ilk aciliste hem "Yeni Oyun"da verilir; kayit varsa uzerine yuklenir.
+const STARTER_KIT := {"balta": 1, "kazma": 1, "kurek": 1}
+
 func _ready() -> void:
 	_init_arrays()
+	if not container_mode:
+		_give_starter_kit()
+
+func _give_starter_kit() -> void:
+	for item_id in STARTER_KIT:
+		add_item(item_id, STARTER_KIT[item_id])
+	# Aletler hizli erisimde hazir dursun
+	var slot_i := 0
+	for item_id in STARTER_KIT:
+		if slot_i < HOTBAR_UNLOCKED:
+			hotbar[slot_i] = item_id
+			slot_i += 1
 
 func _init_arrays() -> void:
 	slots = []
@@ -95,6 +118,10 @@ func add_all(drops: Dictionary) -> bool:
 		return false
 	for item_id in drops:
 		_sim_add(slots, item_id, drops[item_id])
+		# Gizli arastirma dugumlerini tetikle (ilk kez toplanan malzeme)
+		var research := get_node_or_null("/root/Research")
+		if research != null:
+			research.notify_item_collected(item_id)
 	changed.emit()
 	return true
 
@@ -204,7 +231,8 @@ func load_from_dict(items: Dictionary) -> void:
 			count -= take
 	changed.emit()
 
-## Yeni oyun icin: envanteri bosaltir.
+## Yeni oyun icin: envanteri bosaltir, baslangic setini verir.
 func reset() -> void:
 	_init_arrays()
+	_give_starter_kit()
 	changed.emit()

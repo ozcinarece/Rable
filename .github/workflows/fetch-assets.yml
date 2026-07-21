@@ -34,6 +34,16 @@ jobs:
           curl -sSL -o skeletons.zip \
             "https://github.com/KayKit-Game-Assets/KayKit-Character-Pack-Skeletons-1.0/archive/refs/heads/main.zip"
           unzip -q skeletons.zip -d skeletons
+          curl -sSL -o survival.zip \
+            "https://kenney.nl/media/pages/assets/survival-kit/4065a8185b-1712149243/kenney_survival-kit.zip"
+          unzip -q survival.zip -d survival
+          curl -sSL -o minichars.zip \
+            "https://kenney.nl/media/pages/assets/mini-characters/bfc7e272b4-1774770718/kenney_mini-characters.zip"
+          unzip -q minichars.zip -d minichars
+          echo "--- mini characters icerik (tum formatlar) ---"
+          find minichars -type f | head -80
+          echo "--- survival kit glb ---"
+          find survival -iname '*.glb' 
           echo "--- nature icerigi (ilk 60 glb) ---"
           find nature -iname '*.glb' | head -60
           echo "--- adventurers glb ---"
@@ -53,6 +63,20 @@ jobs:
             -exec cp {} assets/models/nature/ \;
           find /tmp/dl/adventurers /tmp/dl/skeletons -iname '*.glb' \
             -exec cp {} assets/models/characters/ \;
+          mkdir -p assets/models/tools
+          find /tmp/dl/survival -iname '*.glb' -exec cp {} assets/models/tools/ \;
+          mkdir -p assets/models/characters/mini
+          find /tmp/dl/minichars \( -iname '*.glb' -o -iname '*.gltf' \) \
+            -exec cp {} assets/models/characters/mini/ \;
+          # KRITIK: GLB'ler renkleri Textures/colormap.png'den alir!
+          mkdir -p assets/models/characters/mini/Textures assets/models/tools/Textures
+          find /tmp/dl/minichars -iname 'colormap.png' -exec cp {} assets/models/characters/mini/Textures/ \; -quit
+          find /tmp/dl/survival -iname 'colormap.png' -exec cp {} assets/models/tools/Textures/ \; -quit
+          ls -la assets/models/characters/mini/Textures assets/models/tools/Textures
+          echo "--- kopyalanan mini karakterler ---"
+          ls assets/models/characters/mini || true
+          echo "--- kopyalanan aletler ---"
+          ls assets/models/tools
           echo "--- kopyalanan doga modelleri ---"
           ls assets/models/nature | head -80
           echo "--- kopyalanan karakterler ---"
@@ -73,6 +97,7 @@ jobs:
           - nature/: Kenney Nature Kit - https://kenney.nl/assets/nature-kit
           - characters/: KayKit Character Pack Adventurers & Skeletons -
             https://kaylousberg.itch.io/ (github.com/KayKit-Game-Assets)
+          - tools/: Kenney Survival Kit - https://kenney.nl/assets/survival-kit
           EOF
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"

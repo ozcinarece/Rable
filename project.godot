@@ -6,20 +6,22 @@ config_version=5
 
 [application]
 
-config/name="Survival Sandbox"
-config/description="2D top-down survival sandbox oyunu - Milestone 1: tile tabanli dunya + oyuncu hareketi"
-run/main_scene="res://scenes/World.tscn"
+config/name="Survival Sandbox 3D"
+config/description="Survival sandbox - 3D deneme dali (Asama B: Go-Go Town / Animal Crossing gorunumu)"
+run/main_scene="res://scenes/World3D.tscn"
 config/features=PackedStringArray("4.3", "GL Compatibility")
 
 [autoload]
 
 Inventory="*res://scripts/inventory.gd"
+Research="*res://scripts/research.gd"
 Crafting="*res://scripts/crafting.gd"
 Hunger="*res://scripts/hunger.gd"
 Thirst="*res://scripts/thirst.gd"
 SaveManager="*res://scripts/save_manager.gd"
 DayNight="*res://scripts/daynight.gd"
 Health="*res://scripts/health.gd"
+PlayerStats="*res://scripts/player_stats.gd"
 
 [display]
 

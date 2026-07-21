@@ -3,90 +3,125 @@
 [ext_resource type="Script" path="res://scripts/hud.gd" id="1_script"]
 [ext_resource type="Texture2D" path="res://assets/ui/bag.png" id="4_bag"]
 [ext_resource type="Texture2D" path="res://assets/ui/wrench.png" id="5_wrench"]
-[ext_resource type="Script" path="res://scripts/drop_catcher.gd" id="6_catcher"]
+[ext_resource type="Script" path="res://scripts/ui_research.gd" id="7_research"]
 
 [node name="HUD" type="CanvasLayer"]
+layer = 3
 script = ExtResource("1_script")
 
 [node name="InventoryButton" type="Button" parent="."]
-offset_left = 12.0
-offset_top = 12.0
-offset_right = 80.0
-offset_bottom = 80.0
+anchor_left = 1.0
+anchor_top = 0.2
+anchor_right = 1.0
+anchor_bottom = 0.2
+offset_left = -80.0
+offset_top = 0.0
+offset_right = -16.0
+offset_bottom = 64.0
+grow_horizontal = 0
 toggle_mode = true
 icon = ExtResource("4_bag")
 icon_alignment = 1
 expand_icon = true
 
 [node name="CraftButton" type="Button" parent="."]
-offset_left = 12.0
-offset_top = 88.0
-offset_right = 80.0
-offset_bottom = 156.0
+anchor_left = 1.0
+anchor_top = 0.2
+anchor_right = 1.0
+anchor_bottom = 0.2
+offset_left = -80.0
+offset_top = 76.0
+offset_right = -16.0
+offset_bottom = 140.0
+grow_horizontal = 0
 toggle_mode = true
 icon = ExtResource("5_wrench")
 icon_alignment = 1
 expand_icon = true
 
+[node name="ResearchButton" type="Button" parent="."]
+anchor_left = 1.0
+anchor_top = 0.2
+anchor_right = 1.0
+anchor_bottom = 0.2
+offset_left = -80.0
+offset_top = 152.0
+offset_right = -16.0
+offset_bottom = 216.0
+grow_horizontal = 0
+toggle_mode = true
+text = "Ar"
+
 [node name="CraftMiniBar" type="ProgressBar" parent="."]
 visible = false
-offset_left = 12.0
-offset_top = 160.0
-offset_right = 80.0
-offset_bottom = 172.0
+anchor_left = 1.0
+anchor_top = 0.2
+anchor_right = 1.0
+anchor_bottom = 0.2
+offset_left = -80.0
+offset_top = 144.0
+offset_right = -16.0
+offset_bottom = 152.0
+grow_horizontal = 0
 max_value = 1.0
 show_percentage = false
 
 [node name="StatsPanel" type="PanelContainer" parent="."]
-anchor_left = 1.0
-anchor_right = 1.0
-offset_left = -290.0
-offset_top = 12.0
-offset_right = -12.0
-offset_bottom = 96.0
-grow_horizontal = 0
+anchor_top = 1.0
+anchor_bottom = 1.0
+offset_left = 16.0
+offset_top = -170.0
+offset_right = 250.0
+offset_bottom = -16.0
+grow_vertical = 0
 
-[node name="HBox" type="HBoxContainer" parent="StatsPanel"]
-theme_override_constants/separation = 14
-alignment = 1
+[node name="HBox" type="VBoxContainer" parent="StatsPanel"]
+theme_override_constants/separation = 8
 
-[node name="DayLabel" type="Label" parent="."]
-anchor_left = 0.5
-anchor_right = 0.5
-offset_left = -140.0
-offset_top = 12.0
-offset_right = 140.0
-offset_bottom = 52.0
-grow_horizontal = 2
-horizontal_alignment = 1
-text = "Gün 1 - Gündüz"
-theme_override_font_sizes/font_size = 26
-theme_override_colors/font_outline_color = Color(0, 0, 0, 0.7)
-theme_override_constants/outline_size = 5
+[node name="DayPill" type="PanelContainer" parent="."]
+offset_left = 16.0
+offset_top = 16.0
+offset_right = 150.0
+offset_bottom = 58.0
+theme_type_variation = &"TitleTab"
+
+[node name="HBox" type="HBoxContainer" parent="DayPill"]
+theme_override_constants/separation = 8
+
+[node name="SunDot" type="Panel" parent="DayPill/HBox"]
+custom_minimum_size = Vector2(18, 18)
+size_flags_vertical = 4
+
+[node name="DayText" type="Label" parent="DayPill/HBox"]
+theme_type_variation = &"TitleTabLabel"
+text = "Gün 1"
 
 [node name="ResetButton" type="Button" parent="."]
 anchor_left = 1.0
 anchor_right = 1.0
 offset_left = -132.0
-offset_top = 122.0
-offset_right = -12.0
-offset_bottom = 160.0
+offset_top = 16.0
+offset_right = -16.0
+offset_bottom = 54.0
 grow_horizontal = 0
 text = "Yeni Oyun"
 theme_override_font_sizes/font_size = 16
 
-[node name="HotBar" type="HBoxContainer" parent="."]
+[node name="HotbarStrip" type="PanelContainer" parent="."]
 anchor_left = 0.5
 anchor_top = 1.0
 anchor_right = 0.5
 anchor_bottom = 1.0
-offset_left = -252.0
-offset_top = -80.0
-offset_right = 252.0
+offset_left = -218.0
+offset_top = -100.0
+offset_right = 218.0
 offset_bottom = -16.0
 grow_horizontal = 2
 grow_vertical = 0
-theme_override_constants/separation = 8
+
+[node name="HotBar" type="HBoxContainer" parent="HotbarStrip"]
+alignment = 1
+theme_override_constants/separation = 14
 
 [node name="ActionButton" type="Button" parent="."]
 anchor_left = 1.0
@@ -97,6 +132,19 @@ offset_left = -148.0
 offset_top = -220.0
 offset_right = -24.0
 offset_bottom = -96.0
+grow_horizontal = 0
+grow_vertical = 0
+expand_icon = true
+
+[node name="AttackButton" type="Button" parent="."]
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -122.0
+offset_top = -300.0
+offset_right = -50.0
+offset_bottom = -228.0
 grow_horizontal = 0
 grow_vertical = 0
 expand_icon = true
@@ -153,138 +201,182 @@ theme_override_constants/separation = 6
 text = "Sandığı Sök (boşken)"
 theme_override_font_sizes/font_size = 20
 
-[node name="InventoryPanel" type="PanelContainer" parent="."]
+[node name="InventoryRoot" type="Control" parent="."]
 visible = false
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -310.0
-offset_top = -255.0
-offset_right = 310.0
-offset_bottom = 255.0
+anchor_left = 1.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -392.0
+offset_top = 56.0
+offset_right = -16.0
+offset_bottom = -96.0
+grow_horizontal = 0
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="InventoryPanel" type="PanelContainer" parent="InventoryRoot"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 20.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Catcher" type="Control" parent="InventoryPanel"]
-script = ExtResource("6_catcher")
-
-[node name="VBox" type="VBoxContainer" parent="InventoryPanel"]
-theme_override_constants/separation = 8
-
-[node name="TitleRow" type="HBoxContainer" parent="InventoryPanel/VBox"]
-
-[node name="Title" type="Label" parent="InventoryPanel/VBox/TitleRow"]
-text = "Envanter"
-size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 26
-
-[node name="CloseButton" type="Button" parent="InventoryPanel/VBox/TitleRow"]
-custom_minimum_size = Vector2(44, 44)
-icon_alignment = 1
-
-[node name="HotbarLabel" type="Label" parent="InventoryPanel/VBox"]
-text = "Hızlı Erişim (buraya sürükle)"
-theme_override_font_sizes/font_size = 16
-
-[node name="HotbarRow" type="HBoxContainer" parent="InventoryPanel/VBox"]
-theme_override_constants/separation = 8
-
-[node name="SlotsLabel" type="Label" parent="InventoryPanel/VBox"]
-text = "Çanta"
-theme_override_font_sizes/font_size = 16
-
-[node name="Slots" type="GridContainer" parent="InventoryPanel/VBox"]
-columns = 8
-theme_override_constants/h_separation = 8
-theme_override_constants/v_separation = 8
-
-[node name="Detail" type="Label" parent="InventoryPanel/VBox"]
-text = ""
-autowrap_mode = 2
-size_flags_vertical = 3
-theme_override_font_sizes/font_size = 19
-
-[node name="ButtonRow" type="HBoxContainer" parent="InventoryPanel/VBox"]
-theme_override_constants/separation = 10
-
-[node name="PanelEatButton" type="Button" parent="InventoryPanel/VBox/ButtonRow"]
-visible = false
-text = "Ye (+25)"
-theme_override_font_sizes/font_size = 20
-
-[node name="HoldButton" type="Button" parent="InventoryPanel/VBox/ButtonRow"]
-visible = false
-text = "Eline Al"
-theme_override_font_sizes/font_size = 20
-
-[node name="CraftPanel" type="PanelContainer" parent="."]
-visible = false
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -455.0
-offset_top = -280.0
-offset_right = 455.0
-offset_bottom = 280.0
-grow_horizontal = 2
-grow_vertical = 2
-
-[node name="VBox" type="VBoxContainer" parent="CraftPanel"]
-theme_override_constants/separation = 8
-
-[node name="TitleRow" type="HBoxContainer" parent="CraftPanel/VBox"]
-
-[node name="Title" type="Label" parent="CraftPanel/VBox/TitleRow"]
-text = "Üretim"
-size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 26
-
-[node name="CloseButton" type="Button" parent="CraftPanel/VBox/TitleRow"]
-custom_minimum_size = Vector2(44, 44)
-icon_alignment = 1
-
-[node name="FilterRow" type="HBoxContainer" parent="CraftPanel/VBox"]
-theme_override_constants/separation = 6
-
-[node name="CatBox" type="HBoxContainer" parent="CraftPanel/VBox/FilterRow"]
-size_flags_horizontal = 3
-theme_override_constants/separation = 6
-
-[node name="Search" type="LineEdit" parent="CraftPanel/VBox/FilterRow"]
-custom_minimum_size = Vector2(190, 0)
-placeholder_text = "Ara..."
-theme_override_font_sizes/font_size = 18
-
-[node name="Body" type="HBoxContainer" parent="CraftPanel/VBox"]
-size_flags_vertical = 3
+[node name="VBox" type="VBoxContainer" parent="InventoryRoot/InventoryPanel"]
 theme_override_constants/separation = 12
 
-[node name="Scroll" type="ScrollContainer" parent="CraftPanel/VBox/Body"]
+[node name="TopRow" type="HBoxContainer" parent="InventoryRoot/InventoryPanel/VBox"]
+
+[node name="TopSpacer" type="Control" parent="InventoryRoot/InventoryPanel/VBox/TopRow"]
 size_flags_horizontal = 3
+
+[node name="CloseButton" type="Button" parent="InventoryRoot/InventoryPanel/VBox/TopRow"]
+custom_minimum_size = Vector2(48, 40)
+icon_alignment = 1
+
+[node name="Slots" type="GridContainer" parent="InventoryRoot/InventoryPanel/VBox"]
+columns = 4
+size_flags_horizontal = 4
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 12
+
+[node name="InfoStrip" type="PanelContainer" parent="InventoryRoot/InventoryPanel/VBox"]
+theme_type_variation = &"InnerPanel"
 size_flags_vertical = 3
 
-[node name="Cards" type="GridContainer" parent="CraftPanel/VBox/Body/Scroll"]
-size_flags_horizontal = 3
-columns = 4
-theme_override_constants/h_separation = 10
-theme_override_constants/v_separation = 10
+[node name="InfoBox" type="VBoxContainer" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip"]
+theme_override_constants/separation = 4
 
-[node name="DetailBox" type="VBoxContainer" parent="CraftPanel/VBox/Body"]
-custom_minimum_size = Vector2(270, 0)
-theme_override_constants/separation = 8
+[node name="ItemName" type="Label" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox"]
+theme_type_variation = &"BadgeLabel"
+text = ""
 
-[node name="QueueRow" type="HBoxContainer" parent="CraftPanel/VBox"]
+[node name="ItemDesc" type="Label" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox"]
+theme_type_variation = &"SubtleLabel"
+autowrap_mode = 2
+text = "Bir eşyaya dokun: bilgisi burada görünür. Seçtikten sonra başka bir slota dokunarak taşıyabilirsin."
+
+[node name="ButtonRow" type="HBoxContainer" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox"]
 theme_override_constants/separation = 10
 
-[node name="QueueLabel" type="Label" parent="CraftPanel/VBox/QueueRow"]
-text = ""
-theme_override_font_sizes/font_size = 18
+[node name="PanelEatButton" type="Button" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox/ButtonRow"]
+visible = false
+theme_type_variation = &"PrimaryButton"
+text = "Ye"
 
-[node name="QueueBar" type="ProgressBar" parent="CraftPanel/VBox/QueueRow"]
+[node name="HoldButton" type="Button" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox/ButtonRow"]
+visible = false
+theme_type_variation = &"PrimaryButton"
+text = "Eline Al"
+
+[node name="DropButton" type="Button" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox/ButtonRow"]
+visible = false
+text = "At"
+
+[node name="CapacityRow" type="HBoxContainer" parent="InventoryRoot/InventoryPanel/VBox"]
+alignment = 1
+
+[node name="CapacityIcon" type="TextureRect" parent="InventoryRoot/InventoryPanel/VBox/CapacityRow"]
+custom_minimum_size = Vector2(20, 20)
+texture = ExtResource("4_bag")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CapacityLabel" type="Label" parent="InventoryRoot/InventoryPanel/VBox/CapacityRow"]
+theme_type_variation = &"SubtleLabel"
+text = "0/8"
+
+[node name="TitleTab" type="PanelContainer" parent="InventoryRoot"]
+offset_left = 14.0
+offset_top = 0.0
+offset_right = 174.0
+offset_bottom = 40.0
+theme_type_variation = &"TitleTab"
+
+[node name="TitleLabel" type="Label" parent="InventoryRoot/TitleTab"]
+theme_type_variation = &"TitleTabLabel"
+text = "Sırt Çantası"
+
+[node name="CraftRoot" type="Control" parent="."]
+visible = false
+anchor_left = 0.04
+anchor_top = 0.06
+anchor_right = 0.82
+anchor_bottom = 0.96
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="CraftPanel" type="PanelContainer" parent="CraftRoot"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 20.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HBox" type="HBoxContainer" parent="CraftRoot/CraftPanel"]
+theme_override_constants/separation = 14
+
+[node name="CatColumn" type="VBoxContainer" parent="CraftRoot/CraftPanel/HBox"]
+theme_override_constants/separation = 10
+size_flags_vertical = 0
+
+[node name="RightBox" type="VBoxContainer" parent="CraftRoot/CraftPanel/HBox"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="TopRow" type="HBoxContainer" parent="CraftRoot/CraftPanel/HBox/RightBox"]
+theme_override_constants/separation = 10
+
+[node name="Search" type="LineEdit" parent="CraftRoot/CraftPanel/HBox/RightBox/TopRow"]
+size_flags_horizontal = 3
+placeholder_text = "Tarif ara..."
+
+[node name="CloseButton" type="Button" parent="CraftRoot/CraftPanel/HBox/RightBox/TopRow"]
+custom_minimum_size = Vector2(48, 40)
+icon_alignment = 1
+
+[node name="Body" type="PanelContainer" parent="CraftRoot/CraftPanel/HBox/RightBox"]
+theme_type_variation = &"InnerPanel"
+size_flags_vertical = 3
+
+[node name="Scroll" type="ScrollContainer" parent="CraftRoot/CraftPanel/HBox/RightBox/Body"]
+horizontal_scroll_mode = 0
+
+[node name="Cards" type="VBoxContainer" parent="CraftRoot/CraftPanel/HBox/RightBox/Body/Scroll"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="QueueRow" type="HBoxContainer" parent="CraftRoot/CraftPanel/HBox/RightBox"]
+visible = false
+theme_override_constants/separation = 10
+
+[node name="QueueLabel" type="Label" parent="CraftRoot/CraftPanel/HBox/RightBox/QueueRow"]
+theme_type_variation = &"SubtleLabel"
+text = ""
+
+[node name="QueueBar" type="ProgressBar" parent="CraftRoot/CraftPanel/HBox/RightBox/QueueRow"]
 size_flags_horizontal = 3
 size_flags_vertical = 4
-custom_minimum_size = Vector2(0, 22)
 max_value = 1.0
+step = 0.001
 show_percentage = false
+
+[node name="TitleTab" type="PanelContainer" parent="CraftRoot"]
+offset_left = 14.0
+offset_top = 0.0
+offset_right = 130.0
+offset_bottom = 40.0
+theme_type_variation = &"TitleTab"
+
+[node name="TitleLabel" type="Label" parent="CraftRoot/TitleTab"]
+theme_type_variation = &"TitleTabLabel"
+text = "Üretim"
+
+[node name="ResearchRoot" type="Control" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("7_research")

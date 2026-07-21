@@ -15,11 +15,28 @@ signal queue_changed
 signal station_changed
 
 ## Oyuncu su anda bir calisma tezgahinin yaninda mi? (World gunceller)
+# Arastirma Masasi yakinligi (arastirma ekrani kapisi)
+var near_research: bool = false:
+	set(value):
+		if near_research == value:
+			return
+		near_research = value
+		station_changed.emit()
+
 var near_station: bool = false:
 	set(value):
 		if near_station == value:
 			return
 		near_station = value
+		station_changed.emit()
+
+## Ocak (14.3) yakinligi: pisirme istasyonu arayuzu. Pisirme tarifleri
+## yaratik/yiyecek faziyla gelecek; simdilik bayrak hazir (kod tekrari yok).
+var near_hearth: bool = false:
+	set(value):
+		if near_hearth == value:
+			return
+		near_hearth = value
 		station_changed.emit()
 
 ## Siradaki isler: her biri {"id": tarif, "remaining": kalan adet,
@@ -35,8 +52,19 @@ func can_craft(recipe_id: String) -> bool:
 
 ## Eldeki malzemeyle en fazla kac adet uretilebilir? (istasyon yoksa 0)
 func max_craftable(recipe_id: String) -> int:
+	# Arastirma kapisi: bir arastirma dugumune bagli tarifler yalnizca
+	# dugum acildiginda uretilebilir (bagli olmayanlar serbesttir)
+	var research := get_node_or_null("/root/Research")
+	if research != null and not research.is_recipe_unlocked(recipe_id):
+		return 0
 	var recipe: Dictionary = Recipes.CRAFT_RECIPES[recipe_id]
-	if recipe["station"] != "" and not near_station:
+	# Istasyon kapisi: "ocak" -> ocak yakinligi (pisirme); diger istasyonlar
+	# ("tezgah") -> tezgah yakinligi. Bos -> her yerde.
+	var station: String = recipe["station"]
+	if station == "ocak":
+		if not near_hearth:
+			return 0
+	elif station != "" and not near_station:
 		return 0
 	var best := 99
 	for item_id in recipe["cost"]:

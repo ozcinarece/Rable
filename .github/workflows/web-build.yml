@@ -8,6 +8,8 @@ name: Web build ve GitHub Pages yayini
 # Not: preset'te thread_support=false olmali, cunku GitHub Pages
 # SharedArrayBuffer icin gereken COOP/COEP basliklarini gondermez.
 
+# NOT: Pages ortami sadece main dalindan yayina izin verir.
+# Bu daldan yayin, android-build'in son adimiyla main uzerinden tetiklenir.
 on:
   push:
     branches: [main, 3d]
