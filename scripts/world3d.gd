@@ -2679,7 +2679,11 @@ func _place_confirm() -> void:
 		_exit_place_mode()
 		return
 	_set_placed(cell, _place_item, _place_rot)
-	_place_pop(cell)  # 13.2 pop + toz (Asama 5'te zenginlesir)
+	_place_pop(cell)  # 13.2 pop animasyonu
+	# 13.5 cila: yerlesme tozu + ses kancasi
+	_spawn_particles(_cell_center(cell) + Vector3(0, 0.15, 0),
+			Color(0.72, 0.66, 0.52), 7)
+	_play_sfx("place")
 	_spawn_floating_text(cell, Items.display_name(_place_item) + " kuruldu",
 			Color(0.8, 1.0, 0.8))
 	_dirty = true
@@ -3279,6 +3283,7 @@ func _destroy_structure(cell: Vector2i) -> void:
 		_placed_nodes.erase(cell)
 	_spawn_particles(_cell_center(cell) + Vector3(0, 0.5, 0),
 			Color(0.5, 0.4, 0.3), 10)
+	_play_sfx("break")  # 13.5 cila: yikim sesi (dosya yoksa sessiz)
 	_spawn_floating_text(cell, "Yıkıldı!", Color(1, 0.6, 0.5))
 	# Enkaz: komsu bos hucrelere sacilir
 	for mat in drops:
