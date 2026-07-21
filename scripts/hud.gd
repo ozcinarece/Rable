@@ -30,6 +30,7 @@ signal drop_item_requested(slot_index: int)
 const Items = preload("res://scripts/items.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const UiSlotScript = preload("res://scripts/ui_slot.gd")
+const UIColors = preload("res://scripts/ui_colors.gd")
 
 const ICON_FIST := preload("res://assets/ui/fist.png")
 const ICON_GATHER := preload("res://assets/ui/axe.png")
@@ -69,15 +70,15 @@ var _drop_label: Label
 
 @onready var craft_button: Button = $CraftButton
 @onready var craft_mini_bar: ProgressBar = $CraftMiniBar
-@onready var craft_panel: PanelContainer = $CraftPanel
-@onready var craft_close: Button = $CraftPanel/VBox/TitleRow/CloseButton
-@onready var cat_box: HBoxContainer = $CraftPanel/VBox/FilterRow/CatBox
-@onready var search_edit: LineEdit = $CraftPanel/VBox/FilterRow/Search
-@onready var cards_grid: GridContainer = $CraftPanel/VBox/Body/Scroll/Cards
-@onready var detail_box: VBoxContainer = $CraftPanel/VBox/Body/DetailBox
-@onready var queue_row: HBoxContainer = $CraftPanel/VBox/QueueRow
-@onready var queue_label: Label = $CraftPanel/VBox/QueueRow/QueueLabel
-@onready var queue_bar: ProgressBar = $CraftPanel/VBox/QueueRow/QueueBar
+@onready var craft_root: Control = $CraftRoot
+@onready var craft_panel: PanelContainer = $CraftRoot/CraftPanel
+@onready var craft_close: Button = $CraftRoot/CraftPanel/HBox/RightBox/TopRow/CloseButton
+@onready var cat_box: VBoxContainer = $CraftRoot/CraftPanel/HBox/CatColumn
+@onready var search_edit: LineEdit = $CraftRoot/CraftPanel/HBox/RightBox/TopRow/Search
+@onready var cards_box: VBoxContainer = $CraftRoot/CraftPanel/HBox/RightBox/Body/Scroll/Cards
+@onready var queue_row: HBoxContainer = $CraftRoot/CraftPanel/HBox/RightBox/QueueRow
+@onready var queue_label: Label = $CraftRoot/CraftPanel/HBox/RightBox/QueueRow/QueueLabel
+@onready var queue_bar: ProgressBar = $CraftRoot/CraftPanel/HBox/RightBox/QueueRow/QueueBar
 
 @onready var chest_panel: PanelContainer = $ChestPanel
 @onready var chest_title: Label = $ChestPanel/VBox/TitleRow/Title
@@ -94,21 +95,13 @@ var _action_state: String = "idle"
 var _inv_slots: Array = []        # 16 UiSlot (envanter izgarasi)
 var _mini_hotbar_slots: Array = []   # ekran altindaki 8 hotbar gozu
 
-var _selected_recipe: String = "" # uretim panelinde secili tarif
-var _craft_qty: int = 1
 var _current_cat: String = "tumu"
-var _recipe_cards: Dictionary = {}  # recipe_id -> kart butonu
+var _recipe_cards: Dictionary = {}  # recipe_id -> kart bilgileri (dict)
 var _cat_buttons: Dictionary = {}   # kategori -> buton
 
-# Uretim detay kutusu referanslari (bir kez kurulur)
-var _detail_icon: TextureRect
-var _detail_name: Label
-var _detail_desc: Label
-var _detail_station: Label
-var _detail_costs: VBoxContainer
-var _detail_time: Label
-var _qty_label: Label
-var _craft_go_button: Button
+# Eski oyun kategorileri -> UI kategori renk anahtari
+const CAT_COLOR_KEY := {"malzeme": "resource", "alet": "tool",
+		"savas": "weapon", "yapi": "structure", "tarim": "farming"}
 
 func _ready() -> void:
 	Inventory.changed.connect(_refresh)
@@ -157,7 +150,6 @@ func _ready() -> void:
 	_setup_damage_flash()
 	_build_slots()
 	_build_category_buttons()
-	_build_detail_box()
 	_rebuild_cards()
 	_refresh()
 	_update_health()
@@ -208,13 +200,28 @@ func _on_inventory_toggled(pressed: bool) -> void:
 			inventory_root.visible = false
 			inventory_root.position.x -= width)
 
+# Uretim paneli yumusak scale ile acilir (0.96 -> 1.0, UI_DESIGN 4.5)
+var _craft_tween: Tween
+
 func _on_craft_toggled(pressed: bool) -> void:
-	craft_panel.visible = pressed
 	if pressed:
 		inventory_button.button_pressed = false
 		close_chest()
 		chest_closed.emit()
 		_update_cards()
+	if _craft_tween != null:
+		_craft_tween.kill()
+	craft_root.pivot_offset = craft_root.size / 2.0
+	_craft_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	if pressed:
+		craft_root.visible = true
+		craft_root.scale = Vector2.ONE * 0.96
+		craft_root.modulate.a = 0.0
+		_craft_tween.tween_property(craft_root, "scale", Vector2.ONE, 0.22)
+		_craft_tween.parallel().tween_property(craft_root, "modulate:a", 1.0, 0.18)
+	else:
+		_craft_tween.tween_property(craft_root, "modulate:a", 0.0, 0.15)
+		_craft_tween.tween_callback(func(): craft_root.visible = false)
 
 # --- Slotlarin kurulumu -------------------------------------------------
 
@@ -453,25 +460,44 @@ func _build_category_buttons() -> void:
 	var cats := {"tumu": "Tümü"}
 	cats.merge(Recipes.CATEGORIES)
 	for cat_id in cats:
+		var color: Color = UIColors.INK_FAINT
+		if CAT_COLOR_KEY.has(cat_id):
+			color = UIColors.category_color(CAT_COLOR_KEY[cat_id])
 		var button := Button.new()
-		button.text = cats[cat_id]
 		button.toggle_mode = true
 		button.button_group = group
-		button.add_theme_font_size_override("font_size", 17)
+		button.custom_minimum_size = Vector2(64, 64)
+		button.text = String(cats[cat_id]).substr(0, 2)
+		button.tooltip_text = String(cats[cat_id])
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = color
+		sb.set_corner_radius_all(999)
+		for state in ["normal", "hover", "pressed", "disabled"]:
+			button.add_theme_stylebox_override(state, sb)
+		for cname in ["font_color", "font_pressed_color", "font_hover_color"]:
+			button.add_theme_color_override(cname, UIColors.INK_DARK)
 		button.button_pressed = cat_id == _current_cat
+		_apply_cat_state(button, cat_id == _current_cat)
+		var cid: String = cat_id
 		button.toggled.connect(func(pressed: bool):
+			_apply_cat_state(button, pressed)
 			if pressed:
-				_current_cat = cat_id
+				_current_cat = cid
 				_rebuild_cards())
 		cat_box.add_child(button)
 		_cat_buttons[cat_id] = button
 
-# Kart izgarasini filtreye gore yeniden kurar.
+# Aktif sekme tam opak + hafif buyuk; pasifler %70 opak (UI_DESIGN 4.3)
+func _apply_cat_state(button: Button, active: bool) -> void:
+	button.modulate.a = 1.0 if active else 0.7
+	button.pivot_offset = button.custom_minimum_size / 2.0
+	button.scale = Vector2.ONE * (1.08 if active else 1.0)
+
+# Kart listesini filtreye gore yeniden kurar.
 func _rebuild_cards() -> void:
-	for child in cards_grid.get_children():
+	for child in cards_box.get_children():
 		child.queue_free()
 	_recipe_cards.clear()
-	var group := ButtonGroup.new()
 	var query := search_edit.text.strip_edges().to_lower()
 	for recipe_id in Recipes.CRAFT_RECIPES:
 		var recipe: Dictionary = Recipes.CRAFT_RECIPES[recipe_id]
@@ -479,211 +505,149 @@ func _rebuild_cards() -> void:
 			continue
 		if query != "" and not Items.display_name(recipe_id).to_lower().contains(query):
 			continue
-		var card := _make_recipe_card(recipe_id, recipe, group)
-		cards_grid.add_child(card)
-		_recipe_cards[recipe_id] = card
-	# Secili tarif filtreyle kaybolduysa secimi koru ama detayda goster
+		cards_box.add_child(_make_recipe_card(recipe_id, recipe))
 	_update_cards()
 
-# Tek tarif karti: ikon + ad + maliyet ikonlari (dokun -> detay)
-func _make_recipe_card(recipe_id: String, recipe: Dictionary, group: ButtonGroup) -> Button:
-	var card := Button.new()
-	card.toggle_mode = true
-	card.button_group = group
-	card.custom_minimum_size = Vector2(128, 128)
-	card.button_pressed = recipe_id == _selected_recipe
-	card.toggled.connect(func(pressed: bool):
-		if pressed:
-			_select_recipe(recipe_id))
+# Yatay tarif karti (UI_DESIGN 4.3):
+# [kategori dairesi + ikon] [ad, malzemeler, istasyon] [Uret pill]
+func _make_recipe_card(recipe_id: String, recipe: Dictionary) -> PanelContainer:
+	var card := PanelContainer.new()
+	card.theme_type_variation = "CardPanel"
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 12)
+	card.add_child(row)
 
-	var box := VBoxContainer.new()
-	box.set_anchors_preset(Control.PRESET_FULL_RECT)
-	box.offset_top = 8
-	box.offset_bottom = -8
-	box.alignment = BoxContainer.ALIGNMENT_CENTER
-	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	card.add_child(box)
-
+	var circle := Panel.new()
+	circle.custom_minimum_size = Vector2(56, 56)
+	circle.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = UIColors.category_color(
+			CAT_COLOR_KEY.get(recipe["category"], "resource"))
+	sb.set_corner_radius_all(999)
+	circle.add_theme_stylebox_override("panel", sb)
+	row.add_child(circle)
 	var icon := TextureRect.new()
 	icon.texture = load(Items.ITEMS[recipe_id]["icon"])
-	icon.custom_minimum_size = Vector2(0, 52)
+	icon.set_anchors_preset(Control.PRESET_FULL_RECT)
+	icon.offset_left = 10
+	icon.offset_top = 10
+	icon.offset_right = -10
+	icon.offset_bottom = -10
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(icon)
+	circle.add_child(icon)
 
+	var mid := VBoxContainer.new()
+	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	mid.add_theme_constant_override("separation", 2)
+	row.add_child(mid)
 	var name_label := Label.new()
-	name_label.text = Items.display_name(recipe_id)
-	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	name_label.add_theme_font_size_override("font_size", 16)
-	name_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	box.add_child(name_label)
-
-	var cost_row := HBoxContainer.new()
-	cost_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	cost_row.add_theme_constant_override("separation", 4)
-	cost_row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var out_count: int = recipe["output"][recipe_id]
+	name_label.text = Items.display_name(recipe_id) + \
+			(" ×%d" % out_count if out_count > 1 else "")
+	name_label.theme_type_variation = "BadgeLabel"
+	mid.add_child(name_label)
+	var mats_row := HBoxContainer.new()
+	mats_row.add_theme_constant_override("separation", 10)
+	mid.add_child(mats_row)
+	var mats: Array = []
 	for item_id in recipe["cost"]:
-		var cost_icon := TextureRect.new()
-		cost_icon.texture = load(Items.ITEMS[item_id]["icon"])
-		cost_icon.custom_minimum_size = Vector2(18, 18)
-		cost_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		cost_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		cost_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cost_row.add_child(cost_icon)
-		var cost_label := Label.new()
-		cost_label.text = str(recipe["cost"][item_id])
-		cost_label.add_theme_font_size_override("font_size", 14)
-		cost_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		cost_row.add_child(cost_label)
-	box.add_child(cost_row)
+		var mat_box := HBoxContainer.new()
+		mat_box.add_theme_constant_override("separation", 3)
+		var mat_icon := TextureRect.new()
+		mat_icon.texture = load(Items.ITEMS[item_id]["icon"])
+		mat_icon.custom_minimum_size = Vector2(20, 20)
+		mat_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		mat_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		mat_box.add_child(mat_icon)
+		var mat_label := Label.new()
+		mat_label.add_theme_font_size_override("font_size", 15)
+		mat_box.add_child(mat_label)
+		# Renk korlugu icin: yetersiz malzemede minik unlem rozeti
+		var warn := Label.new()
+		warn.text = "!"
+		warn.theme_type_variation = "BadgeLabel"
+		warn.add_theme_color_override("font_color", UIColors.DANGER)
+		warn.visible = false
+		mat_box.add_child(warn)
+		mats_row.add_child(mat_box)
+		mats.append({"id": item_id, "need": recipe["cost"][item_id],
+				"label": mat_label, "warn": warn})
+	var station_label := Label.new()
+	station_label.theme_type_variation = "SubtleLabel"
+	station_label.visible = recipe["station"] != ""
+	mid.add_child(station_label)
+
+	var craft_btn := Button.new()
+	craft_btn.theme_type_variation = "PrimaryButton"
+	craft_btn.text = "Üret"
+	craft_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	craft_btn.pressed.connect(func(): _on_card_craft(recipe_id, craft_btn))
+	row.add_child(craft_btn)
+
+	_recipe_cards[recipe_id] = {"card": card, "button": craft_btn,
+			"mats": mats, "station": station_label}
 	return card
 
-# Sag detay kutusunu bir kez kurar.
-func _build_detail_box() -> void:
-	_detail_icon = TextureRect.new()
-	_detail_icon.custom_minimum_size = Vector2(0, 56)
-	_detail_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_detail_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	detail_box.add_child(_detail_icon)
+func _on_card_craft(recipe_id: String, from_button: Control) -> void:
+	if Crafting.enqueue(recipe_id, 1):
+		_fly_to_hotbar(recipe_id, from_button.get_global_rect().get_center())
 
-	_detail_name = Label.new()
-	_detail_name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_detail_name.add_theme_font_size_override("font_size", 22)
-	detail_box.add_child(_detail_name)
+# Uretim geri bildirimi: sonuc ikonu karttan hotbara minik yay cizerek
+# ucar (0.4sn) + hotbar minik pop yapar (UI_DESIGN 4.3)
+func _fly_to_hotbar(recipe_id: String, from_pos: Vector2) -> void:
+	var target := hotbar_box.get_global_rect().get_center()
+	for slot in _mini_hotbar_slots:
+		if slot.item_id == recipe_id:
+			target = slot.get_global_rect().get_center()
+			break
+	var fly := TextureRect.new()
+	fly.texture = load(Items.ITEMS[recipe_id]["icon"])
+	fly.custom_minimum_size = Vector2(36, 36)
+	fly.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	fly.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	fly.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fly.position = from_pos - Vector2(18, 18)
+	add_child(fly)
+	var mid_point := (from_pos + target) / 2.0 + Vector2(0, -90.0)
+	var curve := func(t: float):
+		var a := from_pos.lerp(mid_point, t)
+		var b := mid_point.lerp(target, t)
+		fly.position = a.lerp(b, t) - Vector2(18, 18)
+	var tween := create_tween()
+	tween.tween_method(curve, 0.0, 1.0, 0.4)
+	tween.tween_callback(func():
+		fly.queue_free()
+		_pop_hotbar())
 
-	_detail_desc = Label.new()
-	_detail_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	_detail_desc.add_theme_font_size_override("font_size", 15)
-	detail_box.add_child(_detail_desc)
+func _pop_hotbar() -> void:
+	hotbar_box.pivot_offset = hotbar_box.size / 2.0
+	var tween := create_tween()
+	tween.tween_property(hotbar_box, "scale", Vector2.ONE * 1.08, 0.08)
+	tween.tween_property(hotbar_box, "scale", Vector2.ONE, 0.12)
 
-	_detail_station = Label.new()
-	_detail_station.add_theme_font_size_override("font_size", 15)
-	detail_box.add_child(_detail_station)
-
-	_detail_costs = VBoxContainer.new()
-	_detail_costs.add_theme_constant_override("separation", 2)
-	detail_box.add_child(_detail_costs)
-
-	_detail_time = Label.new()
-	_detail_time.add_theme_font_size_override("font_size", 15)
-	detail_box.add_child(_detail_time)
-
-	# Adet secimi: [-] [x1] [+] [Max]
-	var qty_row := HBoxContainer.new()
-	qty_row.alignment = BoxContainer.ALIGNMENT_CENTER
-	qty_row.add_theme_constant_override("separation", 8)
-	var minus := Button.new()
-	minus.text = "-"
-	minus.custom_minimum_size = Vector2(44, 44)
-	minus.pressed.connect(func(): _set_qty(_craft_qty - 1))
-	qty_row.add_child(minus)
-	_qty_label = Label.new()
-	_qty_label.text = "x1"
-	_qty_label.custom_minimum_size = Vector2(50, 0)
-	_qty_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	_qty_label.add_theme_font_size_override("font_size", 22)
-	qty_row.add_child(_qty_label)
-	var plus := Button.new()
-	plus.text = "+"
-	plus.custom_minimum_size = Vector2(44, 44)
-	plus.pressed.connect(func(): _set_qty(_craft_qty + 1))
-	qty_row.add_child(plus)
-	var maxb := Button.new()
-	maxb.text = "Max"
-	maxb.custom_minimum_size = Vector2(0, 44)
-	maxb.pressed.connect(func():
-		if _selected_recipe != "":
-			_set_qty(Crafting.max_craftable(_selected_recipe)))
-	qty_row.add_child(maxb)
-	detail_box.add_child(qty_row)
-
-	_craft_go_button = Button.new()
-	_craft_go_button.text = "Üret"
-	_craft_go_button.custom_minimum_size = Vector2(0, 52)
-	_craft_go_button.add_theme_font_size_override("font_size", 22)
-	_craft_go_button.pressed.connect(_on_craft_go)
-	detail_box.add_child(_craft_go_button)
-
-	_update_detail_box()
-
-func _select_recipe(recipe_id: String) -> void:
-	_selected_recipe = recipe_id
-	_craft_qty = 1
-	_update_detail_box()
-
-func _set_qty(value: int) -> void:
-	var cap := 99
-	if _selected_recipe != "":
-		cap = maxi(1, Crafting.max_craftable(_selected_recipe))
-	_craft_qty = clampi(value, 1, cap)
-	_update_detail_box()
-
-func _on_craft_go() -> void:
-	if _selected_recipe == "":
-		return
-	if Crafting.enqueue(_selected_recipe, _craft_qty):
-		_craft_qty = 1
-	_update_detail_box()
-
-# Kart soluklugu (uretilemeyenler) + detay kutusunu gunceller.
+# Kartlarin yeterlilik/istasyon durumunu tazeler (envanter degisiminde)
 func _update_cards() -> void:
 	for recipe_id in _recipe_cards:
+		var refs: Dictionary = _recipe_cards[recipe_id]
+		var recipe: Dictionary = Recipes.CRAFT_RECIPES[recipe_id]
 		var can := Crafting.max_craftable(recipe_id) >= 1
-		_recipe_cards[recipe_id].modulate = Color.WHITE if can else Color(1, 1, 1, 0.55)
-	_update_detail_box()
-
-func _update_detail_box() -> void:
-	if _detail_name == null:
-		return
-	if _selected_recipe == "":
-		_detail_icon.texture = null
-		_detail_name.text = "Bir tarif seç"
-		_detail_desc.text = "Soldan bir karta dokun; adet seçip üretime başla."
-		_detail_station.text = ""
-		_detail_time.text = ""
-		_qty_label.text = ""
-		_craft_go_button.disabled = true
-		for child in _detail_costs.get_children():
-			child.queue_free()
-		return
-	var recipe: Dictionary = Recipes.CRAFT_RECIPES[_selected_recipe]
-	_detail_icon.texture = load(Items.ITEMS[_selected_recipe]["icon"])
-	var out_count: int = recipe["output"][_selected_recipe]
-	_detail_name.text = Items.display_name(_selected_recipe) + \
-			(" x%d" % out_count if out_count > 1 else "")
-	_detail_desc.text = Items.description(_selected_recipe)
-	if recipe["station"] != "":
-		_detail_station.text = "Tezgah gerekli" + \
-				("" if Crafting.near_station else " - yanında değilsin!")
-		_detail_station.add_theme_color_override("font_color",
-				Color(0.2, 0.55, 0.25) if Crafting.near_station else Color(0.8, 0.25, 0.2))
-	else:
-		_detail_station.text = ""
-	# Malzeme listesi: "ikon Ad  3/2" (eldeki/gereken)
-	for child in _detail_costs.get_children():
-		child.queue_free()
-	for item_id in recipe["cost"]:
-		var need: int = recipe["cost"][item_id] * _craft_qty
-		var have := Inventory.get_count(item_id)
-		var row := HBoxContainer.new()
-		row.add_theme_constant_override("separation", 6)
-		var icon := TextureRect.new()
-		icon.texture = load(Items.ITEMS[item_id]["icon"])
-		icon.custom_minimum_size = Vector2(22, 22)
-		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		row.add_child(icon)
-		var label := Label.new()
-		label.text = "%s  %d/%d" % [Items.display_name(item_id), have, need]
-		label.add_theme_font_size_override("font_size", 16)
-		if have < need:
-			label.add_theme_color_override("font_color", Color(0.8, 0.25, 0.2))
-		row.add_child(label)
-		_detail_costs.add_child(row)
-	_detail_time.text = "Süre: %.1f sn / adet" % float(recipe["time"])
-	_qty_label.text = "x%d" % _craft_qty
-	_craft_go_button.disabled = Crafting.max_craftable(_selected_recipe) < 1
+		refs["card"].modulate.a = 1.0 if can else 0.6
+		refs["button"].disabled = not can
+		for mat in refs["mats"]:
+			var have := Inventory.get_count(mat["id"])
+			var enough: bool = have >= int(mat["need"])
+			mat["label"].text = "%d/%d" % [have, mat["need"]]
+			mat["label"].add_theme_color_override("font_color",
+					UIColors.SUCCESS.darkened(0.25) if enough else UIColors.DANGER)
+			mat["warn"].visible = not enough
+		if recipe["station"] != "":
+			var near: bool = Crafting.near_station
+			refs["station"].text = "Tezgah yanında ✓" if near \
+					else "Tezgah gerekli — yanında değilsin"
+			refs["station"].add_theme_color_override("font_color",
+					UIColors.SUCCESS.darkened(0.25) if near \
+					else UIColors.WARNING.darkened(0.3))
 
 # --- Gorsel tema ----------------------------------------------------------
 

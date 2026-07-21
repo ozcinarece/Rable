@@ -248,73 +248,78 @@ theme_type_variation = &"TitleTab"
 theme_type_variation = &"TitleTabLabel"
 text = "Sırt Çantası"
 
-[node name="CraftPanel" type="PanelContainer" parent="."]
+[node name="CraftRoot" type="Control" parent="."]
 visible = false
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -455.0
-offset_top = -280.0
-offset_right = 455.0
-offset_bottom = 280.0
+anchor_left = 0.04
+anchor_top = 0.06
+anchor_right = 0.82
+anchor_bottom = 0.96
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="CraftPanel" type="PanelContainer" parent="CraftRoot"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 20.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="VBox" type="VBoxContainer" parent="CraftPanel"]
-theme_override_constants/separation = 8
+[node name="HBox" type="HBoxContainer" parent="CraftRoot/CraftPanel"]
+theme_override_constants/separation = 14
 
-[node name="TitleRow" type="HBoxContainer" parent="CraftPanel/VBox"]
+[node name="CatColumn" type="VBoxContainer" parent="CraftRoot/CraftPanel/HBox"]
+theme_override_constants/separation = 10
+size_flags_vertical = 0
 
-[node name="Title" type="Label" parent="CraftPanel/VBox/TitleRow"]
-text = "Üretim"
+[node name="RightBox" type="VBoxContainer" parent="CraftRoot/CraftPanel/HBox"]
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 26
-
-[node name="CloseButton" type="Button" parent="CraftPanel/VBox/TitleRow"]
-custom_minimum_size = Vector2(44, 44)
-icon_alignment = 1
-
-[node name="FilterRow" type="HBoxContainer" parent="CraftPanel/VBox"]
-theme_override_constants/separation = 6
-
-[node name="CatBox" type="HBoxContainer" parent="CraftPanel/VBox/FilterRow"]
-size_flags_horizontal = 3
-theme_override_constants/separation = 6
-
-[node name="Search" type="LineEdit" parent="CraftPanel/VBox/FilterRow"]
-custom_minimum_size = Vector2(190, 0)
-placeholder_text = "Ara..."
-theme_override_font_sizes/font_size = 18
-
-[node name="Body" type="HBoxContainer" parent="CraftPanel/VBox"]
-size_flags_vertical = 3
-theme_override_constants/separation = 12
-
-[node name="Scroll" type="ScrollContainer" parent="CraftPanel/VBox/Body"]
-size_flags_horizontal = 3
-size_flags_vertical = 3
-
-[node name="Cards" type="GridContainer" parent="CraftPanel/VBox/Body/Scroll"]
-size_flags_horizontal = 3
-columns = 4
-theme_override_constants/h_separation = 10
-theme_override_constants/v_separation = 10
-
-[node name="DetailBox" type="VBoxContainer" parent="CraftPanel/VBox/Body"]
-custom_minimum_size = Vector2(270, 0)
-theme_override_constants/separation = 8
-
-[node name="QueueRow" type="HBoxContainer" parent="CraftPanel/VBox"]
 theme_override_constants/separation = 10
 
-[node name="QueueLabel" type="Label" parent="CraftPanel/VBox/QueueRow"]
-text = ""
-theme_override_font_sizes/font_size = 18
+[node name="TopRow" type="HBoxContainer" parent="CraftRoot/CraftPanel/HBox/RightBox"]
+theme_override_constants/separation = 10
 
-[node name="QueueBar" type="ProgressBar" parent="CraftPanel/VBox/QueueRow"]
+[node name="Search" type="LineEdit" parent="CraftRoot/CraftPanel/HBox/RightBox/TopRow"]
+size_flags_horizontal = 3
+placeholder_text = "Tarif ara..."
+
+[node name="CloseButton" type="Button" parent="CraftRoot/CraftPanel/HBox/RightBox/TopRow"]
+custom_minimum_size = Vector2(48, 40)
+icon_alignment = 1
+
+[node name="Body" type="PanelContainer" parent="CraftRoot/CraftPanel/HBox/RightBox"]
+theme_type_variation = &"InnerPanel"
+size_flags_vertical = 3
+
+[node name="Scroll" type="ScrollContainer" parent="CraftRoot/CraftPanel/HBox/RightBox/Body"]
+horizontal_scroll_mode = 0
+
+[node name="Cards" type="VBoxContainer" parent="CraftRoot/CraftPanel/HBox/RightBox/Body/Scroll"]
+size_flags_horizontal = 3
+theme_override_constants/separation = 10
+
+[node name="QueueRow" type="HBoxContainer" parent="CraftRoot/CraftPanel/HBox/RightBox"]
+visible = false
+theme_override_constants/separation = 10
+
+[node name="QueueLabel" type="Label" parent="CraftRoot/CraftPanel/HBox/RightBox/QueueRow"]
+theme_type_variation = &"SubtleLabel"
+text = ""
+
+[node name="QueueBar" type="ProgressBar" parent="CraftRoot/CraftPanel/HBox/RightBox/QueueRow"]
 size_flags_horizontal = 3
 size_flags_vertical = 4
-custom_minimum_size = Vector2(0, 22)
 max_value = 1.0
+step = 0.001
 show_percentage = false
+
+[node name="TitleTab" type="PanelContainer" parent="CraftRoot"]
+offset_left = 14.0
+offset_top = 0.0
+offset_right = 130.0
+offset_bottom = 40.0
+theme_type_variation = &"TitleTab"
+
+[node name="TitleLabel" type="Label" parent="CraftRoot/TitleTab"]
+theme_type_variation = &"TitleTabLabel"
+text = "Üretim"

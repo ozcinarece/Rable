@@ -1,4 +1,4 @@
-[gd_resource type="Theme" load_steps=12 format=3]
+[gd_resource type="Theme" load_steps=13 format=3]
 
 [ext_resource type="FontFile" path="res://assets/fonts/Baloo2-Regular.ttf" id="1_reg"]
 [ext_resource type="FontFile" path="res://assets/fonts/Baloo2-SemiBold.ttf" id="2_semi"]
@@ -95,6 +95,20 @@ content_margin_top = 6.0
 content_margin_right = 20.0
 content_margin_bottom = 6.0
 
+[sub_resource type="StyleBoxFlat" id="sb_card"]
+bg_color = Color(0.964706, 0.929412, 0.839216, 1)
+corner_radius_top_left = 16
+corner_radius_top_right = 16
+corner_radius_bottom_right = 16
+corner_radius_bottom_left = 16
+shadow_color = Color(0, 0, 0, 0.08)
+shadow_size = 3
+shadow_offset = Vector2(0, 2)
+content_margin_left = 12.0
+content_margin_top = 10.0
+content_margin_right = 12.0
+content_margin_bottom = 10.0
+
 [sub_resource type="StyleBoxEmpty" id="sb_focus"]
 
 [resource]
@@ -140,6 +154,8 @@ PrimaryButton/styles/pressed = SubResource("sb_btn_primary_hover")
 PrimaryButton/styles/disabled = SubResource("sb_btn_disabled")
 InnerPanel/base_type = &"PanelContainer"
 InnerPanel/styles/panel = SubResource("sb_panel_inner")
+CardPanel/base_type = &"PanelContainer"
+CardPanel/styles/panel = SubResource("sb_card")
 TitleTab/base_type = &"PanelContainer"
 TitleTab/styles/panel = SubResource("sb_tab")
 TitleTabLabel/base_type = &"Label"

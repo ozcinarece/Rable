@@ -201,12 +201,17 @@ func _setup_screenshot(save_path: String) -> void:
 	await get_tree().create_timer(0.6).timeout
 	_snap(save_path.replace(".png", "_tema.png"))
 	theme_layer.queue_free()  # envanter karesini kapatmasin
-	# Son kare: envanter paneli acik + ilk esya secili (UI Adim 2)
+	# Envanter paneli acik + ilk esya secili (UI Adim 2)
 	hud.inventory_button.button_pressed = true
 	if not hud._inv_slots.is_empty():
 		hud._on_slot_tapped(hud._inv_slots[0])
 	await get_tree().create_timer(0.8).timeout
 	_snap(save_path.replace(".png", "_envanter.png"))
+	# Son kare: uretim paneli acik (UI Adim 3)
+	hud.inventory_button.button_pressed = false
+	hud.craft_button.button_pressed = true
+	await get_tree().create_timer(0.8).timeout
+	_snap(save_path.replace(".png", "_uretim.png"))
 	get_tree().quit()
 
 # Tema test sayfasi: paneller, sekme, butonlar, kategori daireleri.
