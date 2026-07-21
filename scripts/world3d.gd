@@ -207,11 +207,21 @@ func _setup_screenshot(save_path: String) -> void:
 		hud._on_slot_tapped(hud._inv_slots[0])
 	await get_tree().create_timer(0.8).timeout
 	_snap(save_path.replace(".png", "_envanter.png"))
-	# Son kare: uretim paneli acik (UI Adim 3)
+	# Uretim paneli acik (UI Adim 3)
 	hud.inventory_button.button_pressed = false
 	hud.craft_button.button_pressed = true
 	await get_tree().create_timer(0.8).timeout
 	_snap(save_path.replace(".png", "_uretim.png"))
+	# Son kare: arastirma agaci (UI Adim 5) - ornek malzemeyle
+	hud.craft_button.button_pressed = false
+	Inventory.add_item("stick", 5)
+	Inventory.add_item("pebble", 3)
+	Inventory.add_item("clay", 1)  # gizli dugum tetiklensin ("???")
+	hud.research_button.button_pressed = true
+	if hud.research_root.has_method("_show_info"):
+		hud.research_root._show_info("stone_tools")
+	await get_tree().create_timer(0.8).timeout
+	_snap(save_path.replace(".png", "_arastirma.png"))
 	get_tree().quit()
 
 # Tema test sayfasi: paneller, sekme, butonlar, kategori daireleri.

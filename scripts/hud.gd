@@ -48,6 +48,7 @@ const ICON_CLOSE := preload("res://assets/ui/close_x.png")
 @onready var day_dot: Panel = $DayPill/HBox/SunDot
 @onready var day_label: Label = $DayPill/HBox/DayText
 @onready var research_button: Button = $ResearchButton
+@onready var research_root: Control = $ResearchRoot
 
 # Durum barlari (kalp/mide/damla) - _build_stats kurar (UI_DESIGN 4.1)
 var eat_button: Button
@@ -128,6 +129,8 @@ func _ready() -> void:
 	drop_button.pressed.connect(_on_drop_pressed)
 
 	craft_button.toggled.connect(_on_craft_toggled)
+	research_button.toggled.connect(_on_research_toggled)
+	research_root.closed.connect(func(): research_button.set_pressed_no_signal(false))
 	craft_close.icon = ICON_CLOSE
 	craft_close.pressed.connect(func(): craft_button.button_pressed = false)
 	search_edit.text_changed.connect(func(_t: String): _rebuild_cards())
@@ -178,6 +181,7 @@ var _inv_tween: Tween
 func _on_inventory_toggled(pressed: bool) -> void:
 	if pressed:
 		craft_button.button_pressed = false
+		research_button.button_pressed = false
 		close_chest()
 		chest_closed.emit()
 		_refresh()
@@ -204,6 +208,7 @@ var _craft_tween: Tween
 func _on_craft_toggled(pressed: bool) -> void:
 	if pressed:
 		inventory_button.button_pressed = false
+		research_button.button_pressed = false
 		close_chest()
 		chest_closed.emit()
 		_update_cards()
@@ -220,6 +225,16 @@ func _on_craft_toggled(pressed: bool) -> void:
 	else:
 		_craft_tween.tween_property(craft_root, "modulate:a", 0.0, 0.15)
 		_craft_tween.tween_callback(func(): craft_root.visible = false)
+
+func _on_research_toggled(pressed: bool) -> void:
+	if pressed:
+		inventory_button.button_pressed = false
+		craft_button.button_pressed = false
+		close_chest()
+		chest_closed.emit()
+		research_root.open()
+	else:
+		research_root.close()
 
 # --- Slotlarin kurulumu -------------------------------------------------
 

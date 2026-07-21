@@ -3,6 +3,7 @@
 [ext_resource type="Script" path="res://scripts/hud.gd" id="1_script"]
 [ext_resource type="Texture2D" path="res://assets/ui/bag.png" id="4_bag"]
 [ext_resource type="Texture2D" path="res://assets/ui/wrench.png" id="5_wrench"]
+[ext_resource type="Script" path="res://scripts/ui_research.gd" id="7_research"]
 
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1_script")
@@ -48,7 +49,6 @@ offset_right = -16.0
 offset_bottom = 216.0
 grow_horizontal = 0
 toggle_mode = true
-disabled = true
 text = "Ar"
 
 [node name="CraftMiniBar" type="ProgressBar" parent="."]
@@ -358,3 +358,11 @@ theme_type_variation = &"TitleTab"
 [node name="TitleLabel" type="Label" parent="CraftRoot/TitleTab"]
 theme_type_variation = &"TitleTabLabel"
 text = "Üretim"
+
+[node name="ResearchRoot" type="Control" parent="."]
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+script = ExtResource("7_research")
