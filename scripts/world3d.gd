@@ -316,6 +316,17 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.rotation_degrees = Vector3(-78, 0, 0)
 	await get_tree().create_timer(0.6).timeout
 	_snap(save_path.replace(".png", "_kazi2.png"))
+	# SU MODELI karesi (11.2): merdiven cukuruna 6 birim su - bilesik
+	# kaplar geregi derin hucreler dolar, sig basamak kuru kalir
+	_recompute_water()
+	add_water(kc + Vector2i(0, -3), 6.0)
+	await get_tree().create_timer(0.8).timeout
+	_snap(save_path.replace(".png", "_su.png"))
+	# Ayni havuz yandan/oyun acisina yakin bakisla (kopuk + yansima)
+	camera.position = Vector3(float(kc.x) + 3.5, 4.0, float(kc.y) + 1.5)
+	camera.look_at(Vector3(float(kc.x) + 0.5, -0.8, float(kc.y) - 1.5))
+	await get_tree().create_timer(0.6).timeout
+	_snap(save_path.replace(".png", "_su2.png"))
 	get_tree().quit()
 
 # Tema test sayfasi: paneller, sekme, butonlar, kategori daireleri.
@@ -1858,7 +1869,7 @@ func _recompute_water() -> void:
 		pool["surface"] = surface
 		_pools.append(pool)
 	_water_level = new_levels
-	# Gorsel guncelleme (havuz yuzeyi mesh'i) Adim 2'de buraya baglanacak
+	_update_water_visuals()
 
 ## Hucrenin bagli oldugu havuzun indeksi (-1: havuz yok).
 ## Boru sistemi (11.8) ayni kapiyi kullanacak.
@@ -1871,6 +1882,23 @@ func pool_at(cell: Vector2i) -> int:
 ## Gol hucresi: sonsuz su kaynagi (11.2 / 11.8 pompa girisi)
 func is_water_source(cell: Vector2i) -> bool:
 	return _ground_char.get(cell, "") == "~"
+
+## Hucre "yuzulur" mu? Su sutunu derinligin en az yarisi (11.2 hazirlik).
+# TODO(yaratik-11.6): yuzulur hucrede tirmanma yok + %70 yavaslamayi
+# yaratiklar da kullanacak; simdilik tek davranis oyuncu yavaslamasi.
+func is_swimmable(cell: Vector2i) -> bool:
+	var d := int(_depth.get(cell, 0))
+	if d < 1:
+		return false
+	return float(_water_level.get(cell, 0.0)) >= float(d) * WaterRules.SWIM_MIN_RATIO
+
+## Komsu hucrede su var mi? (11.7 sulama tarimin kapisi)
+func has_adjacent_water(cell: Vector2i) -> bool:
+	for n in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+		var c := cell + n
+		if is_water_source(c) or float(_water_level.get(c, 0.0)) > 0.0:
+			return true
+	return false
 
 ## Su ekleme kapisi (kova doker, ileride boru basar).
 ## Kabul edilen miktari doner; havuz yoksa/doluysa 0.
@@ -1910,6 +1938,89 @@ func take_water(cell: Vector2i, amount: float) -> float:
 			left -= cut
 	_recompute_water()
 	return taken
+
+# --- Su gorseli (11.2): havuz basina TEK duz yuzey --------------------------
+# Golun sakin su shader'iyla AYNI dil (COLOR.r = yerel derinlik: sig/derin
+# rengi + kiyi kopugu bedavaya gelir). Havuzlar kucuk oldugundan yuzey her
+# degisimde yeniden kurulur; seviye 0.3 sn tween ile yumusak iner/kalkar.
+var _pool_surface_nodes: Dictionary = {}  # havuz anahtari -> {node, tween}
+
+func _update_water_visuals() -> void:
+	var keep: Dictionary = {}
+	for pool in _pools:
+		var wet: Dictionary = {}
+		for c in pool["cells"]:
+			if float(_water_level.get(c, 0.0)) > 0.001:
+				wet[c] = true
+		if wet.is_empty():
+			continue
+		# Kararli kimlik: havuzun en kucuk hucresi (tween surekliligi icin
+		# ayni havuz seviye degisiminde ayni dugumu kullanir)
+		var key: Vector2i = pool["cells"][0]
+		for c in pool["cells"]:
+			if c.y < key.y or (c.y == key.y and c.x < key.x):
+				key = c
+		# Duz yuzey kotu: islak hucrelerin (taban + su sutunu) ortalamasi;
+		# agiz hizasinda tasmasin diye 2 cm asagida durur
+		var sum_y := 0.0
+		for c in wet:
+			sum_y += float(_cell_props(c.x, c.y)[0]) \
+					+ float(_water_level[c]) * DigRules.DEPTH_STEP
+		var surface_y := sum_y / float(wet.size()) - 0.02
+		keep[key] = true
+		var entry: Dictionary = _pool_surface_nodes.get(key, {})
+		if entry.is_empty():
+			var node := MeshInstance3D.new()
+			node.material_override = _lake_material()
+			node.position = Vector3(0, surface_y - 0.12, 0)  # dipten dogar
+			add_child(node)
+			entry = {"node": node, "tween": null}
+			_pool_surface_nodes[key] = entry
+		var inst: MeshInstance3D = entry["node"]
+		inst.mesh = _build_pool_mesh(wet, surface_y)
+		if entry["tween"] != null and (entry["tween"] as Tween).is_valid():
+			(entry["tween"] as Tween).kill()
+		var tw := create_tween()
+		tw.tween_property(inst, "position:y", surface_y, 0.3) \
+				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		entry["tween"] = tw
+	for key in _pool_surface_nodes.keys():
+		if not keep.has(key):
+			(_pool_surface_nodes[key]["node"] as MeshInstance3D).queue_free()
+			_pool_surface_nodes.erase(key)
+
+## Islak hucrelerin ustunu orten duz karolar (yerel y=0; dugum kotu tasir).
+## Islak komsusu olmayan kenarlar duvarin icine hafif tasar ki kenar
+## cizgisi/aralik gorunmesin.
+func _build_pool_mesh(wet: Dictionary, surface_y: float) -> ArrayMesh:
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var res := 4
+	var step := 1.0 / float(res)
+	for c: Vector2i in wet:
+		for j in res:
+			for i in res:
+				var x0 := float(c.x) + float(i) * step
+				var z0 := float(c.y) + float(j) * step
+				var x1 := x0 + step
+				var z1 := z0 + step
+				if i == 0 and not wet.has(c + Vector2i(-1, 0)):
+					x0 -= 0.03
+				if i == res - 1 and not wet.has(c + Vector2i(1, 0)):
+					x1 += 0.03
+				if j == 0 and not wet.has(c + Vector2i(0, -1)):
+					z0 -= 0.03
+				if j == res - 1 and not wet.has(c + Vector2i(0, 1)):
+					z1 += 0.03
+				for tri in [[Vector2(x0, z0), Vector2(x1, z0), Vector2(x0, z1)],
+						[Vector2(x1, z0), Vector2(x1, z1), Vector2(x0, z1)]]:
+					for p: Vector2 in tri:
+						st.set_normal(Vector3.UP)
+						var d := clampf((surface_y
+								- float(_sample_terrain(p.x, p.y)[0])) / 0.22, 0.0, 1.0)
+						st.set_color(Color(d, 0, 0))
+						st.add_vertex(Vector3(p.x, 0.0, p.y))
+	return st.commit()
 
 # --- Kova etkilesimleri (11.2) ---------------------------------------------
 
@@ -2023,6 +2134,8 @@ func _update_station_proximity() -> void:
 					near_res = true
 	Crafting.near_station = near_bench
 	Crafting.near_research = near_res
+	# SU MODELI (11.2): yuzulur hucrede oyuncu yavaslar (tek placeholder)
+	player.water_factor = WaterRules.SWIM_SPEED_FACTOR if is_swimmable(pc) else 1.0
 
 # --- Sandik ------------------------------------------------------------------
 

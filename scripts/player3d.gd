@@ -17,6 +17,10 @@ const TAP_MAX_DURATION: float = 0.25
 const TAP_MAX_DRIFT: float = 12.0
 const BODY_RADIUS: float = 0.27   # duvarlara bu kadar yaklasabilir
 
+## Su carpani (11.2): World, oyuncu yuzulur hucredeyken bunu dusurur.
+## Yaratik davranisi (tirmanamama vb.) 11.6 ile gelecek.
+var water_factor: float = 1.0
+
 var world: Node3D  # world3d atar; is_walkable(cell) saglar
 var facing := Vector2(0, 1)  # son yuruyus yonu (aksiyon butonu hedefi)
 
@@ -565,7 +569,7 @@ func _physics_process(delta: float) -> void:
 	# Kosma: parmagi uzaga cek (veya klavyede Shift)
 	var running := _wants_run()
 	_play(_anim_run if running else _anim_walk)
-	var speed := RUN_SPEED if running else SPEED
+	var speed := (RUN_SPEED if running else SPEED) * water_factor
 	_try_move(Vector3(dir.x, 0, dir.y) * speed * delta)
 	# Yuruyus yonune yumusakca don (model +Z yonune bakar)
 	var target_angle := atan2(dir.x, dir.y)
