@@ -217,6 +217,7 @@ text = "Ye"
 
 [node name="HoldButton" type="Button" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox/ButtonRow"]
 visible = false
+theme_type_variation = &"PrimaryButton"
 text = "Eline Al"
 
 [node name="DropButton" type="Button" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox/ButtonRow"]
