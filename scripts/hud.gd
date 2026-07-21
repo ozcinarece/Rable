@@ -148,6 +148,7 @@ func _ready() -> void:
 		if child is Control:
 			(child as Control).theme = main_theme
 	_setup_damage_flash()
+	_setup_night_fx()
 	_build_slots()
 	_build_category_buttons()
 	_rebuild_cards()
@@ -620,6 +621,11 @@ func _make_recipe_card(recipe_id: String, recipe: Dictionary) -> PanelContainer:
 	craft_btn.pressed.connect(func(): _on_card_craft(recipe_id, craft_btn))
 	row.add_child(craft_btn)
 
+	card.gui_input.connect(func(event: InputEvent):
+		if (event is InputEventMouseButton and event.pressed) \
+				or (event is InputEventScreenTouch and event.pressed):
+			if Crafting.max_craftable(recipe_id) < 1:
+				_shake_card(recipe_id))
 	_recipe_cards[recipe_id] = {"card": card, "button": craft_btn,
 			"mats": mats, "station": station_label}
 	return card
@@ -660,6 +666,123 @@ func _pop_hotbar() -> void:
 	var tween := create_tween()
 	tween.tween_property(hotbar_box, "scale", Vector2.ONE * 1.08, 0.08)
 	tween.tween_property(hotbar_box, "scale", Vector2.ONE, 0.12)
+
+## Dunyadan toplama geri bildirimi: esya ikonu karakterden envanter
+## butonuna minik yay cizerek ucar + "+" rozeti (UI_DESIGN 4.5)
+func fly_pickup(item_id: String, from_screen: Vector2) -> void:
+	if not Items.ITEMS.has(item_id):
+		return
+	var fly := Control.new()
+	fly.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var icon := TextureRect.new()
+	icon.texture = load(Items.ITEMS[item_id]["icon"])
+	icon.custom_minimum_size = Vector2(32, 32)
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fly.add_child(icon)
+	var plus := Label.new()
+	plus.text = "+"
+	plus.theme_type_variation = "BadgeLabel"
+	plus.position = Vector2(26, -10)
+	plus.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	fly.add_child(plus)
+	fly.position = from_screen - Vector2(16, 16)
+	add_child(fly)
+	var target := inventory_button.get_global_rect().get_center()
+	var mid_point := (from_screen + target) / 2.0 + Vector2(0, -70.0)
+	var curve := func(t: float):
+		var a := from_screen.lerp(mid_point, t)
+		var b := mid_point.lerp(target, t)
+		fly.position = a.lerp(b, t) - Vector2(16, 16)
+	var tween := create_tween()
+	tween.tween_method(curve, 0.0, 1.0, 0.45)
+	tween.tween_callback(func():
+		fly.queue_free()
+		inventory_button.pivot_offset = inventory_button.size / 2.0
+		var pop := create_tween()
+		pop.tween_property(inventory_button, "scale", Vector2.ONE * 1.12, 0.08)
+		pop.tween_property(inventory_button, "scale", Vector2.ONE, 0.12))
+
+# Yetersiz malzemeyle karta dokununca: yatay minik sallanma + eksik
+# malzemeler kisa parlar. Ceza degil, "suna bak" hissi (UI_DESIGN 4.5)
+func _shake_card(recipe_id: String) -> void:
+	var refs: Dictionary = _recipe_cards.get(recipe_id, {})
+	if refs.is_empty():
+		return
+	var card: Control = refs["card"]
+	var base_x: float = card.position.x
+	var tween := create_tween()
+	for offset in [4.0, -4.0, 4.0, -4.0, 0.0]:
+		tween.tween_property(card, "position:x", base_x + offset, 0.05)
+	for mat in refs["mats"]:
+		if mat["warn"].visible:
+			var warn: Label = mat["warn"]
+			warn.pivot_offset = warn.size / 2.0
+			var flash := create_tween()
+			flash.tween_property(warn, "scale", Vector2.ONE * 1.5, 0.12)
+			flash.tween_property(warn, "scale", Vector2.ONE, 0.15)
+
+# --- Gece efektleri (UI_DESIGN 4.5) ---------------------------------------
+
+var _vignette: TextureRect
+var _night_pill: PanelContainer
+var _night_pill_label: Label
+
+func _setup_night_fx() -> void:
+	_vignette = TextureRect.new()
+	_vignette.texture = _make_vignette_texture()
+	_vignette.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_vignette.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_vignette.stretch_mode = TextureRect.STRETCH_SCALE
+	_vignette.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_vignette.modulate.a = 0.0
+	add_child(_vignette)
+	move_child(_vignette, 1)  # panellerin altinda, dunyanin ustunde
+	_night_pill = PanelContainer.new()
+	_night_pill.theme = load("res://theme_main.tres")
+	_night_pill.theme_type_variation = "TitleTab"
+	_night_pill.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_night_pill.offset_top = 20.0
+	_night_pill.offset_left = -140.0
+	_night_pill.offset_right = 140.0
+	_night_pill.visible = false
+	add_child(_night_pill)
+	_night_pill_label = Label.new()
+	_night_pill_label.theme_type_variation = "TitleTabLabel"
+	_night_pill_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_night_pill.add_child(_night_pill_label)
+	DayNight.night_started.connect(_on_night_fx)
+	DayNight.day_started.connect(_on_day_fx)
+
+func _on_night_fx() -> void:
+	create_tween().tween_property(_vignette, "modulate:a", 0.45, 1.2)
+	_night_pill_label.text = "Gece %d — Geliyorlar..." % DayNight.day
+	_night_pill.visible = true
+	_night_pill.modulate.a = 0.0
+	var tween := create_tween()
+	tween.tween_property(_night_pill, "modulate:a", 1.0, 0.3)
+	tween.tween_interval(2.0)
+	tween.tween_property(_night_pill, "modulate:a", 0.0, 0.4)
+	tween.tween_callback(func(): _night_pill.visible = false)
+
+func _on_day_fx() -> void:
+	create_tween().tween_property(_vignette, "modulate:a", 0.0, 1.2)
+
+# Kenarlardan iceri yumusak lavanta-lacivert vinyet dokusu
+func _make_vignette_texture() -> ImageTexture:
+	var w := 240
+	var h := 135
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var col := Color("#3A2E5C")
+	for y in h:
+		for x in w:
+			var nx := (float(x) / w - 0.5) * 2.0
+			var ny := (float(y) / h - 0.5) * 2.0
+			var d := sqrt(nx * nx + ny * ny)
+			var a: float = clampf((d - 0.62) / 0.55, 0.0, 1.0)
+			img.set_pixel(x, y, Color(col.r, col.g, col.b, pow(a, 1.6)))
+	return ImageTexture.create_from_image(img)
 
 # Kartlarin yeterlilik/istasyon durumunu tazeler (envanter degisiminde)
 func _update_cards() -> void:

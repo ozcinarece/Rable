@@ -103,16 +103,17 @@ func _build() -> void:
 	lines_holder.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	lines_holder.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	scroll.add_child(lines_holder)
-	_strips_box = VBoxContainer.new()
-	_strips_box.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_strips_box.add_theme_constant_override("separation", 14)
-	lines_holder.add_child(_strips_box)
+	# Cizgiler kartlardan ONCE eklenir: agac sirasi geregi altta cizilir
+	# (z_index -1 kullanma - panel zemininin de altina duserdi)
 	_lines = Control.new()
 	_lines.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_lines.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_lines.draw.connect(_draw_connections)
 	lines_holder.add_child(_lines)
-	_lines.z_index = -1  # cizgiler kartlarin altinda
+	_strips_box = VBoxContainer.new()
+	_strips_box.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_strips_box.add_theme_constant_override("separation", 14)
+	lines_holder.add_child(_strips_box)
 
 	for branch in BRANCH_LABELS:
 		_strips_box.add_child(_make_strip(branch))

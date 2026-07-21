@@ -222,6 +222,13 @@ func _setup_screenshot(save_path: String) -> void:
 		hud.research_root._show_info("stone_tools")
 	await get_tree().create_timer(0.8).timeout
 	_snap(save_path.replace(".png", "_arastirma.png"))
+	# Son kare: gece vinyeti + "Geliyorlar..." pili (UI Adim 6)
+	hud.research_button.button_pressed = false
+	DayNight.is_night = true
+	DayNight.night_started.emit()
+	DayNight.changed.emit()
+	await get_tree().create_timer(1.6).timeout
+	_snap(save_path.replace(".png", "_gece.png"))
 	get_tree().quit()
 
 # Tema test sayfasi: paneller, sekme, butonlar, kategori daireleri.
@@ -1548,6 +1555,9 @@ func _dig_pit(cell: Vector2i) -> void:
 	_solid_cells[cell] = true
 	Inventory.add_item("toprak", 1)
 	_spawn_floating_text(cell, "+1 Toprak", Color(0.9, 0.75, 0.55))
+	if hud != null and hud.has_method("fly_pickup"):
+		hud.fly_pickup("toprak",
+				camera.unproject_position(_cell_center(cell) + Vector3(0, 0.5, 0)))
 	_refresh_terrain()
 
 func _fill_pit(cell: Vector2i) -> void:
@@ -1602,9 +1612,13 @@ func _try_harvest(cell: Vector2i) -> bool:
 		return false
 	_object_hits.erase(cell)
 	var gained: PackedStringArray = []
+	var fly_from := camera.unproject_position(_cell_center(cell) + Vector3(0, 0.8, 0))
 	for item_id in def["drops"]:
 		Inventory.add_item(item_id, def["drops"][item_id])
 		gained.append("+%d %s" % [def["drops"][item_id], Items.display_name(item_id)])
+		# Toplama geri bildirimi: ikon envanter butonuna ucar (UI 4.5)
+		if hud != null and hud.has_method("fly_pickup"):
+			hud.fly_pickup(item_id, fly_from)
 	_spawn_floating_text(cell, " ".join(gained), Color(0.7, 1.0, 0.7))
 	if def.has("becomes"):
 		_objects[cell] = def["becomes"]
