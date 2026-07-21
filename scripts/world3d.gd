@@ -359,8 +359,8 @@ func _setup_screenshot(save_path: String) -> void:
 	await get_tree().create_timer(0.6).timeout
 	_snap(save_path.replace(".png", "_alet_swing.png"))
 	# TEST KUKLASI + yakin dovus (Asama 4): kukla kur, sopa ile vur
-	var pc := _player_cell()
-	var dcell := pc + Vector2i(1, 0)
+	var apc := _player_cell()
+	var dcell := apc + Vector2i(1, 0)
 	if not _dummies.has(dcell) and not _objects.has(dcell):
 		_spawn_dummy(dcell)
 	_held_item = "sopa"
@@ -375,6 +375,20 @@ func _setup_screenshot(save_path: String) -> void:
 	_snap(save_path.replace(".png", "_dovus.png"))
 	if _dummies.has(dcell):
 		print("DUMMYTEST: hp=%d/%d" % [_dummies[dcell].hp, HittableDummy.MAX_HP])
+	# MENZILLI (Asama 5): mizrak firlat, uzaktaki kuklaya carpsin
+	var fcell := apc + Vector2i(4, 0)
+	if not _dummies.has(fcell) and not _objects.has(fcell):
+		_spawn_dummy(fcell)
+	Inventory.add_item("mizrak", 1)
+	_held_item = "mizrak"
+	player.set_held_tool("spear")
+	player.facing = Vector2(1, 0)
+	_aim_charge = 1.0
+	_launch_projectile("spear", Vector3(1, 0, 0), 11.0, 2.2, -12.0, 30,
+			"mizrak", 1.0)
+	print("RANGEDTEST: projectiles=%d" % _projectiles.size())
+	await get_tree().create_timer(0.8).timeout
+	_snap(save_path.replace(".png", "_menzil.png"))
 	_run_save_load_selftest()
 	get_tree().quit()
 
@@ -2116,6 +2130,9 @@ func _try_dig(cell: Vector2i) -> bool:
 		if hud != null and hud.has_method("fly_pickup"):
 			hud.fly_pickup(item_id, fly_from)
 	_spawn_floating_text(cell, " ".join(gained), Color(0.9, 0.8, 0.6))
+	# 12.6 his: toprak/tas partikulu (kazi rengine gore)
+	_spawn_particles(_cell_center(cell) + Vector3(0, 0.3, 0),
+			Color(0.5, 0.5, 0.55) if is_rock else Color(0.55, 0.40, 0.25), 6)
 	_refresh_terrain_at(cell)
 	_dirty = true
 	return true
@@ -2657,6 +2674,8 @@ func _perform_tool_action(t: Dictionary) -> void:
 	var prof := ToolProfiles.get_profile(_held_item)
 	var started: bool = player.play_swing(prof,
 			func(): _apply_strike(kind, cell))
+	if started:
+		_play_sfx(String(prof.get("swing_sfx", "")))  # 12.6 ses kancasi
 	if started and not bool(t.get("valid", true)):
 		hud.shake_action_button()
 
@@ -2731,7 +2750,38 @@ func _update_target_highlight(t: Dictionary) -> void:
 	if mat2 != null:
 		mat2.albedo_color = col
 
-# --- Partikuller (12.6 his) — ucuz, kisa omurlu CPUParticles -------------
+# --- HIS / JUICE (12.6) — hepsi hafif, mobil dostu ------------------------
+
+## Vurus durmasi: isabetli vuruşta cok kisa oyun hizi dususu (agirlik).
+## Gercek zamanli timer (time_scale'den bagimsiz) ile geri alinir.
+func _hit_stop(amount: float = 0.5, dur: float = 0.05) -> void:
+	Engine.time_scale = amount
+	var t := get_tree().create_timer(dur, true, false, true)
+	t.timeout.connect(func(): Engine.time_scale = 1.0)
+
+## Ses kancasi: assets/sfx/<name>.(ogg|wav) varsa calar, yoksa SESSIZ gecer
+## (placeholder — dosya eklenince otomatik devreye girer, hata vermez).
+func _play_sfx(name: String) -> void:
+	if name == "":
+		return
+	for ext in [".ogg", ".wav"]:
+		var path := "res://assets/sfx/" + name + ext
+		if ResourceLoader.exists(path):
+			var pl := AudioStreamPlayer.new()
+			pl.stream = load(path)
+			add_child(pl)
+			pl.play()
+			pl.finished.connect(func(): pl.queue_free())
+			return
+
+## Nesne turune gore partikul rengi (odun/tas/bitki)
+func _object_particle_color(ch: String) -> Color:
+	match ch:
+		"T": return Color(0.52, 0.36, 0.20)   # odun kiymigi
+		"#": return Color(0.52, 0.52, 0.56)   # tas
+		"cicek", "mantar", "m", "n": return Color(0.42, 0.70, 0.34)
+	return Color(0.6, 0.5, 0.4)
+
 ## Bir hucrede kucuk parcacik patlamasi. Renk malzemeye gore (odun kahve,
 ## tas gri, toprak toprak). Kendini birkac saniyede siler.
 func _spawn_particles(pos: Vector3, color: Color, count: int = 5) -> void:
@@ -2766,12 +2816,93 @@ func _spark_burst(cell: Vector2i) -> void:
 func _melee_hit(cell: Vector2i) -> void:
 	_apply_hitbox(cell)
 
-## Asama 4 stub'lari (mermi/nisan) — su an bos, ilgili asamada dolar.
-func _tick_projectiles(_delta: float) -> void:
-	pass
+# --- Menzilli silahlar (12.5): mizrak firlatma / sapan / yay ---------------
+# Nisan: saldiri butonu basili tutulunca _aiming acilir; yay gerdirme
+# (_aim_charge 0->1) hiz+hasari olceklendirir. Birakinca mermi firlar.
 
-func _tick_aim(_delta: float) -> void:
-	pass
+## Her kare nisan gostergesini gunceller; yay icin gerdirme dolar.
+func _tick_aim(delta: float) -> void:
+	var kind := ToolProfiles.ranged_kind(_held_item)
+	if kind == "bow":
+		_aim_charge = minf(1.0, _aim_charge + delta)  # 0-1 sn dolum
+	else:
+		_aim_charge = 1.0
+	if _aim_guide == null:
+		var m := CylinderMesh.new()
+		m.top_radius = 0.03; m.bottom_radius = 0.03; m.height = 1.0
+		var mat := StandardMaterial3D.new()
+		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		mat.albedo_color = Color(1, 1, 1, 0.35)
+		m.material = mat
+		_aim_guide = MeshInstance3D.new()
+		_aim_guide.mesh = m
+		add_child(_aim_guide)
+	_aim_guide.visible = true
+	var fo := player.facing.normalized()
+	if fo == Vector2.ZERO:
+		fo = Vector2(0, 1)
+	var fwd := Vector3(fo.x, 0, fo.y)
+	var length := 1.2 + _aim_charge * 1.8
+	var origin := player.position + Vector3(0, 0.7, 0)
+	_aim_guide.position = origin + fwd * (length * 0.5)
+	_aim_guide.scale = Vector3(1, length, 1)
+	# Cizgiyi ileri yonde yatir (silindir +Y ekseni -> fwd'a dondur)
+	_aim_guide.look_at(origin + fwd, Vector3.UP)
+	_aim_guide.rotate_object_local(Vector3(1, 0, 0), deg_to_rad(90))
+	# Gerdirme son %20'sinde hafif titreme (yay)
+	var mat2 := _aim_guide.mesh.material as StandardMaterial3D
+	if mat2 != null:
+		var a := 0.3 + _aim_charge * 0.45
+		mat2.albedo_color = Color(1, 0.95, 0.7, a)
+
+## Ucan mermileri ilerletir; yere/kuklaya carpinca saplar (12.5).
+func _tick_projectiles(delta: float) -> void:
+	var still_alive: Array = []
+	for pr in _projectiles:
+		var node: Node3D = pr["node"]
+		if not is_instance_valid(node):
+			continue
+		# Vector3 deger tipi: dict icinde .y'yi dogrudan degistirmek
+		# kopya uzerinde calisir; yerel degiskenle guncelleyip geri yaz.
+		var vel: Vector3 = pr["vel"]
+		vel.y += float(pr["gravity"]) * delta
+		pr["vel"] = vel
+		var new_pos: Vector3 = node.position + vel * delta
+		node.position = new_pos
+		# Ekseni etrafinda hafif donme + ucus yonune bakis
+		node.rotate_object_local(Vector3(0, 1, 0), 12.0 * delta)
+		pr["life"] = float(pr["life"]) - delta
+		# Kukla carpismasi (xz yakinlik + yukseklik araligi)
+		var hit_dummy := false
+		for c: Vector2i in _dummies:
+			var dc := _cell_center(c)
+			if Vector2(new_pos.x - dc.x, new_pos.z - dc.z).length() < 0.5 \
+					and new_pos.y > 0.2 and new_pos.y < 1.4:
+				var dmy = _dummies[c]
+				if is_instance_valid(dmy) and dmy.is_alive():
+					dmy.take_hit(int(pr["damage"]), vel.normalized())
+					_spawn_particles(new_pos, Color(0.95, 0.9, 0.7), 5)
+					hit_dummy = true
+					break
+		var landed := new_pos.y <= ground_height(new_pos.x, new_pos.z) + 0.05
+		if hit_dummy or landed or float(pr["life"]) <= 0.0:
+			_land_projectile(pr)
+		else:
+			still_alive.append(pr)
+	_projectiles = still_alive
+
+## Mermi konar: saplanabilen tur yerde item olur (mizrak %100, ok %60).
+func _land_projectile(pr: Dictionary) -> void:
+	var node: Node3D = pr["node"]
+	var recover: String = String(pr.get("recover_item", ""))
+	var chance := float(pr.get("recover_chance", 0.0))
+	if is_instance_valid(node):
+		var cell := Vector2i(floori(node.position.x), floori(node.position.z))
+		if recover != "" and randf() <= chance and _ground_item_at(cell) == -1 \
+				and not _dummies.has(cell):
+			_add_ground_item(cell, recover, 1)
+		node.queue_free()
 
 ## Strike aninda onundeki hitbox (12.5): menzil boyunca ilk vurulabilir
 ## hedefe take_hit uygular. Su an hedef = TEST KUKLASI (12.7). Yaratiklar
@@ -2796,6 +2927,8 @@ func _apply_hitbox(cell: Vector2i) -> void:
 			d.take_hit(dmg, kdir)
 			_spawn_particles(_cell_center(c) + Vector3(0, 0.7, 0),
 					Color(0.95, 0.9, 0.7), 5)
+			_hit_stop(0.5, 0.05)  # 12.6 vurus durmasi
+			_play_sfx(String(prof.get("hit_sfx", "")))
 			return
 
 ## Kukla yerlestir (12.7): elde "kukla" ile bos hucreye dokun.
@@ -2860,13 +2993,103 @@ func _on_attack_hold_started() -> void:
 func _on_attack_hold_released() -> void:
 	if _aiming:
 		_release_aim()
+	elif ToolProfiles.ranged_kind(_held_item) == "":
+		# Menzilsiz silahta uzun basis da normal saldiri yapsin
+		_on_attack_pressed()
 
-## Asama 5 stub'lari — nisan/firlatma ilgili asamada doldurulur.
+## Nisan modunu ac (basili tut). Muhimmat gerekiyorsa yoklugunu simdi
+## kontrol etmeyiz — birakinca kontrol edilir (gerdirme hissi kalsin).
 func _begin_aim() -> void:
-	pass
+	if player.is_swinging():
+		return
+	_aiming = true
+	_aim_charge = 0.0
 
+## Birak: mermiyi firlat (mizrak/cakil/ok). Muhimmat yoksa iptal.
 func _release_aim() -> void:
-	pass
+	_aiming = false
+	if _aim_guide != null:
+		_aim_guide.visible = false
+	var kind := ToolProfiles.ranged_kind(_held_item)
+	var prof := ToolProfiles.get_profile(_held_item)
+	var fo := player.facing.normalized()
+	if fo == Vector2.ZERO:
+		fo = Vector2(0, 1)
+	var fwd := Vector3(fo.x, 0, fo.y)
+	var charge := _aim_charge
+	match kind:
+		"spear":
+			# Mizrak firlat: elden dus, havada ucup saplan, yerden alinir.
+			# Isabette durtmeden %50 fazla hasar.
+			if not Inventory.remove_item("mizrak", 1):
+				return
+			if Inventory.get_count("mizrak") <= 0:
+				_on_hold_requested("")
+			var dmg := int(round(float(prof.get("damage", 20)) * 1.5))
+			_launch_projectile("spear", fwd, 11.0, 2.2, -12.0, dmg,
+					"mizrak", 1.0)
+		"sling":
+			if Inventory.get_count("cakil") <= 0:
+				_spawn_floating_text(_player_cell(), "Çakıl yok",
+						Color(1, 0.9, 0.6))
+				return
+			Inventory.remove_item("cakil", 1)
+			_launch_projectile("pebble", fwd, 15.0, 1.2, -12.0,
+					int(prof.get("damage", 6)), "", 0.0)
+		"bow":
+			if Inventory.get_count("ok") <= 0:
+				_spawn_floating_text(_player_cell(), "Ok yok",
+						Color(1, 0.9, 0.6))
+				return
+			Inventory.remove_item("ok", 1)
+			# Gerdirme orani hiz+hasari olcekler (min %30 guc)
+			var power := lerpf(0.3, 1.0, charge)
+			var speed := lerpf(9.0, 20.0, charge)
+			var dmg2 := int(round(float(prof.get("damage", 10)) * (0.5 + power)))
+			_launch_projectile("arrow", fwd, speed, 1.4, -5.0, dmg2,
+					"ok", 0.6)
+	# Firlatma "yay/sapan sallama" hissi icin kisa bir sallanma da oynat
+	player.play_swing(prof, func(): pass)
+
+## Bir mermi olustur ve ucusa birak.
+func _launch_projectile(kind: String, fwd: Vector3, speed: float,
+		up: float, gravity: float, damage: int, recover_item: String,
+		recover_chance: float) -> void:
+	var node := _make_projectile(kind)
+	node.position = player.position + Vector3(0, 0.8, 0) + fwd * 0.4
+	add_child(node)
+	_projectiles.append({
+		"node": node,
+		"vel": fwd.normalized() * speed + Vector3(0, up, 0),
+		"gravity": gravity,
+		"damage": damage,
+		"life": 4.0,
+		"recover_item": recover_item,
+		"recover_chance": recover_chance,
+	})
+
+## Basit mermi modelleri (mizrak/ok/cakil).
+func _make_projectile(kind: String) -> Node3D:
+	var root := Node3D.new()
+	var mi := MeshInstance3D.new()
+	var mat := StandardMaterial3D.new()
+	match kind:
+		"pebble":
+			var sm := SphereMesh.new(); sm.radius = 0.06; sm.height = 0.12
+			mi.mesh = sm; mat.albedo_color = Color(0.5, 0.5, 0.55)
+		"arrow":
+			var cm := CylinderMesh.new(); cm.top_radius = 0.015
+			cm.bottom_radius = 0.015; cm.height = 0.5
+			mi.mesh = cm; mat.albedo_color = Color(0.55, 0.38, 0.22)
+			mi.rotation_degrees = Vector3(90, 0, 0)
+		_:  # spear
+			var cm2 := CylinderMesh.new(); cm2.top_radius = 0.02
+			cm2.bottom_radius = 0.02; cm2.height = 0.7
+			mi.mesh = cm2; mat.albedo_color = Color(0.6, 0.42, 0.26)
+			mi.rotation_degrees = Vector3(90, 0, 0)
+	mi.material_override = mat
+	root.add_child(mi)
+	return root
 
 func _try_harvest(cell: Vector2i) -> bool:
 	var ch: String = _objects.get(cell, "")
@@ -2892,6 +3115,10 @@ func _try_harvest(cell: Vector2i) -> bool:
 	if _held_item == "bicak" and ch in ["cicek", "mantar", "m"]:
 		hits_needed = 1
 	var damage: int = int(_object_hits.get(cell, 0)) + 1
+	# 12.6 his: her vuruşta malzeme partikulu + isabet sesi
+	_spawn_particles(_cell_center(cell) + Vector3(0, 0.5, 0),
+			_object_particle_color(ch), 5)
+	_play_sfx(String(def.get("hit_sfx", "")) if def.has("hit_sfx") else "")
 	if damage < hits_needed:
 		_object_hits[cell] = damage
 		_spawn_floating_text(cell, "%d/%d" % [damage, hits_needed], Color(1.0, 0.95, 0.6))
@@ -2914,6 +3141,10 @@ func _try_harvest(cell: Vector2i) -> bool:
 		if hud != null and hud.has_method("fly_pickup"):
 			hud.fly_pickup(item_id, fly_from)
 	_spawn_floating_text(cell, " ".join(gained), Color(0.7, 1.0, 0.7))
+	# 12.6 his: kirilma aninda vurus durmasi + buyuk partikul patlamasi
+	_hit_stop(0.55, 0.05)
+	_spawn_particles(_cell_center(cell) + Vector3(0, 0.6, 0),
+			_object_particle_color(ch), 9)
 	if def.has("becomes"):
 		_objects[cell] = def["becomes"]
 		_regrow[cell] = REGROW_SECONDS
