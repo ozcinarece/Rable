@@ -1159,7 +1159,13 @@ func from_save_data(data: Dictionary) -> bool:
 			for item_id in saved:
 				flat[item_id] = int(saved[item_id])
 			_chests[cell].load_from_dict(flat)
-	# Yerdeki esyalar
+	# Yerdeki esyalar: ONCE mevcut olanlari temizle (yukleme EKLEMEZ, YERINE
+	# koyar; yoksa _add_ground_item ayni id'yi istifler -> reload'da adet katlanir)
+	for entry in _ground_items:
+		var gn: Variant = entry.get("node", null)
+		if gn != null and is_instance_valid(gn):
+			(gn as Node).queue_free()
+	_ground_items.clear()
 	for entry in data.get("ground_items", []):
 		if entry is Dictionary and Items.ITEMS.has(entry.get("id", "")):
 			_add_ground_item(Vector2i(int(entry["x"]), int(entry["y"])),
