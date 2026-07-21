@@ -266,6 +266,10 @@ var hair_color: Color = Color(0.35, 0.22, 0.12)
 var player: Node3D
 var camera: Camera3D
 var hud: CanvasLayer
+# gunduz/gece görsel döngü referansları
+var _sun: DirectionalLight3D
+var _env: Environment
+var _sky_mat: ProceduralSkyMaterial
 
 var _zoom_slider: HSlider
 var _pitch_slider: HSlider
@@ -384,12 +388,14 @@ func _setup_screenshot(save_path: String) -> void:
 	# Kamera vitrin studyosundan oyuncuya doner
 	_apply_camera_angle()
 	camera.position = player.position + _camera_offset()
+	DayNight.phase = "night"; DayNight.elapsed = 120.0
 	DayNight.is_night = true
 	DayNight.night_started.emit()
 	DayNight.changed.emit()
 	await get_tree().create_timer(1.6).timeout
 	_snap(save_path.replace(".png", "_gece.png"))
 	# Son kare: B3 yerlestirme ornekleri (tezgah/masa/sandik/duvar/cadir)
+	DayNight.phase = "day"; DayNight.elapsed = 200.0
 	DayNight.is_night = false
 	DayNight.day_started.emit()
 	DayNight.changed.emit()
@@ -531,6 +537,7 @@ func _setup_screenshot(save_path: String) -> void:
 	_toggle_door(dcell2)
 	print("DOORTEST: kapali_kati=%s acik_kati=%s" % [
 		str(closed_solid), str(_solid_cells.has(dcell2))])
+	DayNight.phase = "night"; DayNight.elapsed = 120.0
 	DayNight.is_night = true
 	DayNight.night_started.emit()
 	camera.position = _cell_center(ppc) + Vector3(0, 3.0, 4.0)
@@ -539,6 +546,7 @@ func _setup_screenshot(save_path: String) -> void:
 	_snap(save_path.replace(".png", "_yapi_isik.png"))
 	# #1: YERE DUSEN ESYA gorseli (kategori renkli low-poly + suzulme/donme)
 	Inventory.reset()
+	DayNight.phase = "day"; DayNight.elapsed = 200.0
 	DayNight.is_night = false
 	DayNight.day_started.emit()
 	var gpc := _player_cell()
@@ -963,6 +971,7 @@ func _process(delta: float) -> void:
 		var ht := Time.get_ticks_msec() / 1000.0
 		_hearth_light.light_energy = 3.0 * (0.9 + 0.1 * sin(ht * 8.0))
 	_tick_regrow(delta)
+	_update_daylight()  # gunduz/gece: güneş/gökyüzü/ambient eğrisi (yumuşak)
 	# YASAM: kosma/alet eforu -> aclik daha hizli azalir (PlayerStats okur)
 	PlayerStats.exerting = player.is_exerting()
 	if not _ground_items.is_empty():
@@ -1556,6 +1565,8 @@ func _build_environment() -> void:
 	var world_env := WorldEnvironment.new()
 	world_env.environment = env
 	add_child(world_env)
+	_env = env            # gunduz/gece: ambient + gokyuzu eğriyle degisir
+	_sky_mat = sky_mat
 
 	var sun := DirectionalLight3D.new()
 	sun.rotation_degrees = Vector3(-52, -32, 0)
@@ -1567,11 +1578,48 @@ func _build_environment() -> void:
 	sun.directional_shadow_max_distance = 40.0
 	sun.shadow_blur = 0.6
 	add_child(sun)
+	_sun = sun
+	_update_daylight()    # ilk kareyi dogru tonla
 
 	camera = Camera3D.new()
 	camera.fov = 45.0
 	add_child(camera)
 	_apply_camera_angle()
+
+# gunduz/gece Asama 2: faz sınırı renk/enerji anahtarları. Her faz KENDİ
+# başından SONRAKİ fazın başına harmanlanır (phase_progress ile). Gece zifiri
+# DEĞİL — okunur lavanta-lacivert (UI_DESIGN gece paleti).
+# Alanlar: [gunes_renk, gunes_enerji, ambient_enerji, gok_ust, gok_ufuk]
+const _SKY_KEYS := {
+	"dawn":  [Color(0.62, 0.55, 0.72), 0.38, 0.36,
+			Color(0.24, 0.26, 0.42), Color(0.72, 0.55, 0.52)],   # şafak (dim→)
+	"day":   [Color(1.0, 0.90, 0.74), 1.0, 0.66,
+			Color(0.48, 0.70, 0.95), Color(0.98, 0.90, 0.76)],   # sabah/gündüz
+	"dusk":  [Color(1.0, 0.95, 0.85), 1.05, 0.72,
+			Color(0.44, 0.69, 0.94), Color(0.95, 0.93, 0.82)],   # geç gündüz
+	"night": [Color(0.52, 0.52, 0.78), 0.30, 0.32,
+			Color(0.16, 0.18, 0.34), Color(0.40, 0.34, 0.52)],   # gece (lavanta)
+}
+const _PHASE_NEXT := {"dawn": "day", "day": "dusk", "dusk": "night", "night": "dawn"}
+
+## Şu anki faz + ilerlemeye göre ışık/gökyüzü tonlarını yumuşakça geçirir.
+func _update_daylight() -> void:
+	if _sun == null:
+		return
+	var a: Array = _SKY_KEYS[DayNight.phase]
+	var b: Array = _SKY_KEYS[_PHASE_NEXT[DayNight.phase]]
+	var t: float = DayNight.phase_progress()
+	_sun.light_color = (a[0] as Color).lerp(b[0], t)
+	_sun.light_energy = lerpf(a[1], b[1], t)
+	if _env != null:
+		_env.ambient_light_energy = lerpf(a[2], b[2], t)
+	if _sky_mat != null:
+		_sky_mat.sky_top_color = (a[3] as Color).lerp(b[3], t)
+		_sky_mat.sky_horizon_color = (a[4] as Color).lerp(b[4], t)
+	# Güneş süpürmesi: gölgeler gün boyu kayar; gece açısı alçalır
+	var frac := DayNight.day_fraction()
+	_sun.rotation_degrees = Vector3(-50.0 + 24.0 * cos(frac * TAU),
+			-32.0 + 70.0 * frac, 0.0)
 
 # --- Dunya kurulumu -----------------------------------------------------
 

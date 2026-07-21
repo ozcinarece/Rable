@@ -48,6 +48,7 @@ const Items = preload("res://scripts/items.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const UiSlotScript = preload("res://scripts/ui_slot.gd")
 const UIColors = preload("res://scripts/ui_colors.gd")
+const TimeBalance = preload("res://scripts/time_balance.gd")
 
 const ICON_FIST := preload("res://assets/ui/fist.png")
 const ICON_GATHER := preload("res://assets/ui/axe.png")
@@ -207,6 +208,11 @@ func _ready() -> void:
 
 func _process(_delta: float) -> void:
 	_update_day_pulse()
+	# gunduz/gece: gece kenar vinyeti gecişi YUMUŞAK (nightness eğrisi; çok hafif
+	# lavanta, UI_DESIGN 4.5). Gün/saat pill ilerlemesi de her kare akar.
+	if _vignette != null:
+		_vignette.modulate.a = _nightness() * 0.34
+	_update_day_progress()
 	# Uretim kuyrugu ilerlemesi (her kare akici dolsun)
 	var progress := Crafting.get_progress()
 	var busy := progress >= 0.0
@@ -607,13 +613,14 @@ func _update_day_label() -> void:
 	dot.bg_color = Color("#B9A0E8") if DayNight.is_night else UIColors.WARNING
 	day_dot.add_theme_stylebox_override("panel", dot)
 
-# Gece yaklasiyor uyarisi: son 60 sn'de pill nabiz atar (1sn dongu)
+# Geceye son 1 dk: pill warning rengi + yumuşak nabız + tek satır uyarı
 var _day_pulse: Tween
 var _pulsing := false
+var _day_progress: ProgressBar
 
 func _update_day_pulse() -> void:
-	var closing: bool = not DayNight.is_night \
-			and DayNight.DAY_SECONDS - DayNight.elapsed <= 60.0
+	var tun := DayNight.time_until_night()
+	var closing: bool = tun > 0.0 and tun <= TimeBalance.NIGHT_WARN_LEAD
 	if closing == _pulsing:
 		return
 	_pulsing = closing
@@ -623,11 +630,46 @@ func _update_day_pulse() -> void:
 		_day_pulse.tween_property(day_pill, "scale", Vector2.ONE * 1.04, 0.5)
 		_day_pulse.tween_property(day_pill, "scale", Vector2.ONE, 0.5)
 		day_pill.modulate = Color(1.0, 0.86, 0.55)
+		_flash_night_pill("Gece yaklaşıyor")  # tek satır uyarı (2 sn)
 	else:
 		if _day_pulse != null:
 			_day_pulse.kill()
 		day_pill.scale = Vector2.ONE
 		day_pill.modulate = Color.WHITE
+
+## Gün içi ilerleme (pill'de minik dolum bar; her kare akar).
+func _update_day_progress() -> void:
+	if _day_progress == null:
+		if day_label == null or day_label.get_parent() == null:
+			return
+		_day_progress = ProgressBar.new()
+		_day_progress.max_value = 1.0
+		_day_progress.show_percentage = false
+		_day_progress.custom_minimum_size = Vector2(42, 6)
+		_day_progress.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		day_label.get_parent().add_child(_day_progress)
+	_day_progress.value = DayNight.day_fraction()
+
+## "Gece"lik oranı (0 gündüz .. 1 zifiri gece); vinyet + geçiş yumuşaklığı.
+func _nightness() -> float:
+	match DayNight.phase:
+		"night": return 1.0
+		"dusk": return DayNight.phase_progress()
+		"dawn": return 1.0 - DayNight.phase_progress()
+		_: return 0.0
+
+## Ortadaki pill'de kısa (2 sn) tek satır bilgi.
+func _flash_night_pill(text: String) -> void:
+	if _night_pill == null:
+		return
+	_night_pill_label.text = text
+	_night_pill.visible = true
+	_night_pill.modulate.a = 0.0
+	var tw := create_tween()
+	tw.tween_property(_night_pill, "modulate:a", 1.0, 0.3)
+	tw.tween_interval(TimeBalance.NIGHT_PILL_SECONDS)
+	tw.tween_property(_night_pill, "modulate:a", 0.0, 0.4)
+	tw.tween_callback(func(): _night_pill.visible = false)
 
 # --- Uretim paneli ------------------------------------------------------
 
@@ -893,21 +935,22 @@ func _setup_night_fx() -> void:
 	_night_pill_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_night_pill.add_child(_night_pill_label)
 	DayNight.night_started.connect(_on_night_fx)
-	DayNight.day_started.connect(_on_day_fx)
+	DayNight.dawn_started.connect(_on_day_fx)  # yeni gün (sabah) — "Gün N"
 
+## Gece başında "Gece N" pill'i (2 sn). ("— Geliyorlar" YARATIKLAR gelince
+## eklenecek; şimdilik sadece "Gece N". Vinyet artık _process'te yumuşak.)
 func _on_night_fx() -> void:
-	create_tween().tween_property(_vignette, "modulate:a", 0.45, 1.2)
-	_night_pill_label.text = "Gece %d — Geliyorlar..." % DayNight.day
-	_night_pill.visible = true
-	_night_pill.modulate.a = 0.0
-	var tween := create_tween()
-	tween.tween_property(_night_pill, "modulate:a", 1.0, 0.3)
-	tween.tween_interval(2.0)
-	tween.tween_property(_night_pill, "modulate:a", 0.0, 0.4)
-	tween.tween_callback(func(): _night_pill.visible = false)
+	_flash_night_pill("Gece %d" % DayNight.day)
 
+## Sabah: "Gün N" belirir + sabah bonusu kancası (B kısmı Ocak'a bağlayacak).
 func _on_day_fx() -> void:
-	create_tween().tween_property(_vignette, "modulate:a", 0.0, 1.2)
+	_flash_night_pill("Gün %d" % DayNight.day)
+	_morning_reward()
+
+## [PLANLI] Sabah ödülü kancası — BOŞ. Yaratık/B kısmı hasarsız gece → Ocak
+## bonusu olarak dolduracak (BASE_SAVUNMA 14.9). Şimdilik hiçbir şey yapmaz.
+func _morning_reward() -> void:
+	pass
 
 # Kenarlardan iceri yumusak lavanta-lacivert vinyet dokusu
 func _make_vignette_texture() -> ImageTexture:
