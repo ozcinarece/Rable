@@ -339,7 +339,58 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(Vector3(float(kc.x) + 0.5, -0.8, float(kc.y) - 1.5))
 	await get_tree().create_timer(0.6).timeout
 	_snap(save_path.replace(".png", "_su2.png"))
+	_run_save_load_selftest()
 	get_tree().quit()
+
+# Kaydet -> bellegi boz -> yukle -> karsilastir. CI job log'unda
+# "SAVELOAD:" satiri sonucu gosterir; kalicilik bozulursa aninda yakalanir.
+func _run_save_load_selftest() -> void:
+	# 1) Bilinen bir durum olustur: bir yapi + sandik icerigi + esya
+	var pc := _player_cell()
+	var tcell := pc + Vector2i(2, 0)
+	if _diggable(tcell):
+		_held_item = "tezgah"
+		Inventory.add_item("tezgah", 1)
+		_try_place(tcell)
+	var before := {
+		"depth": _depth.size(), "water": _water_level.size(),
+		"placed": _placed.size(), "objects": _objects.size(),
+		"inv_odun": Inventory.get_count("odun"),
+		"depth_sum": 0.0, "water_sum": 0.0,
+	}
+	for c in _depth:
+		before["depth_sum"] += float(_depth[c])
+	for c in _water_level:
+		before["water_sum"] += float(_water_level[c])
+	# 2) Kaydet
+	_save_game_3d()
+	# 3) Bellegi boz (yukleme gercekten dosyadan mi geliyor?)
+	_depth.clear(); _water_level.clear(); _placed.clear()
+	for n in _placed_nodes.values():
+		n.queue_free()
+	_placed_nodes.clear(); _chests.clear(); _objects.clear()
+	# 4) Yukle
+	_load_game_3d()
+	# 5) Karsilastir
+	var after_dsum := 0.0
+	for c in _depth:
+		after_dsum += float(_depth[c])
+	var after_wsum := 0.0
+	for c in _water_level:
+		after_wsum += float(_water_level[c])
+	var ok := (_depth.size() == before["depth"]
+			and _water_level.size() == before["water"]
+			and _placed.size() == before["placed"]
+			and _objects.size() == before["objects"]
+			and absf(after_dsum - float(before["depth_sum"])) < 0.001
+			and absf(after_wsum - float(before["water_sum"])) < 0.001
+			and Inventory.get_count("odun") == int(before["inv_odun"]))
+	print("SAVELOAD: %s depth=%d/%d water=%d/%d placed=%d/%d obj=%d/%d dsum=%.2f/%.2f wsum=%.2f/%.2f odun=%d/%d" % [
+		"PASS" if ok else "FAIL",
+		_depth.size(), before["depth"], _water_level.size(), before["water"],
+		_placed.size(), before["placed"], _objects.size(), before["objects"],
+		after_dsum, before["depth_sum"], after_wsum, before["water_sum"],
+		Inventory.get_count("odun"), before["inv_odun"]])
 
 # Tema test sayfasi: paneller, sekme, butonlar, kategori daireleri.
 # Sadece CI ekran goruntusu modunda kurulur.
