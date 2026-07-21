@@ -14,6 +14,7 @@ extends Node3D
 const MapData = preload("res://scripts/map_data.gd")
 const MapGen = preload("res://scripts/map_gen.gd")       # harita-v2: noise ureteci
 const MapBalance = preload("res://scripts/map_balance.gd")
+const TimeBalance = preload("res://scripts/time_balance.gd")  # gunduz/gece
 const Player3DScript = preload("res://scripts/player3d.gd")
 const DigRules = preload("res://scripts/dig_rules.gd")
 const WaterRules = preload("res://scripts/water_rules.gd")
@@ -566,8 +567,32 @@ func _setup_screenshot(save_path: String) -> void:
 	_snap(save_path.replace(".png", "_yer_esya.png"))
 	await _run_base_selftest(save_path)  # BASE (Bolum 14): sandik/yatak/ocak/platform
 	await _run_survival_selftest(save_path)  # YASAM: can/aclik/yeme/pisirme/olum
+	_run_time_selftest()  # gunduz/gece: faz + uyku kurali
 	_run_save_load_selftest()
 	get_tree().quit()
+
+## gunduz/gece self-test: faz/gün-oranı + uyku kuralı (ilk 3 gece).
+func _run_time_selftest() -> void:
+	DayNight.reset()
+	DayNight.phase = "day"; DayNight.elapsed = 0.0; DayNight.is_night = false
+	var frac_day := DayNight.day_fraction()
+	DayNight.phase = "night"; DayNight.elapsed = 120.0; DayNight.is_night = true
+	var frac_night := DayNight.day_fraction()
+	print("TIMETEST: faz=%s frac_gunduz=%.2f frac_gece=%.2f gece_mi=%s" % [
+		DayNight.phase, frac_day, frac_night, str(DayNight.is_night)])
+	# Uyku kuralı: 2. gece uyunur -> gün 3; 5. gece uyunmaz
+	DayNight.reset(); DayNight.day = 2
+	DayNight.phase = "night"; DayNight.is_night = true
+	var can2 := DayNight.day <= TimeBalance.SLEEP_MAX_NIGHT
+	DayNight.sleep_to_morning()
+	var slept_day := DayNight.day
+	DayNight.day = 5; DayNight.phase = "night"; DayNight.is_night = true
+	var can5 := DayNight.day <= TimeBalance.SLEEP_MAX_NIGHT
+	print("SLEEPTEST: gece2_uyunur=%s uyudu->gun=%d gece5_uyunur=%s" % [
+		str(can2), slept_day, str(can5)])
+	# Kayıt/yükleme testine temiz, deterministik saat bırak
+	DayNight.reset(); DayNight.day = 3
+	DayNight.phase = "day"; DayNight.elapsed = 100.0; DayNight.is_night = false
 
 ## YASAM self-test: yeme doyma, açlık->can erimesi, ölüm+doğuş+envanter,
 ## pişirme istasyon kapısı. CI log'unda EAT/STARVE/DEATH/COOK satırları.
@@ -2542,6 +2567,33 @@ func _spawn_player() -> void:
 func _player_cell() -> Vector2i:
 	return Vector2i(floori(player.position.x), floori(player.position.z))
 
+# --- gunduz/gece Asama 4: Uyku (BASE_SAVUNMA 14.2) --------------------------
+## Yatak etkileşimi: gece "Uyu", gündüz "ev yap" (14.2 doğuş noktası).
+func _use_bed(cell: Vector2i) -> void:
+	if DayNight.is_night:
+		_try_sleep(cell)
+	else:
+		# Gündüz uyumak yok (14.2 + gece görevi): yatak gündüz doğuş noktası atar.
+		set_spawn(cell)
+
+## Uyku kuralı: yalnız ilk SLEEP_MAX_NIGHT gece. Sonrası "Uyuyamazsın..."
+## (gerekçe metni yaratıklarla netleşecek). Kararma → sabaha atla + hafif iyileş.
+func _try_sleep(cell: Vector2i) -> void:
+	if DayNight.day > TimeBalance.SLEEP_MAX_NIGHT:
+		_spawn_floating_text(cell, "Uyuyamazsın...", Color(1, 0.9, 0.6))
+		return
+	var apply := func():
+		DayNight.sleep_to_morning()
+		Health.heal(TimeBalance.SLEEP_HEAL_HEALTH)
+		Hunger.value = minf(Hunger.MAX_VALUE,
+				Hunger.value + TimeBalance.SLEEP_HEAL_HUNGER)
+		Hunger.changed.emit()
+		_spawn_floating_text(_player_cell(), "Sabah oldu!", Color(0.8, 1.0, 0.85))
+	if hud != null and hud.has_method("play_sleep_fade"):
+		hud.play_sleep_fade(apply)  # kararma altında sabah uygulanır
+	else:
+		apply.call()
+
 ## YASAM (Asama 4): olumden sonra dogus. Ev yatagi (set_spawn) varsa orada,
 ## yoksa dunya baslangic hucresinde. PlayerStats can/aclik'i ayrica sifirlar.
 ## Kararma/cila Asama 5'te. Envanter KORUNUR (Balance.DROP_ITEMS_ON_DEATH).
@@ -2629,13 +2681,7 @@ func _on_world_tapped(screen_pos: Vector2) -> void:
 			hud.research_button.button_pressed = true
 			return
 		"yatak":
-			if DayNight.is_night:
-				DayNight.sleep_to_morning()
-				Health.heal(30.0)
-				_spawn_floating_text(cell, "Sabah oldu! +30 can", Color(0.8, 1.0, 0.8))
-			else:
-				# 14.2 gunduz: "burayi ev yap" -> aktif dogus noktasi ata
-				set_spawn(cell)
+			_use_bed(cell)
 			return
 	# Yere birakilmis esya varsa topla
 	if _try_pickup_ground(cell):
@@ -3758,14 +3804,7 @@ func _interact_station(cell: Vector2i, placed: String) -> void:
 		"arastirma_masasi":
 			hud.research_button.button_pressed = true
 		"yatak":
-			if DayNight.is_night:
-				DayNight.sleep_to_morning()
-				Health.heal(30.0)
-				_spawn_floating_text(cell, "Sabah oldu! +30 can",
-						Color(0.8, 1.0, 0.8))
-			else:
-				_spawn_floating_text(cell, "Sadece gece uyunur",
-						Color(1, 0.9, 0.6))
+			_use_bed(cell)
 
 # --- Hedef vurgusu (12.2): paylasilan halka, her kare hedefe tasinir ------
 const _HL_OK := Color(0.42, 0.78, 0.40)     # UI success

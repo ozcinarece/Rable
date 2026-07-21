@@ -1060,6 +1060,19 @@ func _on_saved() -> void:
 var _death_fade: ColorRect
 var _low_hp_vignette: ColorRect
 
+## gunduz/gece Asama 4: Uyku kararması. Siyaha yumuşak geçer, TEPEDE on_peak
+## (sabah uygulanır — kararma altında), sonra açılır.
+func play_sleep_fade(on_peak: Callable) -> void:
+	if _death_fade == null:
+		on_peak.call()
+		return
+	_death_fade.color.a = 0.0
+	var tw := create_tween()
+	tw.tween_property(_death_fade, "color:a", 1.0, 0.5)
+	tw.tween_callback(on_peak)
+	tw.tween_interval(0.35)
+	tw.tween_property(_death_fade, "color:a", 0.0, 0.6)
+
 ## Olum: kisa kararma (respawn_player kararmanin altinda isinlar).
 func _on_player_died(_count: int) -> void:
 	if _death_fade == null:
