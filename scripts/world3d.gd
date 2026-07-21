@@ -2765,7 +2765,7 @@ func _play_sfx(name: String) -> void:
 	if name == "":
 		return
 	for ext in [".ogg", ".wav"]:
-		var path := "res://assets/sfx/" + name + ext
+		var path: String = "res://assets/sfx/" + name + ext
 		if ResourceLoader.exists(path):
 			var pl := AudioStreamPlayer.new()
 			pl.stream = load(path)
@@ -2839,7 +2839,7 @@ func _tick_aim(delta: float) -> void:
 		_aim_guide.mesh = m
 		add_child(_aim_guide)
 	_aim_guide.visible = true
-	var fo := player.facing.normalized()
+	var fo: Vector2 = player.facing.normalized()
 	if fo == Vector2.ZERO:
 		fo = Vector2(0, 1)
 	var fwd := Vector3(fo.x, 0, fo.y)
@@ -2974,7 +2974,7 @@ func _on_attack_pressed() -> void:
 		else:
 			_combo_flip = false
 		_last_attack_ms = now
-	var did := player.play_swing(prof, func(): _melee_hit(cell), 0, combo)
+	var did: bool = player.play_swing(prof, func(): _melee_hit(cell), 0, combo)
 	if did and combo:
 		# Ikinci kesikte kucuk ileri adim — saldiriya yon hissi
 		var fo := Vector2i(player.facing.round())
@@ -3012,7 +3012,7 @@ func _release_aim() -> void:
 		_aim_guide.visible = false
 	var kind := ToolProfiles.ranged_kind(_held_item)
 	var prof := ToolProfiles.get_profile(_held_item)
-	var fo := player.facing.normalized()
+	var fo: Vector2 = player.facing.normalized()
 	if fo == Vector2.ZERO:
 		fo = Vector2(0, 1)
 	var fwd := Vector3(fo.x, 0, fo.y)
