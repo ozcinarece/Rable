@@ -498,7 +498,8 @@ func _setup_screenshot(save_path: String) -> void:
 	_add_ground_item(gpc + Vector2i(-1, 1), "meyve", 1) # kure, kirmizi
 	_scatter_drops(gpc + Vector2i(0, 2), {"kalas": 2, "altin": 1})  # saci
 	_tick_ground_items(0.25)
-	print("GROUNDTEST: yer_esyasi=%d (beklenen 5)" % _ground_items.size())
+	# En az 5 (bu blogun ekledigi); yikim/hasat sacilari fazladan ekleyebilir.
+	print("GROUNDTEST: yer_esyasi=%d (min 5)" % _ground_items.size())
 	var picked := _try_pickup_ground(gpc + Vector2i(0, 1))
 	print("PICKTEST: topla=%s kalan=%d" % [str(picked), _ground_items.size()])
 	_cam_locked = true
