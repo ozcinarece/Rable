@@ -206,6 +206,8 @@ var _place_cell := Vector2i(-999, -999)
 var _ghost: Node3D
 var _ghost_valid: bool = false
 var _ghost_needs_tint: bool = true
+var _torch_lights: Dictionary = {}  # hucre -> OmniLight3D (13.5 mesale)
+const MAX_TORCHES := 8              # ayni anda aktif isik butcesi (mobil)
 var _target_ring: MeshInstance3D   # paylasilan hedef vurgu halkasi
 var _projectiles: Array = []       # ucan mermiler [{node, vel, ...}]
 var _aiming: bool = false          # menzilli silah nisan modu aktif mi
@@ -446,15 +448,40 @@ func _setup_screenshot(save_path: String) -> void:
 	await get_tree().create_timer(0.4).timeout
 	_snap(save_path.replace(".png", "_yapi.png"))
 	print("PLACETEST: placed=%d" % _placed.size())
-	# Asama 3: kurulan duvara vur (hasar) x6, sonra yikim
+	# Asama 3: duvara vur -> hasarli (egik) gorunum, sonra yikim
 	if _placed.has(tcell):
-		for i in 6:
-			_structure_take_hit(tcell, 20, Vector3(0, 0, 1))
+		for i in 3:
+			_structure_take_hit(tcell, 20, Vector3(0, 0, 1))  # 60/80 -> damaged
 		await get_tree().create_timer(0.3).timeout
 		_snap(save_path.replace(".png", "_yapi_hasar.png"))
 		print("HASARTEST: hp_ratio=%.2f placed=%d" % [
 			_structures.hp_ratio(tcell), _placed.size()])
+		for i in 3:
+			_structure_take_hit(tcell, 20, Vector3(0, 0, 1))  # yikim
+		print("YIKIMTEST: placed=%d (duvar %s)" % [_placed.size(),
+			"yikildi" if not _placed.has(tcell) else "duruyor"])
 	_exit_place_mode()
+	# Asama 4: mesale isigi + kapi ac/kapa
+	var lcell := ppc + Vector2i(-1, 0)
+	if not _placed.has(lcell) and not _objects.has(lcell):
+		_ground_char[lcell] = "."; _solid_cells.erase(lcell)
+		_set_placed(lcell, "mesale")
+	var dcell2 := ppc + Vector2i(1, 0)
+	_objects.erase(dcell2); _dummies.erase(dcell2)
+	if _placed.has(dcell2):
+		_remove_placed(dcell2)
+	_ground_char[dcell2] = "."
+	_set_placed(dcell2, "kapi")
+	var closed_solid := _solid_cells.has(dcell2)
+	_toggle_door(dcell2)
+	print("DOORTEST: kapali_kati=%s acik_kati=%s" % [
+		str(closed_solid), str(_solid_cells.has(dcell2))])
+	DayNight.is_night = true
+	DayNight.night_started.emit()
+	camera.position = _cell_center(ppc) + Vector3(0, 3.0, 4.0)
+	camera.look_at(_cell_center(ppc) + Vector3(0, 0.3, 0))
+	await get_tree().create_timer(0.6).timeout
+	_snap(save_path.replace(".png", "_yapi_isik.png"))
 	_run_save_load_selftest()
 	get_tree().quit()
 
@@ -736,6 +763,8 @@ func _process(delta: float) -> void:
 		_tick_projectiles(delta)
 	if _aiming:
 		_tick_aim(delta)
+	if not _torch_lights.is_empty():
+		_update_torches(delta)  # 13.5 isik butcesi + flicker
 	_tick_regrow(delta)
 	_station_timer += delta
 	if _station_timer >= 0.25:
@@ -2490,6 +2519,17 @@ func _set_placed(cell: Vector2i, item_id: String, rot: int = 0) -> void:
 		_apply_damaged_look(cell)
 	if item_id == "sandik" and not _chests.has(cell):
 		_chests[cell] = {}
+	# 13.5 ozel davranislar: kapi katiligi/aciligi + mesale isigi
+	var behavior := String(def.get("behavior", ""))
+	if behavior == "door":
+		var is_open: bool = _structures.is_open(cell)
+		if is_open:
+			_solid_cells.erase(cell)
+			holder.rotation_degrees.y = float(_structures.rotation_of(cell)) + 90.0
+		else:
+			_solid_cells[cell] = true  # kapali kapi katidir
+	elif behavior == "torch":
+		_add_torch_light(cell, holder)
 
 ## Bir yapinin olcekli 3D gorselini (holder+bundle) origin'de kurar; konum/
 ## donme cagirana kalir. Hem yerlestirme hem hayalet onizleme kullanir.
@@ -2523,6 +2563,7 @@ func _remove_placed(cell: Vector2i) -> void:
 	Inventory.add_item(item_id, 1)
 	_placed.erase(cell)
 	_structures.remove(cell)
+	_torch_lights.erase(cell)
 	_solid_cells.erase(cell)
 	_chests.erase(cell)
 	if _placed_nodes.has(cell):
@@ -2824,6 +2865,10 @@ func _describe_target(cell: Vector2i) -> Dictionary:
 					"valid": true, "kind": "repair"}
 		return {"type": "dismantle", "cell": cell, "icon": "repair",
 				"valid": true, "kind": "dismantle"}
+	# KAPI (13.5): dokununca ac/kapa (cekic disi elde)
+	if placed == "kapi":
+		return {"type": "door", "cell": cell, "icon": "open",
+				"valid": true, "kind": "door"}
 	# Yerlestirilmis istasyon/etkilesim
 	if placed in ["sandik", "arastirma_masasi", "yatak"]:
 		return {"type": "station", "cell": cell, "icon": "open",
@@ -2898,6 +2943,9 @@ func _perform_tool_action(t: Dictionary) -> void:
 			return
 		"station":
 			_interact_station(cell, String(t.get("placed", "")))
+			return
+		"door":
+			_toggle_door(cell)
 			return
 	if player.is_swinging():
 		return
@@ -3217,6 +3265,7 @@ func _destroy_structure(cell: Vector2i) -> void:
 	# Yapiyi kaldir (iade yok — yikim)
 	_placed.erase(cell)
 	_structures.remove(cell)
+	_torch_lights.erase(cell)
 	_solid_cells.erase(cell)
 	_chests.erase(cell)
 	if _placed_nodes.has(cell):
@@ -3271,13 +3320,72 @@ func _cheapest_material(cost: Dictionary) -> String:
 	return best
 
 func _first_free_neighbor(cell: Vector2i) -> Vector2i:
-	for off in [Vector2i(0, 1), Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, -1),
-			Vector2i(1, 1), Vector2i(-1, -1), Vector2i(1, -1), Vector2i(-1, 1),
-			Vector2i(0, 0)]:
+	for off: Vector2i in [Vector2i(0, 1), Vector2i(1, 0), Vector2i(-1, 0),
+			Vector2i(0, -1), Vector2i(1, 1), Vector2i(-1, -1), Vector2i(1, -1),
+			Vector2i(-1, 1), Vector2i(0, 0)]:
 		var c := cell + off
 		if is_walkable(c) and not _placed.has(c) and _ground_item_at(c) == -1:
 			return c
 	return Vector2i(-999, -999)
+
+# --- KAPI (13.5): ac/kapa; acikken gecilir+donuk, kapaliyken kati -----------
+func _toggle_door(cell: Vector2i) -> void:
+	if not _structures.has(cell):
+		return
+	var open := not _structures.is_open(cell)
+	_structures.set_open(cell, open)
+	if open:
+		_solid_cells.erase(cell)
+	else:
+		_solid_cells[cell] = true
+	var node: Node3D = _placed_nodes.get(cell, null)
+	if node != null:
+		var base := float(_structures.rotation_of(cell))
+		var tw := create_tween()
+		tw.tween_property(node, "rotation_degrees:y",
+				base + (90.0 if open else 0.0), 0.2) \
+				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	_play_sfx("door")  # gicirti (dosya yoksa sessiz)
+	_spawn_floating_text(cell, "Açıldı" if open else "Kapandı",
+			Color(0.9, 0.9, 0.7))
+	_dirty = true
+
+# --- MESALE (13.5): sicak OmniLight3D + flicker + isik butcesi --------------
+func _add_torch_light(cell: Vector2i, holder: Node3D) -> void:
+	var light := OmniLight3D.new()
+	light.light_color = Color(1.0, 0.62, 0.28)
+	light.light_energy = 2.2
+	light.omni_range = 4.5
+	light.position = Vector3(0, 0.8, 0)
+	light.shadow_enabled = false  # mobil butce
+	holder.add_child(light)
+	_torch_lights[cell] = light
+
+## Isik butcesi + flicker (13.5): oyuncuya en yakin MAX_TORCHES yanar,
+## fazlasi soner (yapi durur). Her kare hafif titresim.
+func _update_torches(delta: float) -> void:
+	if _torch_lights.is_empty():
+		return
+	# Gecersiz dugumleri temizle
+	var cells: Array = []
+	for c: Vector2i in _torch_lights:
+		if is_instance_valid(_torch_lights[c]):
+			cells.append(c)
+	# Oyuncuya uzakliga gore sirala; en yakin MAX_TORCHES aktif
+	var pp := player.position
+	cells.sort_custom(func(a, b):
+		return _cell_center(a).distance_squared_to(pp) \
+				< _cell_center(b).distance_squared_to(pp))
+	var t := Time.get_ticks_msec() / 1000.0
+	for i in cells.size():
+		var light: OmniLight3D = _torch_lights[cells[i]]
+		if i < MAX_TORCHES:
+			light.visible = true
+			# Flicker: enerjiyi hafifce oynat (hucreye gore faz)
+			var phase := float(cells[i].x * 7 + cells[i].y * 13)
+			light.light_energy = 2.2 * (0.86 + 0.14 * sin(t * 11.0 + phase))
+		else:
+			light.visible = false
 
 ## Kukla yerlestir (12.7): elde "kukla" ile bos hucreye dokun.
 func _try_place_dummy(cell: Vector2i) -> bool:

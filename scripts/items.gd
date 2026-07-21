@@ -47,6 +47,7 @@ const ITEMS: Dictionary = {
 	"sandik": {"name": "Sandık", "icon": "res://assets/tiles/sandik.png"},
 	"zemin": {"name": "Zemin", "icon": "res://assets/tiles/zemin.png"},
 	"kapi": {"name": "Kapı", "icon": "res://assets/tiles/kapi.png"},
+	"mesale": {"name": "Meşale", "icon": "res://assets/items/mesale.png"},
 	"yatak": {"name": "Yatak", "icon": "res://assets/tiles/yatak.png"},
 	"tuzak": {"name": "Tuzak", "icon": "res://assets/tiles/tuzak.png"},
 }
@@ -61,6 +62,7 @@ const PLACEABLE: Dictionary = {
 	"kamp_evi": "E",
 	"sandik": "S",
 	"kapi": "D",
+	"mesale": "L",
 	"yatak": "Y",
 	"tuzak": "Z",
 	"zemin": "f",
@@ -114,7 +116,8 @@ const DESCRIPTIONS: Dictionary = {
 	"kamp_evi": "Yeniden dogma noktasi.",
 	"sandik": "Sinirsiz depolama; dokununca acilir.",
 	"zemin": "Ev tabani; yurunebilir doseme.",
-	"kapi": "Sen gecersin, yaratiklar gecemez.",
+	"kapi": "Sen gecersin, yaratiklar gecemez. Dokununca acilir/kapanir.",
+	"mesale": "Eline al ve yere koy: cevreyi sicak isikla aydinlatir.",
 	"yatak": "Gece uyu: sabah olur (+30 can).",
 	"tuzak": "Ustunden gecen yaratik hasar alir.",
 }

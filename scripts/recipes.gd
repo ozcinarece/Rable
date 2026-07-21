@@ -74,6 +74,8 @@ const CRAFT_RECIPES: Dictionary = {
 			"station": "", "category": "yapi", "time": 1.5},
 	"kapi": {"output": {"kapi": 1}, "cost": {"kalas": 3, "ip": 1},
 			"station": "", "category": "yapi", "time": 2.5},
+	"mesale": {"output": {"mesale": 1}, "cost": {"cubuk": 1, "odun": 1},
+			"station": "", "category": "yapi", "time": 1.5},
 	"sandik": {"output": {"sandik": 1}, "cost": {"kalas": 4, "ip": 1},
 			"station": "", "category": "yapi", "time": 2.5},
 	"tezgah": {"output": {"tezgah": 1}, "cost": {"kalas": 4, "cubuk": 2},

@@ -14,7 +14,16 @@ func place(cell: Vector2i, id: String, rot: int, max_hp: int) -> void:
 	_instances[cell] = {
 		"id": id, "rot": rot,
 		"hp": max_hp, "max_hp": max_hp, "state": "ok",
+		"open": false,  # kapilar icin (13.5); digerleri kullanmaz
 	}
+
+## Kapi ac/kapa durumu (13.5)
+func is_open(cell: Vector2i) -> bool:
+	return bool(_instances.get(cell, {}).get("open", false))
+
+func set_open(cell: Vector2i, v: bool) -> void:
+	if _instances.has(cell):
+		_instances[cell]["open"] = v
 
 func remove(cell: Vector2i) -> void:
 	_instances.erase(cell)
@@ -68,7 +77,8 @@ func to_save_data() -> Array:
 		var inst: Dictionary = _instances[cell]
 		out.append({"x": cell.x, "y": cell.y, "id": inst["id"],
 				"rot": inst["rot"], "hp": inst["hp"],
-				"max_hp": inst["max_hp"], "state": inst["state"]})
+				"max_hp": inst["max_hp"], "state": inst["state"],
+				"open": inst.get("open", false)})
 	return out
 
 func from_save_data(data: Array) -> void:
@@ -82,6 +92,7 @@ func from_save_data(data: Array) -> void:
 				"hp": int(e.get("hp", 1)),
 				"max_hp": int(e.get("max_hp", 1)),
 				"state": String(e.get("state", "ok")),
+				"open": bool(e.get("open", false)),
 			}
 
 func clear() -> void:
