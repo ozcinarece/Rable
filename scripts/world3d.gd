@@ -1006,12 +1006,14 @@ func _sample_terrain(x: float, z: float) -> Array:
 			dmin = mini(dmin, dd)
 			dmax = maxi(dmax, dd)
 	sharp = dmin != dmax
-	var hfx := smoothstep(0.42, 0.58, fx) if sharp else fx
-	var hfz := smoothstep(0.42, 0.58, fz) if sharp else fz
-	# Derinlik sinirinda renk NEREDEYSE aninda degisir: duvar yuzeyi tek
-	# katman renginde okunur (boydan boya gradyan = bulanik leke olurdu)
-	var cfx := smoothstep(0.46, 0.54, fx) if sharp else smoothstep(0.2, 0.8, fx)
-	var cfz := smoothstep(0.46, 0.54, fz) if sharp else smoothstep(0.2, 0.8, fz)
+	# SERT ADIM (smoothstep degil): mesh koseleri 1/res araliklarla
+	# ornekleniyor; smoothstep bandina denk gelen kose %50 karisik deger
+	# alir ve GPU bunu iki quad boyunca dogrusal yayar = bulanik leke.
+	# Sert adimda her kose ya A ya B degerini alir; gecis tek quad'a siner.
+	var hfx := (0.0 if fx < 0.5 else 1.0) if sharp else fx
+	var hfz := (0.0 if fz < 0.5 else 1.0) if sharp else fz
+	var cfx := (0.0 if fx < 0.5 else 1.0) if sharp else smoothstep(0.2, 0.8, fx)
+	var cfz := (0.0 if fz < 0.5 else 1.0) if sharp else smoothstep(0.2, 0.8, fz)
 	for dj in 2:
 		for di in 2:
 			var wgt := (hfx if di == 1 else 1.0 - hfx) * (hfz if dj == 1 else 1.0 - hfz)
@@ -1050,13 +1052,21 @@ func _build_chunk(ck: Vector2i) -> void:
 	if _terrain_chunks.has(ck):
 		_terrain_chunks[ck].queue_free()
 		_terrain_chunks.erase(ck)
-	var res := 4  # hucre basina 4x4 yama (0.25 m)
 	var x0 := ck.x * CHUNK_CELLS
 	var y0 := ck.y * CHUNK_CELLS
 	var x1 := mini(x0 + CHUNK_CELLS, _map_w)
 	var y1 := mini(y0 + CHUNK_CELLS, _map_h)
 	if x0 >= x1 or y0 >= y1:
 		return
+	var res := 4  # hucre basina 4x4 yama (0.25 m)
+	# Kazi iceren (ya da 1 hucre komsulugunda kazi olan) parcalar iki kat
+	# cozunurluk alir: blok duvar gecisi 1/8 hucreye siner, dik ve net durur.
+	# Komsuluk payi sayesinde sinirdaki iki parca ayni cozunurlukte kalir
+	# (farkli cozunurluk = kenar catlagi riski).
+	for cj in range(y0 - 1, y1 + 1):
+		for ci in range(x0 - 1, x1 + 1):
+			if _depth.get(Vector2i(ci, cj), 0) != 0:
+				res = 8
 	var vw := (x1 - x0) * res
 	var vh := (y1 - y0) * res
 	var step := 1.0 / float(res)
