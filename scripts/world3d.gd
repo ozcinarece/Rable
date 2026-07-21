@@ -857,6 +857,10 @@ func _build_environment() -> void:
 	sun.light_color = Color(1.0, 0.96, 0.88)
 	sun.light_energy = 1.05
 	sun.shadow_enabled = true
+	# Golge haritasi kamera menziline daraltilir: uzak/yuksek agac
+	# golgeleri dev bulanik leke olmasin (netlik dramatik artar)
+	sun.directional_shadow_max_distance = 40.0
+	sun.shadow_blur = 0.6
 	add_child(sun)
 
 	camera = Camera3D.new()
