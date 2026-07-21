@@ -867,6 +867,8 @@ func _process(delta: float) -> void:
 		var ht := Time.get_ticks_msec() / 1000.0
 		_hearth_light.light_energy = 3.0 * (0.9 + 0.1 * sin(ht * 8.0))
 	_tick_regrow(delta)
+	# YASAM: kosma/alet eforu -> aclik daha hizli azalir (PlayerStats okur)
+	PlayerStats.exerting = player.is_exerting()
 	if not _ground_items.is_empty():
 		_tick_ground_items(delta)  # #1: suzulme + donme
 	_station_timer += delta
@@ -2254,10 +2256,21 @@ func _spawn_player() -> void:
 	player.set_hair(hair_style, hair_color)
 	player.set_held_tool("")  # ToolPivot olussun (yumruk sallamasi icin)
 	player.world_tapped.connect(_on_world_tapped)
+	PlayerStats.world = self  # yasam: olum -> respawn_player cagrisi icin
 	camera.position = player.position + _camera_offset()
 
 func _player_cell() -> Vector2i:
 	return Vector2i(floori(player.position.x), floori(player.position.z))
+
+## YASAM (Asama 4): olumden sonra dogus. Ev yatagi (set_spawn) varsa orada,
+## yoksa dunya baslangic hucresinde. PlayerStats can/aclik'i ayrica sifirlar.
+## Kararma/cila Asama 5'te. Envanter KORUNUR (Balance.DROP_ITEMS_ON_DEATH).
+func respawn_player() -> void:
+	var cell := _respawn_cell()
+	player.position = _cell_center(cell)
+	camera.position = player.position + _camera_offset()
+	_spawn_floating_text(cell, "Yeniden doğdun", Color(0.8, 1.0, 0.9))
+	_dirty = true
 
 # --- Etkilesim ----------------------------------------------------------
 

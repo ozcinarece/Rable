@@ -145,6 +145,9 @@ func _ready() -> void:
 	Hunger.changed.connect(_update_hunger)
 	Thirst.changed.connect(_update_thirst)
 	Health.changed.connect(_update_health)
+	# YASAM: aclik esigi uyarisi -> mide barinda warning nabzi (UI_DESIGN 4.1)
+	PlayerStats.hunger_warning.connect(_on_hunger_warning)
+	PlayerStats.hunger_recovered.connect(_on_hunger_recovered)
 	DayNight.changed.connect(_update_day_label)
 	action_button.pressed.connect(func():
 		_pop_button(action_button)
@@ -519,8 +522,32 @@ func _update_hunger() -> void:
 	if _stomach_bar == null:
 		return
 	_stomach_bar.value = Hunger.value
-	eat_button.disabled = (Inventory.get_count("meyve") <= 0
-			and Inventory.get_count("mantar") <= 0) or Hunger.value >= Hunger.MAX_VALUE
+	# Yenebilir bir sey var mi? (SurvivalBalance uzerinden — tek kaynak)
+	eat_button.disabled = not _has_edible() or Hunger.value >= Hunger.MAX_VALUE
+
+## Envanterde yenebilir (edible) bir esya var mi? (Ye butonu icin)
+func _has_edible() -> bool:
+	for item_id in Inventory.slots:
+		if item_id != null and PlayerStats.is_edible(String(item_id["id"])):
+			return true
+	return false
+
+var _hunger_pulse: Tween
+
+## Aclik esigin altina dustu: mide barinda uyari nabzi (UI_DESIGN 4.1).
+func _on_hunger_warning() -> void:
+	if _stomach_bar == null or (_hunger_pulse != null and _hunger_pulse.is_valid()):
+		return
+	_hunger_pulse = create_tween().set_loops()
+	_hunger_pulse.tween_property(_stomach_bar, "modulate", UIColors.WARNING, 0.5)
+	_hunger_pulse.tween_property(_stomach_bar, "modulate", Color.WHITE, 0.5)
+
+func _on_hunger_recovered() -> void:
+	if _hunger_pulse != null and _hunger_pulse.is_valid():
+		_hunger_pulse.kill()
+	_hunger_pulse = null
+	if _stomach_bar != null:
+		_stomach_bar.modulate = Color.WHITE
 
 func _update_thirst() -> void:
 	if _drop_bar == null:
@@ -546,6 +573,7 @@ func _on_reset_pressed() -> void:
 	Hunger.reset()
 	Thirst.reset()
 	Health.reset()
+	PlayerStats.reset()
 	DayNight.reset()
 	get_tree().reload_current_scene()
 

@@ -1,23 +1,16 @@
 extends Node
-## Aclik sistemi - autoload (singleton).
-## Deger zamanla azalir; sifira inince oyuncu yavaslar (olum M5'te,
-## can sistemiyle birlikte gelecek). Meyve yiyerek doldurulur.
+## Aclik sistemi - autoload (singleton). DEGER + SINYAL deposu.
+## Azalma/esik/olum mantigi ve TUM sayilar artik PlayerStats +
+## SurvivalBalance'ta (tek merkez, kod icinde sabit yok). Burada self-decay
+## YOK — PlayerStats surer. Yiyecekle doldurulur.
 
 signal changed
 
 const MAX_VALUE: float = 100.0
-## Saniyede azalma miktari (0.25 -> yaklasik 6.5 dakikada tukeniyor)
-const DECAY_PER_SECOND: float = 0.25
 
 var value: float = MAX_VALUE
 
-func _process(delta: float) -> void:
-	var old := int(value)
-	value = maxf(0.0, value - DECAY_PER_SECOND * delta)
-	if int(value) != old:
-		changed.emit()
-
-## Aclik sifirda mi? (oyuncu yavaslar)
+## Aclik sifirda mi? (can erimesi PlayerStats'ta)
 func is_starving() -> bool:
 	return value <= 0.0
 

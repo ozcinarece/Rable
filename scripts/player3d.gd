@@ -50,7 +50,13 @@ const TOOL_GLB := {
 ## sallanmayi olusturur. Model pivot'un cocugudur.
 var _tool_pivot: Node3D
 var _swinging: bool = false
+var _exerting_move: bool = false  # kosarak hareket (yasam: efor carpani)
 signal swing_finished  # bir sonraki eylem/kombo icin (Asama 4 kilic)
+
+## Efor sarfi (yasam sistemi): kosma veya alet sallamasi. world3d okur ->
+## PlayerStats.effort. Aclik eforla daha hizli azalir.
+func is_exerting() -> bool:
+	return _exerting_move or _swinging
 
 var world: Node3D  # world3d atar; is_walkable(cell) saglar
 var facing := Vector2(0, 1)  # son yuruyus yonu (aksiyon butonu hedefi)
@@ -715,11 +721,13 @@ func _process(_delta: float) -> void:
 func _physics_process(delta: float) -> void:
 	var dir := _get_input_direction()
 	if dir == Vector2.ZERO:
+		_exerting_move = false
 		_play(_anim_idle)
 		return
 	facing = dir
 	# Kosma: parmagi uzaga cek (veya klavyede Shift)
 	var running := _wants_run()
+	_exerting_move = running  # efor: kosma aclik carpanini artirir (yasam)
 	_play(_anim_run if running else _anim_walk)
 	var speed := (RUN_SPEED if running else SPEED) * water_factor * action_factor
 	_try_move(Vector3(dir.x, 0, dir.y) * speed * delta)
