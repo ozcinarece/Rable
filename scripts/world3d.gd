@@ -13,6 +13,7 @@ extends Node3D
 
 const MapData = preload("res://scripts/map_data.gd")
 const Player3DScript = preload("res://scripts/player3d.gd")
+const DigRules = preload("res://scripts/dig_rules.gd")
 const Items = preload("res://scripts/items.gd")
 
 ## Zemin turleri: renk + ust yuzey yuksekligi. "speckled": true olan
@@ -156,6 +157,11 @@ const HAIR_COLORS := [
 var _ground_char: Dictionary = {}  # hucre -> zemin karakteri
 var _objects: Dictionary = {}      # hucre -> "T"/"#"/"m"/"n"
 var _object_hits: Dictionary = {}  # hucre -> alinan vurus
+# KAZI MODULU (11.1): hucre derinligi. Pozitif = kazilmis (1-4),
+# negatif = toprak yigini yukseltisi (-1/-2). Gorsel TAMAMEN bu veriden
+# turer (_cell_props); su modeli (11.2) _water_level'i okuyacak.
+var _depth: Dictionary = {}        # hucre -> int (-2..4)
+var _water_level: Dictionary = {}  # hucre -> float (11.2 hazirligi, hep 0)
 var _placed: Dictionary = {}       # hucre -> yerlestirilen yapi id'si
 var _placed_nodes: Dictionary = {} # hucre -> yapi gorseli (Node3D)
 var _chests: Dictionary = {}       # sandik hucresi -> icerik {esya: adet}
@@ -285,6 +291,20 @@ func _setup_screenshot(save_path: String) -> void:
 			_set_placed(pcell, pair[0])
 	await get_tree().create_timer(1.0).timeout
 	_snap(save_path.replace(".png", "_b3.png"))
+	# Son kare: KAZI MODULU - derinlik merdiveni (1..4) + toprak tumsekleri
+	var kc := _player_cell() + Vector2i(-4, 0)
+	for k in 4:
+		var dcell := kc + Vector2i(0, -k)
+		if _diggable(dcell):
+			_depth[dcell] = k + 1
+	for k in 2:
+		var mcell := kc + Vector2i(-2, -k)
+		if _diggable(mcell):
+			_depth[mcell] = -(k + 1)
+	_build_terrain()
+	_build_decor(_decor_cells)
+	await get_tree().create_timer(1.0).timeout
+	_snap(save_path.replace(".png", "_kazi.png"))
 	get_tree().quit()
 
 # Tema test sayfasi: paneller, sekme, butonlar, kategori daireleri.
@@ -866,6 +886,10 @@ func _build_world() -> void:
 				"T", "#", "m":
 					_objects[cell] = ch
 					_solid_cells[cell] = true
+				"o":
+					# Eski ikili cukur: kazi modulunde depth=2 cukura donusur
+					ground = "d"
+					_depth[cell] = 2
 				_:
 					if GROUND_DEFS.has(ch):
 						ground = ch
@@ -931,13 +955,24 @@ func _cell_props(cx: int, cy: int) -> Array:
 	if ch == "~":
 		# Golun dibi kumlu; su yuzeyini deniz duzlemi saglar
 		return [-0.40, Color(0.62, 0.54, 0.36)]
-	if ch == "o":
-		return [-0.30, def["color"]]
 	if ch == "h":
 		return [1.1, def["color"]]
 	# Duz alanlar hafif dalgali: dogal tepecik hissi (yumusak fonksiyon)
 	var roll := sin(cx * 0.37) * cos(cy * 0.29) * 0.07 \
 			+ sin(cx * 0.15 + cy * 0.42) * 0.05
+	# KAZI (11.1/11.3): derinlik veriden dusulur, yigin veriden eklenir.
+	# Kenar duvarlari harmanli arazi + falez boyamasindan kendiliginden
+	# olusur; derin katman kaya rengine doner.
+	var d: int = _depth.get(Vector2i(cx, cy), 0)
+	if d != 0:
+		var col: Color = def["color"]
+		if d >= 3:
+			col = Color(0.42, 0.39, 0.34)   # kaya katmani
+		elif d > 0:
+			col = Color(0.44, 0.31, 0.20)   # kazilmis toprak
+		else:
+			col = Color(0.47, 0.34, 0.22)   # toprak tumsegi
+		return [roll - float(d) * DigRules.DEPTH_STEP, col]
 	return [roll, def["color"]]
 
 # Bir dunya noktasinda yukseklik+renk (4 komsu hucrenin harmani)
@@ -958,76 +993,110 @@ func _sample_terrain(x: float, z: float) -> Array:
 			col += Color(props[1]) * wgt
 	return [height, col]
 
-var _terrain_node: MeshInstance3D  # kazma sonrasi yeniden kurmak icin
+# Arazi 8x8 hucrelik PARCALAR halinde kurulur: kazi yalnizca ilgili
+# parcalari yeniden uretir (tum haritayi degil - mobil performansi).
+const CHUNK_CELLS := 8
+var _terrain_chunks: Dictionary = {}  # parca koordinati -> MeshInstance3D
+var _terrain_material: StandardMaterial3D
 
 func _build_terrain() -> void:
-	if _terrain_node != null:
-		_terrain_node.queue_free()
-	var res := 4  # hucre basina 4x4 yama (0.25 m) - falez kenari keskin cikar
-	var vw := _map_w * res
-	var vh := _map_h * res
-	# 1. gecis: yukseklik + ham renk izgarasi
-	var hgt: Array = []
-	var raw: Array = []
-	for j in vh + 1:
-		var row_h := PackedFloat32Array()
-		var row_c: Array = []
-		for i in vw + 1:
-			var s := _sample_terrain(float(i) / float(res), float(j) / float(res))
-			row_h.append(float(s[0]))
-			row_c.append(s[1])
-		hgt.append(row_h)
-		raw.append(row_c)
-	# 2. gecis: diklik izgaradan olculur (0.5 m mesafedeki komsu farki),
-	# renkler falez/gecis kusagina gore boyanir
+	for key in _terrain_chunks:
+		_terrain_chunks[key].queue_free()
+	_terrain_chunks.clear()
+	for cj in ceili(float(_map_h) / CHUNK_CELLS):
+		for ci in ceili(float(_map_w) / CHUNK_CELLS):
+			_build_chunk(Vector2i(ci, cj))
+
+func _terrain_mat() -> StandardMaterial3D:
+	if _terrain_material == null:
+		_terrain_material = StandardMaterial3D.new()
+		_terrain_material.vertex_color_use_as_albedo = true
+		_terrain_material.roughness = 1.0
+		_terrain_material.albedo_texture = _make_neutral_speckle()
+		# Dunya-uzayi doku: dik yamaclarda cizgi cizgi akmaz
+		_terrain_material.uv1_triplanar = true
+		_terrain_material.uv1_scale = Vector3(0.5, 0.5, 0.5)
+	return _terrain_material
+
+func _build_chunk(ck: Vector2i) -> void:
+	if _terrain_chunks.has(ck):
+		_terrain_chunks[ck].queue_free()
+		_terrain_chunks.erase(ck)
+	var res := 4  # hucre basina 4x4 yama (0.25 m)
+	var x0 := ck.x * CHUNK_CELLS
+	var y0 := ck.y * CHUNK_CELLS
+	var x1 := mini(x0 + CHUNK_CELLS, _map_w)
+	var y1 := mini(y0 + CHUNK_CELLS, _map_h)
+	if x0 >= x1 or y0 >= y1:
+		return
+	var vw := (x1 - x0) * res
+	var vh := (y1 - y0) * res
+	var step := 1.0 / float(res)
+	# Kose noktalari: yukseklik + renk. Diklik dunya orneklemesiyle
+	# olculur ki parca sinirlarinda falez boyama tutarli kalsin.
+	var pts: Array = []
 	var cols: Array = []
 	for j in vh + 1:
-		var row: Array = []
+		var row_p := PackedVector3Array()
+		var row_c: Array = []
 		for i in vw + 1:
-			var height: float = hgt[j][i]
-			var c: Color = raw[j][i]
-			var steep := 0.0
-			for off: Vector2i in [Vector2i(2, 0), Vector2i(-2, 0), Vector2i(0, 2), Vector2i(0, -2)]:
-				var ni: int = clampi(i + off.x, 0, vw)
-				var nj: int = clampi(j + off.y, 0, vh)
-				steep = maxf(steep, absf(hgt[nj][ni] - height))
+			var x := float(x0) + float(i) * step
+			var z := float(y0) + float(j) * step
+			var s := _sample_terrain(x, z)
+			var height := float(s[0])
+			var c: Color = s[1]
+			var steep := maxf(
+					absf(float(_sample_terrain(x + 0.5, z)[0]) - height),
+					absf(float(_sample_terrain(x, z + 0.5)[0]) - height))
+			steep = maxf(steep, absf(float(_sample_terrain(x - 0.5, z)[0]) - height))
+			steep = maxf(steep, absf(float(_sample_terrain(x, z - 0.5)[0]) - height))
 			if steep > 0.40:
-				# Falez: net yatay katmanlar (bulanik gri yerine kaya seritleri)
+				# Falez: net yatay katmanlar
 				var layer := int(floorf((height + 8.0) * 5.0))
 				var band := 0.30 if layer % 2 == 0 else 0.70
-				band += sin(float(i) * 0.9 + float(j) * 0.7) * 0.10
+				band += sin(x * 3.6 + z * 2.8) * 0.10
 				c = Color(0.33, 0.29, 0.24).lerp(
 						Color(0.49, 0.43, 0.35), clampf(band, 0.0, 1.0))
 			elif steep > 0.26:
-				# Cim -> kaya arasinda dar toprak kusagi (yesil falezden akmasin)
+				# Cim -> kaya arasi dar toprak kusagi
 				c = c.lerp(Color(0.40, 0.34, 0.25), (steep - 0.26) / 0.14 * 0.85)
-			# Organik his: renkte deterministik minik oynama
-			var n := sin(float(i) * 12.9898 + float(j) * 78.233) * 0.035
-			row.append(Color(c.r * (1.0 + n), c.g * (1.0 + n), c.b * (1.0 + n)))
-		cols.append(row)
+			# Organik his: deterministik minik renk oynamasi
+			var n := sin(x * 51.9592 + z * 313.0) * 0.035
+			row_p.append(Vector3(x, height, z))
+			row_c.append(Color(c.r * (1.0 + n), c.g * (1.0 + n), c.b * (1.0 + n)))
+		pts.append(row_p)
+		cols.append(row_c)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var step := 1.0 / float(res)
 	for j in vh:
 		for i in vw:
 			for tri in [[Vector2i(i, j), Vector2i(i + 1, j), Vector2i(i, j + 1)],
 					[Vector2i(i + 1, j), Vector2i(i + 1, j + 1), Vector2i(i, j + 1)]]:
 				for v: Vector2i in tri:
 					st.set_color(cols[v.y][v.x])
-					st.add_vertex(Vector3(float(v.x) * step, hgt[v.y][v.x], float(v.y) * step))
+					st.add_vertex(pts[v.y][v.x])
 	st.generate_normals()
 	var inst := MeshInstance3D.new()
 	inst.mesh = st.commit()
-	var material := StandardMaterial3D.new()
-	material.vertex_color_use_as_albedo = true
-	material.roughness = 1.0
-	material.albedo_texture = _make_neutral_speckle()
-	# Ucgen UV'si yerine dunya-uzayi doku: dik yamaclarda cizgi cizgi akmaz
-	material.uv1_triplanar = true
-	material.uv1_scale = Vector3(0.5, 0.5, 0.5)
-	inst.material_override = material
+	inst.material_override = _terrain_mat()
 	add_child(inst)
-	_terrain_node = inst
+	_terrain_chunks[ck] = inst
+
+## Bir hucre degisince yalnizca etkilenen parcalari yeniden kurar
+## (harman + diklik ornekleme yaricapi nedeniyle 2 hucre pay birakilir)
+func _refresh_terrain_at(cell: Vector2i) -> void:
+	var touched: Dictionary = {}
+	for dy in range(-2, 3):
+		for dx in range(-2, 3):
+			var c := cell + Vector2i(dx, dy)
+			if c.x < 0 or c.y < 0 or c.x >= _map_w or c.y >= _map_h:
+				continue
+			touched[Vector2i(floori(c.x / float(CHUNK_CELLS)),
+					floori(c.y / float(CHUNK_CELLS)))] = true
+	for ck in touched:
+		_build_chunk(ck)
+	_build_decor(_decor_cells)
+	_rebuild_objects()
 
 # Notr benek dokusu: koyu/acik gri noktalar, renkleri carparak dokular
 var _neutral_speckle: ImageTexture
@@ -1231,8 +1300,8 @@ func _build_decor(grass_cells: Array) -> void:
 	for cell in grass_cells:
 		if _objects.has(cell) or cell == _spawn_cell:
 			continue
-		if _ground_char.get(cell, ".") == "o":
-			continue  # kazilmis cukurda sus otu olmaz
+		if int(_depth.get(cell, 0)) != 0:
+			continue  # kazilmis/yigilmis hucrede sus otu olmaz
 		var h := absi(cell.x * 92821 + cell.y * 68917) % 100
 		if h >= 20:
 			continue  # ~her 5 hucreden biri suslenir
@@ -1610,55 +1679,95 @@ func _on_world_tapped(screen_pos: Vector2) -> void:
 	# Elde yerlestirilebilir yapi: yere kur
 	if PLACE_MODELS.has(_held_item) and _try_place(cell):
 		return
-	# Kurek eldeyken bos zemine dokun: cukur kaz (stratejik engel + toprak)
-	if _held_item == "kurek" and _can_dig(cell):
-		_dig_pit(cell)
+	# KAZI MODULU (11.1/11.3): kurek/kazma ile kademeli kaz,
+	# toprakla doldur/yukselt
+	if _held_item == "toprak" and _try_pile(cell):
 		return
-	# Toprak eldeyken cukura dokun: doldur
-	if _held_item == "toprak" and _ground_char.get(cell, "") == "o":
-		_fill_pit(cell)
+	if (DigRules.SHOVEL_LIMITS.has(_held_item)
+			or DigRules.PICKAXE_LIMITS.has(_held_item)) and _try_dig(cell):
 		return
 	_try_harvest(cell)
 
-# --- Cukur kazma / doldurma ----------------------------------------------
-# Cukur ("o") gecilmez: oyuncu ve (B3'te gelecek) yaratiklar uzerinden
-# yuruyemez. Kazi toprak verir; toprakla geri doldurulur.
+# --- Kazi modulu (KAZI_SU_MODULU.md 11.1 + 11.3 + 11.4) --------------------
+# Kazi SADECE hucre verisini (_depth) degistirir; gorunum _cell_props
+# uzerinden veriden turer. Su modeli (11.2) _water_level'i okuyacak.
+# TODO(11.1-tirmanma): derin cukurdan cikamama/yavaslamaca cezasi
+# yaratik tirmanma sistemiyle birlikte gelecek; simdilik oyuncu her
+# derinlige girip cikabilir.
 
-func _can_dig(cell: Vector2i) -> bool:
+# Hucre kazilabilir/yigilabilir bir zemin mi? (nesnesiz cim/toprak/kum)
+func _diggable(cell: Vector2i) -> bool:
 	if cell == _player_cell() or cell == _spawn_cell:
 		return false
-	if _objects.has(cell):
+	if _objects.has(cell) or _placed.has(cell):
 		return false
 	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
 		return false
 	return _ground_char.get(cell, "") in [".", "d", "s"]
 
-func _dig_pit(cell: Vector2i) -> void:
-	if not Inventory.can_add_all({"toprak": 1}):
+func _try_dig(cell: Vector2i) -> bool:
+	if not _diggable(cell):
+		return false
+	var d: int = _depth.get(cell, 0)
+	if d >= 4:
+		_spawn_floating_text(cell, "Daha derin kazılamaz", Color(1, 0.9, 0.6))
+		return true
+	var is_rock: bool = d >= DigRules.ROCK_DEPTH
+	if is_rock:
+		# Kaya katmani: kazma gerekir (11.1)
+		if not DigRules.PICKAXE_LIMITS.has(_held_item):
+			_spawn_floating_text(cell, "Kaya katmanı — kazma gerek", Color(1, 0.9, 0.6))
+			return true
+		if d >= int(DigRules.PICKAXE_LIMITS[_held_item]):
+			_spawn_floating_text(cell, "Daha derine demir kazma gerek", Color(1, 0.9, 0.6))
+			return true
+	else:
+		# Toprak katmani: kurek gerekir
+		if not DigRules.SHOVEL_LIMITS.has(_held_item):
+			_spawn_floating_text(cell, "Toprak katmanı — kürek kullan", Color(1, 0.9, 0.6))
+			return true
+		if d >= int(DigRules.SHOVEL_LIMITS[_held_item]):
+			_spawn_floating_text(cell, "Daha derine demir kürek gerek", Color(1, 0.9, 0.6))
+			return true
+	# Temel dusus: toprak katmani toprak, kaya katmani tas verir.
+	# Ek dususler derinlige gore veri tablosundan (11.4).
+	var new_depth := d + 1
+	var drops: Dictionary = {"tas": 1} if is_rock else {"toprak": 1}
+	var bonus := DigRules.roll_loot(new_depth)
+	for item_id in bonus:
+		drops[item_id] = int(drops.get(item_id, 0)) + int(bonus[item_id])
+	if not Inventory.can_add_all(drops):
 		_spawn_floating_text(cell, "Envanter dolu!", Color(1, 0.6, 0.6))
-		return
-	_ground_char[cell] = "o"
-	_solid_cells[cell] = true
-	Inventory.add_item("toprak", 1)
-	_spawn_floating_text(cell, "+1 Toprak", Color(0.9, 0.75, 0.55))
-	if hud != null and hud.has_method("fly_pickup"):
-		hud.fly_pickup("toprak",
-				camera.unproject_position(_cell_center(cell) + Vector3(0, 0.5, 0)))
-	_refresh_terrain()
+		return true
+	_depth[cell] = new_depth
+	Inventory.add_all(drops)
+	var gained: PackedStringArray = []
+	var fly_from := camera.unproject_position(_cell_center(cell) + Vector3(0, 0.5, 0))
+	for item_id in drops:
+		gained.append("+%d %s" % [drops[item_id], Items.display_name(item_id)])
+		if hud != null and hud.has_method("fly_pickup"):
+			hud.fly_pickup(item_id, fly_from)
+	_spawn_floating_text(cell, " ".join(gained), Color(0.9, 0.8, 0.6))
+	_refresh_terrain_at(cell)
+	return true
 
-func _fill_pit(cell: Vector2i) -> void:
+## Toprak yigma (11.3): cukuru doldurur ya da duz zemini yukseltir
+func _try_pile(cell: Vector2i) -> bool:
+	if not _diggable(cell):
+		return false
+	var d: int = _depth.get(cell, 0)
+	if d <= -DigRules.MAX_RAISE:
+		_spawn_floating_text(cell, "Daha fazla yükseltilemez", Color(1, 0.9, 0.6))
+		return true
 	if not Inventory.remove_item("toprak", 1):
-		return
-	_ground_char[cell] = "."
-	_solid_cells.erase(cell)
-	_spawn_floating_text(cell, "Çukur dolduruldu", Color(0.8, 1.0, 0.8))
-	_refresh_terrain()
-
-# Zemin degisince arazi ortusu, susler ve nesne yukseklikleri tazelenir
-func _refresh_terrain() -> void:
-	_build_terrain()
-	_build_decor(_decor_cells)
-	_rebuild_objects()
+		return false
+	if d - 1 == 0:
+		_depth.erase(cell)
+	else:
+		_depth[cell] = d - 1
+	_spawn_floating_text(cell, "Toprak döküldü", Color(0.85, 0.95, 0.7))
+	_refresh_terrain_at(cell)
+	return true
 
 # --- Yapi yerlestirme (B3) ------------------------------------------------
 
