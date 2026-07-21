@@ -305,6 +305,11 @@ func _setup_screenshot(save_path: String) -> void:
 	_build_decor(_decor_cells)
 	await get_tree().create_timer(1.0).timeout
 	_snap(save_path.replace(".png", "_kazi.png"))
+	# Teshis karesi: kazi bolgesine tepeden yakin bakis
+	camera.position = Vector3(float(kc.x) + 0.5, 10.0, float(kc.y) + 2.5)
+	camera.rotation_degrees = Vector3(-78, 0, 0)
+	await get_tree().create_timer(0.6).timeout
+	_snap(save_path.replace(".png", "_kazi2.png"))
 	get_tree().quit()
 
 # Tema test sayfasi: paneller, sekme, butonlar, kategori daireleri.
