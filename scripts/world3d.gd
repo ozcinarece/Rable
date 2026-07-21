@@ -1325,7 +1325,13 @@ func _build_world() -> void:
 			match ch:
 				"P":
 					_spawn_cell = cell
-				"T", "#", "m":
+				"T":
+					# AGAC SEYRELTME: 1 hucre = en fazla 1 agac; komsuda (8-yon)
+					# zaten agac varsa bu hucre zemin kalir (min 1 bos hucre)
+					if not _tree_neighbor(cell):
+						_objects[cell] = ch
+						_solid_cells[cell] = true
+				"#", "m":
 					_objects[cell] = ch
 					_solid_cells[cell] = true
 				"o":
@@ -1837,8 +1843,27 @@ func _rebuild_objects() -> void:
 
 # Agaclar: tree02 cam paketi (kullanici secimi) - hafif, duz renkli
 # modeller; paketteki her cam ayri varyant. Boylar normalize.
+## Agac havuzu: TEK-AGAC cam modelleri (Kenney tree_pine*). Onceki
+## quat2_tree02 bir GRUP mesh'iydi (4-5 cam tek mesh) -> her hucrede
+## kume gorunuyordu; her biri tek agac olan cam varyantlariyla degistirildi.
+const TREE_MODELS: Array[String] = ["tree_pineDefaultA", "tree_pineDefaultB",
+	"tree_pineRoundA", "tree_pineTallA", "tree_pineRoundC"]
+
 func _tree_pool() -> Array:
-	return _model_pool("quat2_tree02", TREE_HEIGHT)
+	var out: Array = []
+	for m: String in TREE_MODELS:
+		out += _model_pool(m, TREE_HEIGHT)
+	return out
+
+## Hucrenin 8-komsulugunda zaten agac (T) var mi? (spawn seyreltme)
+func _tree_neighbor(cell: Vector2i) -> bool:
+	for dy in [-1, 0, 1]:
+		for dx in [-1, 0, 1]:
+			if dx == 0 and dy == 0:
+				continue
+			if _objects.get(cell + Vector2i(dx, dy), "") == "T":
+				return true
+	return false
 
 func _build_trees(cells: Array[Vector2i]) -> void:
 	var pool := _tree_pool()
