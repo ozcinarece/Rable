@@ -3,7 +3,6 @@
 [ext_resource type="Script" path="res://scripts/hud.gd" id="1_script"]
 [ext_resource type="Texture2D" path="res://assets/ui/bag.png" id="4_bag"]
 [ext_resource type="Texture2D" path="res://assets/ui/wrench.png" id="5_wrench"]
-[ext_resource type="Script" path="res://scripts/drop_catcher.gd" id="6_catcher"]
 
 [node name="HUD" type="CanvasLayer"]
 script = ExtResource("1_script")
@@ -153,70 +152,100 @@ theme_override_constants/separation = 6
 text = "Sandığı Sök (boşken)"
 theme_override_font_sizes/font_size = 20
 
-[node name="InventoryPanel" type="PanelContainer" parent="."]
+[node name="InventoryRoot" type="Control" parent="."]
 visible = false
-anchor_left = 0.5
-anchor_top = 0.5
-anchor_right = 0.5
-anchor_bottom = 0.5
-offset_left = -310.0
-offset_top = -255.0
-offset_right = 310.0
-offset_bottom = 255.0
+anchor_left = 1.0
+anchor_top = 0.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = -392.0
+offset_top = 56.0
+offset_right = -16.0
+offset_bottom = -96.0
+grow_horizontal = 0
+grow_vertical = 2
+mouse_filter = 2
+
+[node name="InventoryPanel" type="PanelContainer" parent="InventoryRoot"]
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 20.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="Catcher" type="Control" parent="InventoryPanel"]
-script = ExtResource("6_catcher")
+[node name="VBox" type="VBoxContainer" parent="InventoryRoot/InventoryPanel"]
+theme_override_constants/separation = 12
 
-[node name="VBox" type="VBoxContainer" parent="InventoryPanel"]
-theme_override_constants/separation = 8
+[node name="TopRow" type="HBoxContainer" parent="InventoryRoot/InventoryPanel/VBox"]
 
-[node name="TitleRow" type="HBoxContainer" parent="InventoryPanel/VBox"]
-
-[node name="Title" type="Label" parent="InventoryPanel/VBox/TitleRow"]
-text = "Envanter"
+[node name="TopSpacer" type="Control" parent="InventoryRoot/InventoryPanel/VBox/TopRow"]
 size_flags_horizontal = 3
-theme_override_font_sizes/font_size = 26
 
-[node name="CloseButton" type="Button" parent="InventoryPanel/VBox/TitleRow"]
-custom_minimum_size = Vector2(44, 44)
+[node name="CloseButton" type="Button" parent="InventoryRoot/InventoryPanel/VBox/TopRow"]
+custom_minimum_size = Vector2(48, 40)
 icon_alignment = 1
 
-[node name="HotbarLabel" type="Label" parent="InventoryPanel/VBox"]
-text = "Hızlı Erişim (buraya sürükle)"
-theme_override_font_sizes/font_size = 16
+[node name="Slots" type="GridContainer" parent="InventoryRoot/InventoryPanel/VBox"]
+columns = 4
+size_flags_horizontal = 4
+theme_override_constants/h_separation = 12
+theme_override_constants/v_separation = 12
 
-[node name="HotbarRow" type="HBoxContainer" parent="InventoryPanel/VBox"]
-theme_override_constants/separation = 8
-
-[node name="SlotsLabel" type="Label" parent="InventoryPanel/VBox"]
-text = "Çanta"
-theme_override_font_sizes/font_size = 16
-
-[node name="Slots" type="GridContainer" parent="InventoryPanel/VBox"]
-columns = 8
-theme_override_constants/h_separation = 8
-theme_override_constants/v_separation = 8
-
-[node name="Detail" type="Label" parent="InventoryPanel/VBox"]
-text = ""
-autowrap_mode = 2
+[node name="InfoStrip" type="PanelContainer" parent="InventoryRoot/InventoryPanel/VBox"]
+theme_type_variation = &"InnerPanel"
 size_flags_vertical = 3
-theme_override_font_sizes/font_size = 19
 
-[node name="ButtonRow" type="HBoxContainer" parent="InventoryPanel/VBox"]
+[node name="InfoBox" type="VBoxContainer" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip"]
+theme_override_constants/separation = 4
+
+[node name="ItemName" type="Label" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox"]
+theme_type_variation = &"BadgeLabel"
+text = ""
+
+[node name="ItemDesc" type="Label" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox"]
+theme_type_variation = &"SubtleLabel"
+autowrap_mode = 2
+text = "Bir eşyaya dokun: bilgisi burada görünür. Seçtikten sonra başka bir slota dokunarak taşıyabilirsin."
+
+[node name="ButtonRow" type="HBoxContainer" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox"]
 theme_override_constants/separation = 10
 
-[node name="PanelEatButton" type="Button" parent="InventoryPanel/VBox/ButtonRow"]
+[node name="PanelEatButton" type="Button" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox/ButtonRow"]
 visible = false
-text = "Ye (+25)"
-theme_override_font_sizes/font_size = 20
+theme_type_variation = &"PrimaryButton"
+text = "Ye"
 
-[node name="HoldButton" type="Button" parent="InventoryPanel/VBox/ButtonRow"]
+[node name="HoldButton" type="Button" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox/ButtonRow"]
 visible = false
 text = "Eline Al"
-theme_override_font_sizes/font_size = 20
+
+[node name="DropButton" type="Button" parent="InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox/ButtonRow"]
+visible = false
+text = "At"
+
+[node name="CapacityRow" type="HBoxContainer" parent="InventoryRoot/InventoryPanel/VBox"]
+alignment = 1
+
+[node name="CapacityIcon" type="TextureRect" parent="InventoryRoot/InventoryPanel/VBox/CapacityRow"]
+custom_minimum_size = Vector2(20, 20)
+texture = ExtResource("4_bag")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="CapacityLabel" type="Label" parent="InventoryRoot/InventoryPanel/VBox/CapacityRow"]
+theme_type_variation = &"SubtleLabel"
+text = "0/8"
+
+[node name="TitleTab" type="PanelContainer" parent="InventoryRoot"]
+offset_left = 14.0
+offset_top = 0.0
+offset_right = 174.0
+offset_bottom = 40.0
+theme_type_variation = &"TitleTab"
+
+[node name="TitleLabel" type="Label" parent="InventoryRoot/TitleTab"]
+theme_type_variation = &"TitleTabLabel"
+text = "Sırt Çantası"
 
 [node name="CraftPanel" type="PanelContainer" parent="."]
 visible = false

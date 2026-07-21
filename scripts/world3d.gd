@@ -196,10 +196,16 @@ func _setup_screenshot(save_path: String) -> void:
 		camera.rotation_degrees = Vector3(frame["pitch"], 0, 0)
 		await get_tree().create_timer(1.2).timeout
 		_snap(save_path.replace(".png", String(frame["suffix"]) + ".png"))
-	# Son kare: theme_main.tres ornek sayfasi (Turkce karakter testi dahil)
+	# Tema ornek sayfasi (Turkce karakter testi dahil)
 	_build_theme_test()
 	await get_tree().create_timer(0.6).timeout
 	_snap(save_path.replace(".png", "_tema.png"))
+	# Son kare: envanter paneli acik + ilk esya secili (UI Adim 2)
+	hud.inventory_button.button_pressed = true
+	if not hud._inv_slots.is_empty():
+		hud._on_slot_tapped(hud._inv_slots[0])
+	await get_tree().create_timer(0.8).timeout
+	_snap(save_path.replace(".png", "_envanter.png"))
 	get_tree().quit()
 
 # Tema test sayfasi: paneller, sekme, butonlar, kategori daireleri.

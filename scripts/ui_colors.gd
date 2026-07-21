@@ -52,3 +52,13 @@ const BRANCH_COLORS := {
 
 static func branch_color(branch: String) -> Color:
 	return BRANCH_COLORS.get(branch, INK_SOFT)
+
+## Bir esya id'sinin kategori rengi. Yeni (GDD) id'ler dogrudan
+## item_db'den; eski Turkce id'ler LEGACY_MAP uzerinden cozulur.
+## Hicbirinde yoksa resource pasteline duser.
+static func item_color(item_id: String) -> Color:
+	var ItemDb := preload("res://scripts/item_db.gd")
+	var lookup := item_id
+	if not ItemDb.ITEMS.has(lookup):
+		lookup = String(ItemDb.LEGACY_MAP.get(item_id, item_id))
+	return category_color(ItemDb.category(lookup))

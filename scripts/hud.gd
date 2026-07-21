@@ -55,14 +55,15 @@ var _drop_bar: TextureProgressBar
 var _drop_label: Label
 
 @onready var inventory_button: Button = $InventoryButton
-@onready var inventory_panel: PanelContainer = $InventoryPanel
-@onready var inventory_title: Label = $InventoryPanel/VBox/TitleRow/Title
-@onready var inventory_close: Button = $InventoryPanel/VBox/TitleRow/CloseButton
-@onready var panel_hotbar_row: HBoxContainer = $InventoryPanel/VBox/HotbarRow
-@onready var inventory_grid: GridContainer = $InventoryPanel/VBox/Slots
-@onready var inventory_detail: Label = $InventoryPanel/VBox/Detail
-@onready var panel_eat_button: Button = $InventoryPanel/VBox/ButtonRow/PanelEatButton
-@onready var hold_button: Button = $InventoryPanel/VBox/ButtonRow/HoldButton
+@onready var inventory_root: Control = $InventoryRoot
+@onready var inventory_close: Button = $InventoryRoot/InventoryPanel/VBox/TopRow/CloseButton
+@onready var inventory_grid: GridContainer = $InventoryRoot/InventoryPanel/VBox/Slots
+@onready var item_name_label: Label = $InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox/ItemName
+@onready var item_desc_label: Label = $InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox/ItemDesc
+@onready var panel_eat_button: Button = $InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox/ButtonRow/PanelEatButton
+@onready var hold_button: Button = $InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox/ButtonRow/HoldButton
+@onready var drop_button: Button = $InventoryRoot/InventoryPanel/VBox/InfoStrip/InfoBox/ButtonRow/DropButton
+@onready var capacity_label: Label = $InventoryRoot/InventoryPanel/VBox/CapacityRow/CapacityLabel
 
 @onready var hotbar_box: HBoxContainer = $HotBar
 
@@ -85,11 +86,12 @@ var _drop_label: Label
 @onready var chest_dismantle_button: Button = $ChestPanel/VBox/DismantleButton
 
 var _selected_item: String = ""   # envanter panelinde secili esya
+var _selected_slot: int = -1      # secili envanter slotunun indeksi
+var _picked_slot: UiSlotScript = null  # tasima icin secilen slot (dokun-tasi)
 var _held_item: String = ""       # World bildirir (vurgu + detay icin)
 var _action_state: String = "idle"
 
 var _inv_slots: Array = []        # 16 UiSlot (envanter izgarasi)
-var _panel_hotbar_slots: Array = []  # paneldeki 8 hotbar gozu
 var _mini_hotbar_slots: Array = []   # ekran altindaki 8 hotbar gozu
 
 var _selected_recipe: String = "" # uretim panelinde secili tarif
@@ -129,6 +131,7 @@ func _ready() -> void:
 	inventory_close.pressed.connect(func(): inventory_button.button_pressed = false)
 	panel_eat_button.pressed.connect(_on_eat_pressed)
 	hold_button.pressed.connect(_on_hold_pressed)
+	drop_button.pressed.connect(_on_drop_pressed)
 
 	craft_button.toggled.connect(_on_craft_toggled)
 	craft_close.icon = ICON_CLOSE
@@ -142,7 +145,15 @@ func _ready() -> void:
 	chest_dismantle_button.pressed.connect(func(): chest_dismantle_requested.emit())
 	chest_panel.visible = false
 
-	_apply_ui_theme()
+	# theme_main.tres tum ust duzey Control'lere uygulanir (UI_DESIGN 6)
+	var main_theme: Theme = load("res://theme_main.tres")
+	for child in get_children():
+		if child is Control:
+			(child as Control).theme = main_theme
+	# Gun etiketi panel disinda, dunyanin ustunde: beyaz + golge kalsin
+	day_label.add_theme_color_override("font_color", Color.WHITE)
+	day_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+	day_label.add_theme_constant_override("shadow_offset_y", 2)
 	_setup_damage_flash()
 	_build_slots()
 	_build_category_buttons()
@@ -171,13 +182,31 @@ func _process(_delta: float) -> void:
 
 # --- Paneller ac/kapat --------------------------------------------------
 
+# Envanter paneli sagdan kayarak girer/cikar (0.25sn ease-out)
+var _inv_tween: Tween
+
 func _on_inventory_toggled(pressed: bool) -> void:
-	inventory_panel.visible = pressed
 	if pressed:
 		craft_button.button_pressed = false
 		close_chest()
 		chest_closed.emit()
 		_refresh()
+	if _inv_tween != null:
+		_inv_tween.kill()
+	_inv_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	var width := inventory_root.size.x + 24.0
+	if pressed:
+		inventory_root.visible = true
+		inventory_root.position.x += width  # disaridan basla
+		_inv_tween.tween_property(inventory_root, "position:x",
+				inventory_root.position.x - width, 0.25)
+	else:
+		_picked_slot = null
+		_inv_tween.tween_property(inventory_root, "position:x",
+				inventory_root.position.x + width, 0.22)
+		_inv_tween.tween_callback(func():
+			inventory_root.visible = false
+			inventory_root.position.x -= width)
 
 func _on_craft_toggled(pressed: bool) -> void:
 	craft_panel.visible = pressed
@@ -193,14 +222,8 @@ func _build_slots() -> void:
 	# Envanter izgarasi: 16 sabit slot (canta yoksa sondakiler kilitli)
 	for i in Inventory.TOTAL_SLOTS:
 		var slot := _make_slot("inv", i)
-		slot.dropped_to_ground.connect(_on_dropped_to_ground)
 		inventory_grid.add_child(slot)
 		_inv_slots.append(slot)
-	# Paneldeki hizli erisim sirasi
-	for i in Inventory.HOTBAR_SIZE:
-		var slot := _make_slot("hotbar", i)
-		panel_hotbar_row.add_child(slot)
-		_panel_hotbar_slots.append(slot)
 	# Ekran altindaki hizli erisim cubugu
 	for i in Inventory.HOTBAR_SIZE:
 		var slot := _make_slot("hotbar", i)
@@ -212,38 +235,59 @@ func _make_slot(kind: String, index: int) -> UiSlotScript:
 	slot.kind = kind
 	slot.index = index
 	slot.pressed.connect(_on_slot_tapped.bind(slot))
-	slot.drop_received.connect(_on_slot_drop.bind(slot))
 	return slot
 
-# --- Slot etkilesimleri -------------------------------------------------
+# --- Slot etkilesimleri ---------------------------------------------------
+# Dokun-sec-dokun-yerlestir (UI_DESIGN 5): ilk dokunus esyayi secer
+# (bilgi seridi acilir + tasima moduna girer), ikinci dokunus hedef
+# slota tasir/atar. Ayni slota tekrar dokunmak secimi birakir.
 
 func _on_slot_tapped(slot: UiSlotScript) -> void:
+	# Tasima modundaysak: bu dokunus HEDEF secimidir
+	if _picked_slot != null and slot != _picked_slot:
+		_perform_move(_picked_slot, slot)
+		_clear_pick()
+		return
+	if slot == _picked_slot:
+		_clear_pick()
+		return
 	if slot.kind == "hotbar":
-		# Hizli erisim: dokununca eline al / birak
+		# Hizli erisim: panel kapaliyken dokununca eline al / birak
 		if slot.item_id == "" or slot.item_count <= 0:
 			return
 		hold_requested.emit("" if _held_item == slot.item_id else slot.item_id)
-	else:
-		if slot.item_id == "":
-			return
-		_selected_item = slot.item_id
-		_update_detail()
+		return
+	if slot.item_id == "":
+		return
+	# Sec: bilgi seridi + tasima modu
+	_selected_item = slot.item_id
+	_selected_slot = slot.index
+	_picked_slot = slot
+	slot.picked = true
+	_update_detail()
 
-func _on_slot_drop(data: Dictionary, target: UiSlotScript) -> void:
-	if target.kind == "inv":
-		if data["kind"] == "inv":
-			Inventory.move_slot(data["index"], target.index)
-		else:
-			# Hotbar atamasi envantere geri suruklendi: atamayi kaldir
-			Inventory.set_hotbar(data["index"], "")
+func _perform_move(from: UiSlotScript, target: UiSlotScript) -> void:
+	if target.locked:
+		return
+	if from.kind == "inv" and target.kind == "inv":
+		Inventory.move_slot(from.index, target.index)
+	elif from.kind == "inv" and target.kind == "hotbar":
+		Inventory.set_hotbar(target.index, from.item_id)
+	elif from.kind == "hotbar" and target.kind == "hotbar":
+		Inventory.swap_hotbar(from.index, target.index)
 	else:
-		if data["kind"] == "inv":
-			Inventory.set_hotbar(target.index, data["id"])
-		else:
-			Inventory.swap_hotbar(data["index"], target.index)
+		# Hotbar atamasi envanter slotuna tasindi: atamayi kaldir
+		Inventory.set_hotbar(from.index, "")
 
-func _on_dropped_to_ground(data: Dictionary) -> void:
-	drop_item_requested.emit(data["index"])
+func _clear_pick() -> void:
+	if _picked_slot != null:
+		_picked_slot.picked = false
+	_picked_slot = null
+
+func _on_drop_pressed() -> void:
+	if _selected_slot >= 0 and _selected_item != "":
+		drop_item_requested.emit(_selected_slot)
+		_clear_pick()
 
 # --- Icerik yenileme ----------------------------------------------------
 
@@ -258,8 +302,7 @@ func _refresh() -> void:
 		else:
 			slot.set_locked(false)
 			slot.set_content(content["id"], content["count"])
-	inventory_title.text = "Envanter (%d/%d)" % [Inventory.get_used_slots(), capacity]
-	_refresh_hotbar(_panel_hotbar_slots)
+	capacity_label.text = "%d/%d" % [Inventory.get_used_slots(), capacity]
 	_refresh_hotbar(_mini_hotbar_slots)
 	_update_detail()
 	_update_cards()
@@ -278,18 +321,19 @@ func _refresh_hotbar(slot_list: Array) -> void:
 
 func _update_detail() -> void:
 	if _selected_item == "" or Inventory.get_count(_selected_item) <= 0:
-		inventory_detail.text = "Bir esyaya dokun: detayi burada gorunur. " + \
-				"Esyalari surukleyip tasi; panel disina birakirsan yere duser."
+		item_name_label.text = ""
+		item_desc_label.text = "Bir eşyaya dokun: bilgisi burada görünür. " + \
+				"Seçtikten sonra başka bir slota dokunarak taşıyabilirsin."
 		panel_eat_button.visible = false
 		hold_button.visible = false
+		drop_button.visible = false
 		return
-	inventory_detail.text = "%s x%d - %s" % [
-		Items.display_name(_selected_item),
-		Inventory.get_count(_selected_item),
-		Items.description(_selected_item),
-	]
+	item_name_label.text = "%s ×%d" % [Items.display_name(_selected_item),
+			Inventory.get_count(_selected_item)]
+	item_desc_label.text = Items.description(_selected_item)
 	panel_eat_button.visible = _selected_item == "meyve" or _selected_item == "mantar"
 	hold_button.visible = true
+	drop_button.visible = true
 	hold_button.text = "Bırak" if _held_item == _selected_item else "Eline Al"
 
 func _on_hold_pressed() -> void:
@@ -300,7 +344,6 @@ func _on_hold_pressed() -> void:
 ## World bildirir: eldeki esya degisti (vurgu + buton metni guncellenir)
 func set_held_item(item_id: String) -> void:
 	_held_item = item_id
-	_refresh_hotbar(_panel_hotbar_slots)
 	_refresh_hotbar(_mini_hotbar_slots)
 	_update_detail()
 
@@ -647,87 +690,9 @@ func _update_detail_box() -> void:
 # Go-Go Town tarzi krem/pastel tema: yuvarlak koseli krem kartlar,
 # koyu kahve yazi, turuncu vurgu. Tema ust seviye Control'lere atanir;
 # sonradan eklenen cocuklar (kartlar, slotlar) otomatik miras alir.
-const COL_CREAM := Color(0.99, 0.96, 0.89)
-const COL_CREAM_LIGHT := Color(1.0, 0.99, 0.95)
-const COL_BROWN := Color(0.33, 0.24, 0.16)
-const COL_BROWN_SOFT := Color(0.85, 0.78, 0.66)
-const COL_ORANGE := Color(0.98, 0.62, 0.22)
-
-func _apply_ui_theme() -> void:
-	var theme := Theme.new()
-
-	var panel_style := StyleBoxFlat.new()
-	panel_style.bg_color = COL_CREAM
-	panel_style.set_corner_radius_all(16)
-	panel_style.border_color = COL_BROWN_SOFT
-	panel_style.set_border_width_all(2)
-	panel_style.shadow_color = Color(0.2, 0.12, 0.05, 0.25)
-	panel_style.shadow_size = 5
-	panel_style.shadow_offset = Vector2(0, 3)
-	panel_style.content_margin_left = 12
-	panel_style.content_margin_right = 12
-	panel_style.content_margin_top = 8
-	panel_style.content_margin_bottom = 8
-	theme.set_stylebox("panel", "PanelContainer", panel_style)
-
-	var button_style := StyleBoxFlat.new()
-	button_style.bg_color = COL_CREAM_LIGHT
-	button_style.set_corner_radius_all(12)
-	button_style.border_color = COL_BROWN_SOFT
-	button_style.set_border_width_all(2)
-	button_style.shadow_color = Color(0.2, 0.12, 0.05, 0.2)
-	button_style.shadow_size = 3
-	button_style.shadow_offset = Vector2(0, 2)
-	button_style.content_margin_left = 12
-	button_style.content_margin_right = 12
-	button_style.content_margin_top = 6
-	button_style.content_margin_bottom = 6
-	theme.set_stylebox("normal", "Button", button_style)
-
-	# Basili/secili: turuncu dolgu + beyaz yazi (Go-Go Town vurgusu)
-	var pressed_style := button_style.duplicate()
-	pressed_style.bg_color = COL_ORANGE
-	pressed_style.border_color = Color(0.85, 0.48, 0.12)
-	theme.set_stylebox("pressed", "Button", pressed_style)
-	theme.set_stylebox("hover", "Button", pressed_style)
-
-	var disabled_style := button_style.duplicate()
-	disabled_style.bg_color = Color(0.93, 0.89, 0.81, 0.8)
-	disabled_style.shadow_size = 0
-	theme.set_stylebox("disabled", "Button", disabled_style)
-
-	# Yazi renkleri: krem zeminde koyu kahve
-	theme.set_color("font_color", "Button", COL_BROWN)
-	theme.set_color("font_pressed_color", "Button", Color.WHITE)
-	theme.set_color("font_hover_color", "Button", Color.WHITE)
-	theme.set_color("font_disabled_color", "Button", Color(0.33, 0.24, 0.16, 0.4))
-	theme.set_color("font_color", "Label", COL_BROWN)
-
-	# Arama kutusu da krem gorunsun
-	var edit_style: StyleBoxFlat = button_style.duplicate()
-	edit_style.bg_color = Color.WHITE
-	edit_style.shadow_size = 0
-	theme.set_stylebox("normal", "LineEdit", edit_style)
-	theme.set_color("font_color", "LineEdit", COL_BROWN)
-
-	# Hap seklinde bar govdesi (aclik/can/uretim ortak arka plan)
-	var bar_bg := StyleBoxFlat.new()
-	bar_bg.bg_color = Color(0.88, 0.82, 0.71)
-	bar_bg.set_corner_radius_all(9)
-	bar_bg.border_color = COL_BROWN_SOFT
-	bar_bg.set_border_width_all(1)
-	theme.set_stylebox("background", "ProgressBar", bar_bg)
-	# Varsayilan bar dolgusu turuncu (uretim cubuklari)
-	theme.set_stylebox("fill", "ProgressBar", _make_bar_fill(COL_ORANGE))
-
-	for child in get_children():
-		if child is Control:
-			child.theme = theme
-
-	# Gun etiketi panel disinda, dunyanin ustunde: beyaz + golge kalsin
-	day_label.add_theme_color_override("font_color", Color.WHITE)
-	day_label.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
-	day_label.add_theme_constant_override("shadow_offset_y", 2)
+# Eski kod-ici tema kaldirildi: TUM stiller theme_main.tres'ten gelir
+# (UI_DESIGN 6). Yalnizca panel disinda dunyanin ustunde duran gun
+# etiketi okunabilirlik icin ozel golgeli kalir (_ready'de ayarlanir).
 
 func _make_bar_fill(color: Color) -> StyleBoxFlat:
 	var fill := StyleBoxFlat.new()
