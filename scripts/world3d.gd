@@ -14,6 +14,8 @@ extends Node3D
 const MapData = preload("res://scripts/map_data.gd")
 const Player3DScript = preload("res://scripts/player3d.gd")
 const DigRules = preload("res://scripts/dig_rules.gd")
+const WaterRules = preload("res://scripts/water_rules.gd")
+const WaterSim = preload("res://scripts/water_sim.gd")
 const Items = preload("res://scripts/items.gd")
 
 ## Zemin turleri: renk + ust yuzey yuksekligi. "speckled": true olan
@@ -161,7 +163,11 @@ var _object_hits: Dictionary = {}  # hucre -> alinan vurus
 # negatif = toprak yigini yukseltisi (-1/-2). Gorsel TAMAMEN bu veriden
 # turer (_cell_props); su modeli (11.2) _water_level'i okuyacak.
 var _depth: Dictionary = {}        # hucre -> int (-2..4)
-var _water_level: Dictionary = {}  # hucre -> float (11.2 hazirligi, hep 0)
+# SU MODELI (11.2): hucre basina su sutunu (seviye cinsinden) ve
+# flood-fill'den cikan havuzlar [{cells, capacity, volume, surface}].
+# Yalnizca _recompute_water() yazar; gorsel bu veriden turer.
+var _water_level: Dictionary = {}  # hucre -> float su sutunu (0 = kuru)
+var _pools: Array = []             # guncel havuz listesi
 var _placed: Dictionary = {}       # hucre -> yerlestirilen yapi id'si
 var _placed_nodes: Dictionary = {} # hucre -> yapi gorseli (Node3D)
 var _chests: Dictionary = {}       # sandik hucresi -> icerik {esya: adet}
@@ -918,6 +924,7 @@ func _build_world() -> void:
 		elif h < 7:
 			_objects[cell] = "mantar"
 
+	_recompute_water()  # 11.2: haritadaki hazir cukurlar havuz olur (kuru)
 	_build_terrain()
 	_build_sea()
 	_build_lake_surface()
@@ -1698,6 +1705,10 @@ func _on_world_tapped(screen_pos: Vector2) -> void:
 	if maxi(diff.x, diff.y) > 1:
 		return
 	if _ground_char.get(cell, "") == "~" and not _objects.has(cell):
+		# Elde bos kova varsa icmek yerine doldur (11.2)
+		if _held_item == "kova":
+			_try_scoop(cell)
+			return
 		Thirst.drink()
 		_spawn_floating_text(cell, "Su içtin!", Color(0.6, 0.85, 1.0))
 		return
@@ -1733,6 +1744,11 @@ func _on_world_tapped(screen_pos: Vector2) -> void:
 		return
 	if (DigRules.SHOVEL_LIMITS.has(_held_item)
 			or DigRules.PICKAXE_LIMITS.has(_held_item)) and _try_dig(cell):
+		return
+	# SU MODELI (11.2): kova ile su tasi (dolu -> cukura dok, bos -> al)
+	if _held_item == "kova_dolu" and _try_pour(cell):
+		return
+	if _held_item == "kova" and _try_scoop(cell):
 		return
 	_try_harvest(cell)
 
@@ -1788,6 +1804,7 @@ func _try_dig(cell: Vector2i) -> bool:
 		_spawn_floating_text(cell, "Envanter dolu!", Color(1, 0.6, 0.6))
 		return true
 	_depth[cell] = new_depth
+	_recompute_water()  # 11.2: komsu havuza baglandiysa su yayilir
 	Inventory.add_all(drops)
 	var gained: PackedStringArray = []
 	var fly_from := camera.unproject_position(_cell_center(cell) + Vector3(0, 0.5, 0))
@@ -1813,8 +1830,123 @@ func _try_pile(cell: Vector2i) -> bool:
 		_depth.erase(cell)
 	else:
 		_depth[cell] = d - 1
+	_recompute_water()  # 11.2: kapasite dustu; tasan su yok olur
 	_spawn_floating_text(cell, "Toprak döküldü", Color(0.85, 0.95, 0.7))
 	_refresh_terrain_at(cell)
+	return true
+
+# --- Su modeli (KAZI_SU_MODULU.md 11.2) ------------------------------------
+# Havuzlar her arazi/su degisikliginde SIFIRDAN cozulur (kare basina
+# maliyet yok). Mevcut su hucre bazinda korunur; kapasiteyi asan su
+# yok olur (basit kural). Bolunme/birlesme flood-fill'den bedava cikar.
+
+func _recompute_water() -> void:
+	var pools := WaterSim.compute_pools(_depth)
+	var new_levels: Dictionary = {}
+	_pools = []
+	for pool in pools:
+		var vol := 0.0
+		for c in pool["cells"]:
+			vol += float(_water_level.get(c, 0.0))
+		vol = minf(vol, float(pool["capacity"]))
+		var surface := WaterSim.solve_surface(pool["cells"], _depth, vol)
+		var dist := WaterSim.distribute(pool["cells"], _depth, surface)
+		for c in dist:
+			if float(dist[c]) > 0.0:
+				new_levels[c] = dist[c]
+		pool["volume"] = vol
+		pool["surface"] = surface
+		_pools.append(pool)
+	_water_level = new_levels
+	# Gorsel guncelleme (havuz yuzeyi mesh'i) Adim 2'de buraya baglanacak
+
+## Hucrenin bagli oldugu havuzun indeksi (-1: havuz yok).
+## Boru sistemi (11.8) ayni kapiyi kullanacak.
+func pool_at(cell: Vector2i) -> int:
+	for i in _pools.size():
+		if (_pools[i]["cells"] as Array).has(cell):
+			return i
+	return -1
+
+## Gol hucresi: sonsuz su kaynagi (11.2 / 11.8 pompa girisi)
+func is_water_source(cell: Vector2i) -> bool:
+	return _ground_char.get(cell, "") == "~"
+
+## Su ekleme kapisi (kova doker, ileride boru basar).
+## Kabul edilen miktari doner; havuz yoksa/doluysa 0.
+func add_water(cell: Vector2i, amount: float) -> float:
+	var pi := pool_at(cell)
+	if pi < 0:
+		return 0.0
+	var pool: Dictionary = _pools[pi]
+	var accepted := minf(amount, float(pool["capacity"]) - float(pool["volume"]))
+	if accepted <= 0.0:
+		return 0.0
+	var target: Vector2i = pool["cells"][0]
+	_water_level[target] = float(_water_level.get(target, 0.0)) + accepted
+	_recompute_water()
+	return accepted
+
+## Su cekme kapisi (kova alir, ileride boru emer). Alinan miktari doner;
+## gol hucresi sonsuz kaynak oldugundan isteneni her zaman verir.
+func take_water(cell: Vector2i, amount: float) -> float:
+	if is_water_source(cell):
+		return amount
+	var pi := pool_at(cell)
+	if pi < 0:
+		return 0.0
+	var pool: Dictionary = _pools[pi]
+	var taken := minf(amount, float(pool["volume"]))
+	if taken <= 0.0:
+		return 0.0
+	var left := taken
+	for c in pool["cells"]:
+		if left <= 0.0:
+			break
+		var w := float(_water_level.get(c, 0.0))
+		var cut := minf(w, left)
+		if cut > 0.0:
+			_water_level[c] = w - cut
+			left -= cut
+	_recompute_water()
+	return taken
+
+# --- Kova etkilesimleri (11.2) ---------------------------------------------
+
+## Eldeki esyayi baskasiyla degistirir (kova <-> dolu kova)
+func _swap_held(from_id: String, to_id: String) -> bool:
+	if not Inventory.remove_item(from_id, 1):
+		return false
+	Inventory.add_all({to_id: 1})
+	_on_hold_requested(to_id)
+	return true
+
+## Bos kova ile su al: gol (sonsuz) ya da yeterli sulu havuz
+func _try_scoop(cell: Vector2i) -> bool:
+	var source := is_water_source(cell)
+	var pi := pool_at(cell)
+	if not source and pi < 0:
+		return false
+	if not source and float(_pools[pi]["volume"]) < WaterRules.BUCKET_UNITS:
+		_spawn_floating_text(cell, "Yeterli su yok", Color(1, 0.9, 0.6))
+		return true
+	take_water(cell, WaterRules.BUCKET_UNITS)
+	if _swap_held("kova", "kova_dolu"):
+		_spawn_floating_text(cell, "Kova doldu", Color(0.6, 0.85, 1.0))
+	return true
+
+## Dolu kova ile su dok: yalnizca kazilmis cukura (depth >= 1)
+func _try_pour(cell: Vector2i) -> bool:
+	if int(_depth.get(cell, 0)) < 1:
+		if _diggable(cell):
+			_spawn_floating_text(cell, "Su tutacak bir çukur gerek", Color(1, 0.9, 0.6))
+			return true
+		return false
+	if add_water(cell, WaterRules.BUCKET_UNITS) <= 0.0:
+		_spawn_floating_text(cell, "Çukur ağzına kadar dolu", Color(1, 0.9, 0.6))
+		return true
+	if _swap_held("kova_dolu", "kova"):
+		_spawn_floating_text(cell, "Su döküldü", Color(0.6, 0.85, 1.0))
 	return true
 
 # --- Yapi yerlestirme (B3) ------------------------------------------------
