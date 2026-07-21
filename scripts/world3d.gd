@@ -999,8 +999,10 @@ func _sample_terrain(x: float, z: float) -> Array:
 	sharp = dmin != dmax
 	var hfx := smoothstep(0.42, 0.58, fx) if sharp else fx
 	var hfz := smoothstep(0.42, 0.58, fz) if sharp else fz
-	var cfx := smoothstep(0.3, 0.7, fx) if sharp else smoothstep(0.2, 0.8, fx)
-	var cfz := smoothstep(0.3, 0.7, fz) if sharp else smoothstep(0.2, 0.8, fz)
+	# Derinlik sinirinda renk NEREDEYSE aninda degisir: duvar yuzeyi tek
+	# katman renginde okunur (boydan boya gradyan = bulanik leke olurdu)
+	var cfx := smoothstep(0.46, 0.54, fx) if sharp else smoothstep(0.2, 0.8, fx)
+	var cfz := smoothstep(0.46, 0.54, fz) if sharp else smoothstep(0.2, 0.8, fz)
 	for dj in 2:
 		for di in 2:
 			var wgt := (hfx if di == 1 else 1.0 - hfx) * (hfz if dj == 1 else 1.0 - hfz)
