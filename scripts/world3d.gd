@@ -985,13 +985,25 @@ func _sample_terrain(x: float, z: float) -> Array:
 	var fz := cz - float(j0)
 	var height := 0.0
 	var col := Color(0, 0, 0)
-	# Renk gecisi dar bantta yapilir (yukseklik yumusak kalir): kazilmis
-	# cukur/plaj gibi kenarlarin bulanik leke yerine okunur gorunmesi icin
-	var cfx := smoothstep(0.2, 0.8, fx)
-	var cfz := smoothstep(0.2, 0.8, fz)
+	# KAZI OKUNABILIRLIGI: derinligi FARKLI hucreler arasinda gecis
+	# keskinlesir (cukur/tumsek = low-poly blok duvarlar); dogal arazi
+	# yumusak harmanini korur. Renk gecisi her yerde dar bantta.
+	var sharp := false
+	var dmin := 99
+	var dmax := -99
 	for dj in 2:
 		for di in 2:
-			var wgt := (fx if di == 1 else 1.0 - fx) * (fz if dj == 1 else 1.0 - fz)
+			var dd: int = _depth.get(Vector2i(i0 + di, j0 + dj), 0)
+			dmin = mini(dmin, dd)
+			dmax = maxi(dmax, dd)
+	sharp = dmin != dmax
+	var hfx := smoothstep(0.42, 0.58, fx) if sharp else fx
+	var hfz := smoothstep(0.42, 0.58, fz) if sharp else fz
+	var cfx := smoothstep(0.3, 0.7, fx) if sharp else smoothstep(0.2, 0.8, fx)
+	var cfz := smoothstep(0.3, 0.7, fz) if sharp else smoothstep(0.2, 0.8, fz)
+	for dj in 2:
+		for di in 2:
+			var wgt := (hfx if di == 1 else 1.0 - hfx) * (hfz if dj == 1 else 1.0 - hfz)
 			var cwgt := (cfx if di == 1 else 1.0 - cfx) * (cfz if dj == 1 else 1.0 - cfz)
 			var props := _cell_props(i0 + di, j0 + dj)
 			height += float(props[0]) * wgt
