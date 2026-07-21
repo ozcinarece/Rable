@@ -1067,9 +1067,14 @@ func _build_chunk(ck: Vector2i) -> void:
 					absf(float(_sample_terrain(x, z + 0.5)[0]) - height))
 			steep = maxf(steep, absf(float(_sample_terrain(x - 0.5, z)[0]) - height))
 			steep = maxf(steep, absf(float(_sample_terrain(x, z - 0.5)[0]) - height))
-			# Kazilmis/yigilmis hucrede falez boyamasi yok: cukur duvari
-			# toprak/kaya katman rengini korur (okunabilirlik)
-			var dug: bool = _depth.get(Vector2i(floori(x), floori(z)), 0) != 0
+			# Kazilmis/yigilmis hucre VE komsulugunda falez boyamasi yok:
+			# cukur duvari katman rengini korur, cevre cimde leke halkasi
+			# olusmaz (okunabilirlik)
+			var dug := false
+			for ndy in range(-1, 2):
+				for ndx in range(-1, 2):
+					if _depth.get(Vector2i(floori(x) + ndx, floori(z) + ndy), 0) != 0:
+						dug = true
 			if dug:
 				pass
 			elif steep > 0.40:
