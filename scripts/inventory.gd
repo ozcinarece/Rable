@@ -13,10 +13,12 @@ extends Node
 signal changed
 
 const STACK_MAX: int = 50
-const BASE_SLOTS: int = 8
+# Varsayilan slot sayisi 16 (tek dogruluk kaynagi). Ileride "deri canta"
+# bu tabana ek slot acacak (SLOTS_PER_BAG * canta sayisi).
+const BASE_SLOTS: int = 16
 const SLOTS_PER_BAG: int = 4
 const MAX_BAGS: int = 2
-const TOTAL_SLOTS: int = BASE_SLOTS + MAX_BAGS * SLOTS_PER_BAG  # 16
+const TOTAL_SLOTS: int = BASE_SLOTS + MAX_BAGS * SLOTS_PER_BAG  # 24 (16 + cantalar)
 const HOTBAR_SIZE: int = 8
 const HOTBAR_UNLOCKED: int = 4  # kalani seviye atlayinca acilacak
 
