@@ -14,6 +14,7 @@ const CATEGORIES: Dictionary = {
 	"savas": "Savaş & Av",
 	"yapi": "Yapılar",
 	"tarim": "Tarım",
+	"pisirme": "Pişirme",
 }
 
 const CRAFT_RECIPES: Dictionary = {
@@ -93,4 +94,9 @@ const CRAFT_RECIPES: Dictionary = {
 	# --- Tarim ---
 	"tohum": {"output": {"tohum": 2}, "cost": {"meyve": 1},
 			"station": "", "category": "tarim", "time": 1.0},
+	# --- Pisirme (ocak/kamp atesi yakininda) ---
+	# TODO(yemek hazirlama): bicak "yemek hazirlama" islevi tarif cesidi
+	# artinca baglanacak (GAME_DESIGN 2); simdilik tek tarif yeter.
+	"pismis_et": {"output": {"pismis_et": 1}, "cost": {"cig_et": 1},
+			"station": "ocak", "category": "pisirme", "time": 3.0},
 }

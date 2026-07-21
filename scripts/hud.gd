@@ -139,7 +139,8 @@ var _cat_buttons: Dictionary = {}   # kategori -> buton
 
 # Eski oyun kategorileri -> UI kategori renk anahtari
 const CAT_COLOR_KEY := {"malzeme": "resource", "alet": "tool",
-		"savas": "weapon", "yapi": "structure", "tarim": "farming"}
+		"savas": "weapon", "yapi": "structure", "tarim": "farming",
+		"pisirme": "resource"}
 
 func _ready() -> void:
 	Inventory.changed.connect(_refresh)
@@ -934,9 +935,12 @@ func _update_cards() -> void:
 					UIColors.SUCCESS.darkened(0.25) if enough else UIColors.DANGER)
 			mat["warn"].visible = not enough
 		if recipe["station"] != "":
-			var near: bool = Crafting.near_station
-			refs["station"].text = "Tezgah yanında ✓" if near \
-					else "Tezgah gerekli — yanında değilsin"
+			# Istasyon adi + yakinlik: ocak (pisirme) ya da tezgah
+			var is_hearth: bool = recipe["station"] == "ocak"
+			var near: bool = Crafting.near_hearth if is_hearth else Crafting.near_station
+			var st_name: String = "Ocak" if is_hearth else "Tezgah"
+			refs["station"].text = "%s yanında ✓" % st_name if near \
+					else "%s gerekli — yanında değilsin" % st_name
 			refs["station"].add_theme_color_override("font_color",
 					UIColors.SUCCESS.darkened(0.25) if near \
 					else UIColors.WARNING.darkened(0.3))

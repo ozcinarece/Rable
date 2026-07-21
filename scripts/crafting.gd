@@ -58,7 +58,13 @@ func max_craftable(recipe_id: String) -> int:
 	if research != null and not research.is_recipe_unlocked(recipe_id):
 		return 0
 	var recipe: Dictionary = Recipes.CRAFT_RECIPES[recipe_id]
-	if recipe["station"] != "" and not near_station:
+	# Istasyon kapisi: "ocak" -> ocak yakinligi (pisirme); diger istasyonlar
+	# ("tezgah") -> tezgah yakinligi. Bos -> her yerde.
+	var station: String = recipe["station"]
+	if station == "ocak":
+		if not near_hearth:
+			return 0
+	elif station != "" and not near_station:
 		return 0
 	var best := 99
 	for item_id in recipe["cost"]:
