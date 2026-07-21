@@ -33,6 +33,9 @@ const CRAFT_RECIPES: Dictionary = {
 			"station": "tezgah", "category": "alet", "time": 3.0},
 	"canta": {"output": {"canta": 1}, "cost": {"ip": 3, "yaprak": 4},
 			"station": "tezgah", "category": "alet", "time": 4.0},
+	"arastirma_masasi": {"output": {"arastirma_masasi": 1},
+			"cost": {"kalas": 4, "tas": 2, "ip": 1},
+			"station": "tezgah", "category": "yapi", "time": 4.0},
 	# --- Savas & Av ---
 	"mizrak": {"output": {"mizrak": 1}, "cost": {"cubuk": 2, "tas": 1, "ip": 1},
 			"station": "tezgah", "category": "savas", "time": 3.0},

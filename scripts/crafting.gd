@@ -15,6 +15,14 @@ signal queue_changed
 signal station_changed
 
 ## Oyuncu su anda bir calisma tezgahinin yaninda mi? (World gunceller)
+# Arastirma Masasi yakinligi (arastirma ekrani kapisi)
+var near_research: bool = false:
+	set(value):
+		if near_research == value:
+			return
+		near_research = value
+		station_changed.emit()
+
 var near_station: bool = false:
 	set(value):
 		if near_station == value:

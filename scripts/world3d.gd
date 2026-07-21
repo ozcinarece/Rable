@@ -49,6 +49,31 @@ const STONE_VARIANTS := [
 	{"model": "quat2_rock03", "h": 0.80, "drops": {"tas": 1, "komur": 2}, "hits": 4},
 	{"model": "quat2_rock07", "h": 0.90, "drops": {"tas": 1, "altin": 1}, "hits": 5},
 ]
+## Yerlestirilebilir yapilar (B3): model + hedef boyut + katilik.
+## "long" varsa en uzun eksene gore olceklenir (duvar/zemin hucreyi doldursun)
+const PLACE_MODELS := {
+	"tezgah": {"model": "res://assets/models/tools/workbench.glb",
+			"h": 0.85, "solid": true},
+	"arastirma_masasi": {"model": "res://assets/models/nature/quat_table.glb",
+			"h": 0.8, "solid": true},
+	"sandik": {"model": "res://assets/models/tools/chest.glb",
+			"h": 0.55, "solid": true},
+	"kamp_evi": {"model": "res://assets/models/tools/tent.glb",
+			"h": 1.3, "solid": true},
+	"ahsap_duvar": {"model": "res://assets/models/tools/fence.glb",
+			"h": 0.9, "solid": true, "long": 1.0},
+	"tas_duvar": {"model": "res://assets/models/tools/fence-fortified.glb",
+			"h": 0.95, "solid": true, "long": 1.0},
+	"kapi": {"model": "res://assets/models/tools/fence-doorway.glb",
+			"h": 1.0, "solid": false, "long": 1.0},
+	"yatak": {"model": "res://assets/models/tools/bedroll.glb",
+			"h": 0.25, "solid": false, "long": 0.9},
+	"tuzak": {"model": "res://assets/models/tools/box-open.glb",
+			"h": 0.35, "solid": false},
+	"zemin": {"model": "res://assets/models/tools/floor.glb",
+			"h": 0.08, "solid": false, "long": 1.0},
+}
+
 const REGROW_SECONDS := 60.0
 const CAM_BASE_DIST := 12.5  # genis bakis (Longvinter benzeri olcek)
 const SETTINGS_PATH := "user://cam3d.json"
@@ -130,6 +155,13 @@ const HAIR_COLORS := [
 var _ground_char: Dictionary = {}  # hucre -> zemin karakteri
 var _objects: Dictionary = {}      # hucre -> "T"/"#"/"m"/"n"
 var _object_hits: Dictionary = {}  # hucre -> alinan vurus
+var _placed: Dictionary = {}       # hucre -> yerlestirilen yapi id'si
+var _placed_nodes: Dictionary = {} # hucre -> yapi gorseli (Node3D)
+var _chests: Dictionary = {}       # sandik hucresi -> icerik {esya: adet}
+var _move_mode: bool = false       # Tasi butonu: yapiyi geri alma modu
+var _open_chest := Vector2i(-999, -999)
+var _ground_items: Array = []      # yere birakilanlar [{cell,id,count,node}]
+var _station_timer: float = 0.0
 var _regrow: Dictionary = {}       # hucre -> yeniden bitmeye kalan sure
 var _regrow_type: Dictionary = {}  # hucre -> bitince donusecegi nesne
 var _object_nodes: Array = []      # nesne MultiMesh dugumleri (rebuild icin)
@@ -168,6 +200,11 @@ func _ready() -> void:
 	add_child(hud)
 	hud.action_pressed.connect(_on_action_pressed)
 	hud.hold_requested.connect(_on_hold_requested)
+	hud.move_toggled.connect(func(on: bool): _move_mode = on)
+	hud.drop_item_requested.connect(_on_drop_item)
+	hud.chest_transfer_requested.connect(_on_chest_transfer)
+	hud.chest_dismantle_requested.connect(_on_chest_dismantle)
+	hud.chest_closed.connect(func(): _open_chest = Vector2i(-999, -999))
 	_build_camera_ui()
 	# CI ekran goruntusu modu: birkac saniye sonra kare kaydet ve cik
 	if OS.has_environment("RABLE_SCREENSHOT"):
@@ -229,6 +266,21 @@ func _setup_screenshot(save_path: String) -> void:
 	DayNight.changed.emit()
 	await get_tree().create_timer(1.6).timeout
 	_snap(save_path.replace(".png", "_gece.png"))
+	# Son kare: B3 yerlestirme ornekleri (tezgah/masa/sandik/duvar/cadir)
+	DayNight.is_night = false
+	DayNight.day_started.emit()
+	DayNight.changed.emit()
+	var pc := _player_cell()
+	for pair in [["tezgah", Vector2i(1, 0)], ["arastirma_masasi", Vector2i(1, 1)],
+			["sandik", Vector2i(0, 1)], ["ahsap_duvar", Vector2i(-1, 0)],
+			["ahsap_duvar", Vector2i(-1, 1)], ["kapi", Vector2i(-1, -1)],
+			["kamp_evi", Vector2i(2, -1)]]:
+		var pcell: Vector2i = pc + pair[1]
+		if _ground_char.get(pcell, "") in [".", "d", "s"] \
+				and not _objects.has(pcell) and not _placed.has(pcell):
+			_set_placed(pcell, pair[0])
+	await get_tree().create_timer(1.0).timeout
+	_snap(save_path.replace(".png", "_b3.png"))
 	get_tree().quit()
 
 # Tema test sayfasi: paneller, sekme, butonlar, kategori daireleri.
@@ -453,6 +505,10 @@ func _process(delta: float) -> void:
 		camera.position = camera.position.lerp(target, minf(1.0, 6.0 * delta))
 	hud.set_action_state(_compute_action_state())
 	_tick_regrow(delta)
+	_station_timer += delta
+	if _station_timer >= 0.25:
+		_station_timer = 0.0
+		_update_station_proximity()
 	# Eldeki esya envanterden ciktiysa birak
 	if _held_item != "" and Inventory.get_count(_held_item) <= 0:
 		_on_hold_requested("")
@@ -1524,6 +1580,32 @@ func _on_world_tapped(screen_pos: Vector2) -> void:
 		Thirst.drink()
 		_spawn_floating_text(cell, "Su içtin!", Color(0.6, 0.85, 1.0))
 		return
+	# Tasima modu: yerlestirilmis yapiyi geri al
+	if _move_mode and _placed.has(cell):
+		_remove_placed(cell)
+		return
+	# Yerlestirilmis yapiya dokunma etkilesimleri
+	match _placed.get(cell, ""):
+		"sandik":
+			_open_chest_at(cell)
+			return
+		"arastirma_masasi":
+			hud.research_button.button_pressed = true
+			return
+		"yatak":
+			if DayNight.is_night:
+				DayNight.sleep_to_morning()
+				Health.heal(30.0)
+				_spawn_floating_text(cell, "Sabah oldu! +30 can", Color(0.8, 1.0, 0.8))
+			else:
+				_spawn_floating_text(cell, "Sadece gece uyunur", Color(1, 0.9, 0.6))
+			return
+	# Yere birakilmis esya varsa topla
+	if _try_pickup_ground(cell):
+		return
+	# Elde yerlestirilebilir yapi: yere kur
+	if PLACE_MODELS.has(_held_item) and _try_place(cell):
+		return
 	# Kurek eldeyken bos zemine dokun: cukur kaz (stratejik engel + toprak)
 	if _held_item == "kurek" and _can_dig(cell):
 		_dig_pit(cell)
@@ -1573,6 +1655,164 @@ func _refresh_terrain() -> void:
 	_build_terrain()
 	_build_decor(_decor_cells)
 	_rebuild_objects()
+
+# --- Yapi yerlestirme (B3) ------------------------------------------------
+
+func _try_place(cell: Vector2i) -> bool:
+	if _placed.has(cell) or _objects.has(cell) or cell == _player_cell():
+		return false
+	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
+		return false
+	if not (_ground_char.get(cell, "") in [".", "d", "s"]):
+		return false
+	if not Inventory.remove_item(_held_item, 1):
+		return false
+	_set_placed(cell, _held_item)
+	_spawn_floating_text(cell, Items.display_name(_placed[cell]) + " kuruldu",
+			Color(0.8, 1.0, 0.8))
+	return true
+
+func _set_placed(cell: Vector2i, item_id: String) -> void:
+	_placed[cell] = item_id
+	var def: Dictionary = PLACE_MODELS[item_id]
+	if def["solid"]:
+		_solid_cells[cell] = true
+	var holder := Node3D.new()
+	holder.position = _cell_center(cell)
+	add_child(holder)
+	var scene: Node3D = load(def["model"]).instantiate()
+	holder.add_child(scene)
+	var aabb := _scene_aabb(scene)
+	var by_long: bool = def.has("long")
+	var basis_size: float = aabb.get_longest_axis_size() if by_long else aabb.size.y
+	var target: float = def["long"] if by_long else def["h"]
+	if basis_size > 0.01:
+		var s: float = target / basis_size
+		scene.scale = Vector3.ONE * s
+		scene.position = Vector3(-aabb.get_center().x * s, -aabb.position.y * s,
+				-aabb.get_center().z * s)
+	_placed_nodes[cell] = holder
+	if item_id == "sandik" and not _chests.has(cell):
+		_chests[cell] = {}
+
+func _remove_placed(cell: Vector2i) -> void:
+	var item_id: String = _placed[cell]
+	if item_id == "sandik" and not (_chests.get(cell, {}) as Dictionary).is_empty():
+		_spawn_floating_text(cell, "Önce sandığı boşalt!", Color(1, 0.6, 0.6))
+		return
+	if not Inventory.can_add_all({item_id: 1}):
+		_spawn_floating_text(cell, "Envanter dolu!", Color(1, 0.6, 0.6))
+		return
+	Inventory.add_item(item_id, 1)
+	_placed.erase(cell)
+	_solid_cells.erase(cell)
+	_chests.erase(cell)
+	if _placed_nodes.has(cell):
+		_placed_nodes[cell].queue_free()
+		_placed_nodes.erase(cell)
+	_spawn_floating_text(cell, "Geri alındı", Color(0.95, 0.9, 0.7))
+
+# Oyuncu 3x3 cevresindeki istasyonlara gore uretim/arastirma yakinligi
+func _update_station_proximity() -> void:
+	var pc := _player_cell()
+	var near_bench := false
+	var near_res := false
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			match _placed.get(pc + Vector2i(dx, dy), ""):
+				"tezgah":
+					near_bench = true
+				"arastirma_masasi":
+					near_res = true
+	Crafting.near_station = near_bench
+	Crafting.near_research = near_res
+
+# --- Sandik ------------------------------------------------------------------
+
+func _open_chest_at(cell: Vector2i) -> void:
+	_open_chest = cell
+	hud.show_chest(_chests.get(cell, {}))
+
+func _on_chest_transfer(item_id: String, to_chest: bool) -> void:
+	if not _chests.has(_open_chest):
+		return
+	var chest: Dictionary = _chests[_open_chest]
+	if to_chest:
+		var count := Inventory.get_count(item_id)
+		if count > 0 and Inventory.remove_item(item_id, count):
+			chest[item_id] = int(chest.get(item_id, 0)) + count
+	else:
+		var have := int(chest.get(item_id, 0))
+		var moved := 0
+		while moved < have and Inventory.add_item(item_id, 1):
+			moved += 1
+		if moved == have:
+			chest.erase(item_id)
+		elif moved > 0:
+			chest[item_id] = have - moved
+		else:
+			hud.show_chest(chest, "Envanter dolu!")
+			return
+	hud.show_chest(chest)
+
+func _on_chest_dismantle() -> void:
+	if _chests.has(_open_chest) and (_chests[_open_chest] as Dictionary).is_empty():
+		var cell := _open_chest
+		hud.close_chest()
+		_open_chest = Vector2i(-999, -999)
+		_remove_placed(cell)
+
+# --- Yere birakilan esyalar ---------------------------------------------------
+
+func _on_drop_item(slot_index: int) -> void:
+	var content = Inventory.slots[slot_index]
+	if content == null:
+		return
+	var pc := _player_cell()
+	var target := pc
+	for off in [Vector2i(0, 1), Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, -1),
+			Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1), Vector2i(-1, -1)]:
+		var c: Vector2i = pc + off
+		if is_walkable(c) and not _placed.has(c) and _ground_item_at(c) == -1:
+			target = c
+			break
+	if target == pc:
+		return  # bos komsu hucre yok
+	Inventory.clear_slot(slot_index)
+	var spr := Sprite3D.new()
+	var icon_path := String(Items.ITEMS.get(content["id"], {}).get("icon", ""))
+	if icon_path != "" and ResourceLoader.exists(icon_path):
+		spr.texture = load(icon_path)
+	spr.pixel_size = 0.014
+	spr.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	spr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
+	spr.position = _cell_center(target) + Vector3(0, 0.35, 0)
+	add_child(spr)
+	_ground_items.append({"cell": target, "id": content["id"],
+			"count": content["count"], "node": spr})
+	_spawn_floating_text(target, "Yere bırakıldı", Color(0.95, 0.9, 0.7))
+
+func _ground_item_at(cell: Vector2i) -> int:
+	for i in _ground_items.size():
+		if _ground_items[i]["cell"] == cell:
+			return i
+	return -1
+
+func _try_pickup_ground(cell: Vector2i) -> bool:
+	var idx := _ground_item_at(cell)
+	if idx == -1:
+		return false
+	var entry: Dictionary = _ground_items[idx]
+	if not Inventory.can_add_all({entry["id"]: entry["count"]}):
+		_spawn_floating_text(cell, "Envanter dolu!", Color(1, 0.6, 0.6))
+		return true
+	Inventory.add_all({entry["id"]: entry["count"]})
+	if hud != null and hud.has_method("fly_pickup"):
+		hud.fly_pickup(entry["id"],
+				camera.unproject_position(_cell_center(cell) + Vector3(0, 0.5, 0)))
+	entry["node"].queue_free()
+	_ground_items.remove_at(idx)
+	return true
 
 func _on_action_pressed() -> void:
 	var pc := _player_cell()

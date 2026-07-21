@@ -10,8 +10,8 @@ extends Control
 ## - Arastirma tamamlaninca pastel konfeti fiskirir
 ##
 ## Veri: Research autoload (NODES / can_research / do_research).
-## NOT: Arastirma Masasi henuz dunyaya yerlestirilemiyor (B3'te);
-## simdilik TEZGAH yani arastirma noktasi sayilir (Crafting.near_station).
+## Arastir butonu yalnizca yerlestirilmis Arastirma Masasi yanindayken
+## aktiftir (Crafting.near_research - world3d gunceller).
 
 const UIColors = preload("res://scripts/ui_colors.gd")
 const ItemDb = preload("res://scripts/item_db.gd")
@@ -354,11 +354,11 @@ func _show_info(node_id: String) -> void:
 		_hint_label.text = "Araştırıldı ✓"
 		return
 	_research_btn.visible = true
-	# Arastirma noktasi sarti: simdilik tezgah (masa B3'te gelecek)
-	var near: bool = Crafting.near_station
+	# Arastirma noktasi: yerlestirilmis Arastirma Masasi'nin yani
+	var near: bool = Crafting.near_research
 	_research_btn.disabled = not (Research.can_research(node_id) and near)
 	if not near:
-		_hint_label.text = "Tezgah yanına git"
+		_hint_label.text = "Araştırma Masası yanına git"
 	elif not Research.can_research(node_id):
 		_hint_label.text = "Malzeme eksik"
 	else:
