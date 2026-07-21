@@ -18,6 +18,7 @@ const WaterRules = preload("res://scripts/water_rules.gd")
 const WaterSim = preload("res://scripts/water_sim.gd")
 const ToolProfiles = preload("res://scripts/tool_profiles.gd")
 const HittableDummy = preload("res://scripts/hittable_dummy.gd")
+const StructureManager = preload("res://scripts/structure_manager.gd")
 const Items = preload("res://scripts/items.gd")
 
 ## Zemin turleri: renk + ust yuzey yuksekligi. "speckled": true olan
@@ -56,28 +57,43 @@ const STONE_VARIANTS := [
 ]
 ## Yerlestirilebilir yapilar (B3): model + hedef boyut + katilik.
 ## "long" varsa en uzun eksene gore olceklenir (duvar/zemin hucreyi doldursun)
+# YAPI SISTEMI (Bolum 13): her yapinin yerlestirme + durum verisi TEK burada.
+#   behavior: wall/station/door/bed/trap/floor/torch/tent (ozel mantik anahtari)
+#   max_hp:   take_hit dayanikligi (13.4)
+#   rotatable:yon 0/90/180/270 (13.2 dondur)
+#   on_water/in_pit: 13.3 gecerlilik istisnalari (varsayilan false)
 const PLACE_MODELS := {
 	"tezgah": {"model": "res://assets/models/tools/workbench.glb",
-			"h": 0.85, "solid": true},
+			"h": 0.85, "solid": true, "behavior": "station", "max_hp": 120},
 	"arastirma_masasi": {"model": "res://assets/models/nature/quat_table.glb",
-			"h": 0.8, "solid": true, "long": 1.0},
+			"h": 0.8, "solid": true, "long": 1.0,
+			"behavior": "station", "max_hp": 120},
 	"sandik": {"model": "res://assets/models/tools/chest.glb",
-			"h": 0.55, "solid": true},
+			"h": 0.55, "solid": true, "behavior": "station", "max_hp": 120},
 	"kamp_evi": {"model": "res://assets/models/tools/tent.glb",
 			"extra": "res://assets/models/tools/tent-canvas.glb",
-			"h": 1.3, "solid": true},
+			"h": 1.3, "solid": true, "behavior": "tent", "max_hp": 200},
 	"ahsap_duvar": {"model": "res://assets/models/tools/fence.glb",
-			"h": 0.9, "solid": true, "long": 1.0},
+			"h": 0.9, "solid": true, "long": 1.0,
+			"behavior": "wall", "max_hp": 80, "rotatable": true},
 	"tas_duvar": {"model": "res://assets/models/tools/fence-fortified.glb",
-			"h": 0.95, "solid": true, "long": 1.0},
+			"h": 0.95, "solid": true, "long": 1.0,
+			"behavior": "wall", "max_hp": 160, "rotatable": true},
 	"kapi": {"model": "res://assets/models/tools/fence-doorway.glb",
-			"h": 1.0, "solid": false, "long": 1.0},
+			"h": 1.0, "solid": false, "long": 1.0,
+			"behavior": "door", "max_hp": 80, "rotatable": true},
 	"yatak": {"model": "res://assets/models/tools/bedroll.glb",
-			"h": 0.25, "solid": false, "long": 0.9},
+			"h": 0.25, "solid": false, "long": 0.9,
+			"behavior": "bed", "max_hp": 40, "rotatable": true},
 	"tuzak": {"model": "res://assets/models/tools/box-open.glb",
-			"h": 0.35, "solid": false},
+			"h": 0.35, "solid": false,
+			"behavior": "trap", "max_hp": 30, "in_pit": true},
 	"zemin": {"model": "res://assets/models/tools/floor.glb",
-			"h": 0.08, "solid": false, "long": 1.0},
+			"h": 0.08, "solid": false, "long": 1.0,
+			"behavior": "floor", "max_hp": 40},
+	"mesale": {"model": "res://assets/models/tools/campfire-stand.glb",
+			"h": 0.7, "solid": false,
+			"behavior": "torch", "max_hp": 30},
 }
 
 const REGROW_SECONDS := 60.0
@@ -172,6 +188,9 @@ var _water_level: Dictionary = {}  # hucre -> float su sutunu (0 = kuru)
 var _pools: Array = []             # guncel havuz listesi
 var _placed: Dictionary = {}       # hucre -> yerlestirilen yapi id'si
 var _placed_nodes: Dictionary = {} # hucre -> yapi gorseli (Node3D)
+# YAPI SISTEMI (Bolum 13): yapi ornekleri meta (yon/hp/durum). _placed id'yi,
+# bu ise per-instance veriyi tutar (sidecar; mevcut sistem korunur).
+var _structures = StructureManager.new()
 var _chests: Dictionary = {}       # sandik hucresi -> icerik {esya: adet}
 var _move_mode: bool = false       # Tasi butonu: yapiyi geri alma modu
 var _open_chest := Vector2i(-999, -999)
@@ -770,6 +789,7 @@ func _save_game_3d() -> void:
 		"regrow": _cells_to_json(_regrow),
 		"regrow_type": _cells_to_json(_regrow_type),
 		"placed": _cells_to_json(_placed),
+		"structures": _structures.to_save_data(),  # 13.6: yon/hp/durum
 		"chests": chest_json,
 		"ground_items": ground_json,
 		"dummies": dummy_json,
@@ -833,6 +853,9 @@ func _load_game_3d() -> void:
 	_placed.clear()
 	_placed_nodes.clear()
 	_chests.clear()
+	# 13.6: yapi metasini (yon/hp) once yukle ki _set_placed korusun; eski
+	# kayitlarda "structures" yoksa _set_placed tam-can yeni ornek uretir
+	_structures.from_save_data(data.get("structures", []))
 	for key in data.get("placed", {}):
 		var item_id := String(data["placed"][key])
 		if PLACE_MODELS.has(item_id):
@@ -2390,13 +2413,18 @@ func _try_place(cell: Vector2i) -> bool:
 	_dirty = true
 	return true
 
-func _set_placed(cell: Vector2i, item_id: String) -> void:
+func _set_placed(cell: Vector2i, item_id: String, rot: int = 0) -> void:
 	_placed[cell] = item_id
 	var def: Dictionary = PLACE_MODELS[item_id]
 	if def["solid"]:
 		_solid_cells[cell] = true
+	# 13.1: ornek metasini kaydet (yon/hp/durum). Zaten kayitliysa (yukleme)
+	# korunur; degilse tam can ile yeni ornek olustur.
+	if not _structures.has(cell):
+		_structures.place(cell, item_id, rot, int(def.get("max_hp", 100)))
 	var holder := Node3D.new()
 	holder.position = _cell_center(cell)
+	holder.rotation_degrees.y = float(_structures.rotation_of(cell))
 	add_child(holder)
 	# Cok parcali yapilar (orn. cadir govde + tente) tek pakette olceklenir
 	var bundle := Node3D.new()
@@ -2427,6 +2455,7 @@ func _remove_placed(cell: Vector2i) -> void:
 		return
 	Inventory.add_item(item_id, 1)
 	_placed.erase(cell)
+	_structures.remove(cell)
 	_solid_cells.erase(cell)
 	_chests.erase(cell)
 	if _placed_nodes.has(cell):
