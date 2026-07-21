@@ -17,6 +17,7 @@ const DigRules = preload("res://scripts/dig_rules.gd")
 const WaterRules = preload("res://scripts/water_rules.gd")
 const WaterSim = preload("res://scripts/water_sim.gd")
 const ToolProfiles = preload("res://scripts/tool_profiles.gd")
+const HittableDummy = preload("res://scripts/hittable_dummy.gd")
 const Items = preload("res://scripts/items.gd")
 
 ## Zemin turleri: renk + ust yuzey yuksekligi. "speckled": true olan
@@ -357,6 +358,23 @@ func _setup_screenshot(save_path: String) -> void:
 	print("SWINGTEST: ok swinging=%s" % str(player.is_swinging()))
 	await get_tree().create_timer(0.6).timeout
 	_snap(save_path.replace(".png", "_alet_swing.png"))
+	# TEST KUKLASI + yakin dovus (Asama 4): kukla kur, sopa ile vur
+	var pc := _player_cell()
+	var dcell := pc + Vector2i(1, 0)
+	if not _dummies.has(dcell) and not _objects.has(dcell):
+		_spawn_dummy(dcell)
+	_held_item = "sopa"
+	player.set_held_tool("club")
+	player.facing = Vector2(1, 0)
+	await get_tree().create_timer(0.2).timeout
+	_on_attack_pressed()
+	await get_tree().create_timer(0.5).timeout
+	camera.position = _cell_center(dcell) + Vector3(-1.5, 2.0, 2.8)
+	camera.look_at(_cell_center(dcell) + Vector3(0, 0.7, 0))
+	await get_tree().create_timer(0.4).timeout
+	_snap(save_path.replace(".png", "_dovus.png"))
+	if _dummies.has(dcell):
+		print("DUMMYTEST: hp=%d/%d" % [_dummies[dcell].hp, HittableDummy.MAX_HP])
 	_run_save_load_selftest()
 	get_tree().quit()
 
@@ -725,6 +743,9 @@ func _save_game_3d() -> void:
 	for entry in _ground_items:
 		ground_json.append({"x": entry["cell"].x, "y": entry["cell"].y,
 				"id": entry["id"], "count": entry["count"]})
+	var dummy_json: Array = []
+	for cell: Vector2i in _dummies:
+		dummy_json.append([cell.x, cell.y])
 	var data := {
 		"v": 1,
 		"w": _map_w, "h": _map_h,
@@ -737,6 +758,7 @@ func _save_game_3d() -> void:
 		"placed": _cells_to_json(_placed),
 		"chests": chest_json,
 		"ground_items": ground_json,
+		"dummies": dummy_json,
 		"player": [player.position.x, player.position.z],
 		"held": _held_item,
 		"inventory": Inventory.to_save(),
@@ -811,6 +833,14 @@ func _load_game_3d() -> void:
 		if entry is Dictionary and Items.ITEMS.has(entry.get("id", "")):
 			_add_ground_item(Vector2i(int(entry["x"]), int(entry["y"])),
 					String(entry["id"]), int(entry["count"]))
+	# Test kuklalari (12.7)
+	for cell in _dummies.values():
+		if is_instance_valid(cell):
+			cell.queue_free()
+	_dummies.clear()
+	for entry in data.get("dummies", []):
+		if entry is Array and entry.size() == 2:
+			_spawn_dummy(Vector2i(int(entry[0]), int(entry[1])))
 	# Katilik ve gorseli sifirdan tut
 	_recompute_solids()
 	_build_terrain()
@@ -858,6 +888,8 @@ func _recompute_solids() -> void:
 		var item_id: String = _placed[cell]
 		if PLACE_MODELS.has(item_id) and PLACE_MODELS[item_id].get("solid", false):
 			_solid_cells[cell] = true
+	for cell: Vector2i in _dummies:
+		_solid_cells[cell] = true  # kukla engeldir
 
 # Iki parmakla yakinlastirma (pinch); oyuncu hareketi 1. parmakta kalir
 func _unhandled_input(event: InputEvent) -> void:
@@ -2007,6 +2039,9 @@ func _on_world_tapped(screen_pos: Vector2) -> void:
 	# Elde yerlestirilebilir yapi: yere kur
 	if PLACE_MODELS.has(_held_item) and _try_place(cell):
 		return
+	# Test kuklasi yerlestirme (12.7)
+	if _held_item == "kukla" and _try_place_dummy(cell):
+		return
 	# ALET EYLEMLERI (12.3 cercevesi): kazi/yigma/su/hasat artik tek
 	# noktadan (uc fazli sallanma) gecer; ETKI strike aninda uygulanir.
 	# Kazi/kova davranisi AYNI, sadece animasyonla sarmalandi.
@@ -2738,10 +2773,57 @@ func _tick_projectiles(_delta: float) -> void:
 func _tick_aim(_delta: float) -> void:
 	pass
 
-func _apply_hitbox(_cell: Vector2i) -> void:
-	pass  # Asama 4: kukla + kirilabilir take_hit
+## Strike aninda onundeki hitbox (12.5): menzil boyunca ilk vurulabilir
+## hedefe take_hit uygular. Su an hedef = TEST KUKLASI (12.7). Yaratiklar
+## ayni take_hit imzasiyla otomatik dahil olacak — bu fonksiyon degismez.
+func _apply_hitbox(cell: Vector2i) -> void:
+	var prof := ToolProfiles.get_profile(_held_item)
+	var dmg := int(prof.get("damage", 4))
+	var reach := int(prof.get("reach", 1))
+	var pc := _player_cell()
+	var fo := Vector2i(player.facing.round())
+	if fo == Vector2i.ZERO:
+		fo = Vector2i(0, 1)
+	var kdir := Vector3(float(fo.x), 0, float(fo.y)).normalized()
+	# Once dogrudan hedeflenen hucre (saldiri butonu kuklaya bakiyorsa),
+	# sonra menzil boyunca tarama
+	var scan: Array = [cell]
+	for r in range(1, reach + 1):
+		scan.append(pc + fo * r)
+	for c: Vector2i in scan:
+		var d = _dummies.get(c, null)
+		if d != null and is_instance_valid(d) and d.is_alive():
+			d.take_hit(dmg, kdir)
+			_spawn_particles(_cell_center(c) + Vector3(0, 0.7, 0),
+					Color(0.95, 0.9, 0.7), 5)
+			return
+
+## Kukla yerlestir (12.7): elde "kukla" ile bos hucreye dokun.
+func _try_place_dummy(cell: Vector2i) -> bool:
+	if _dummies.has(cell) or _placed.has(cell) or _objects.has(cell):
+		return false
+	if cell == _player_cell():
+		return false
+	if not (_ground_char.get(cell, "") in [".", "d", "s"]):
+		return false
+	if not Inventory.remove_item("kukla", 1):
+		return false
+	_spawn_dummy(cell)
+	_spawn_floating_text(cell, "Kukla kuruldu", Color(0.8, 1.0, 0.8))
+	_dirty = true
+	return true
+
+func _spawn_dummy(cell: Vector2i) -> void:
+	var dummy := HittableDummy.new()
+	dummy.position = _cell_center(cell)
+	add_child(dummy)
+	_dummies[cell] = dummy
+	_solid_cells[cell] = true
 
 # --- Saldiri butonu (12.1/12.5) -------------------------------------------
+var _combo_flip: bool = false        # kilic 2'li kombo yon degistirici
+var _last_attack_ms: int = 0
+
 func _on_attack_pressed() -> void:
 	if player.is_swinging():
 		return
@@ -2749,7 +2831,25 @@ func _on_attack_pressed() -> void:
 	var target := _acquire_target()
 	var cell: Vector2i = target["cell"] if target["type"] == "dummy" \
 			else _facing_cell()
-	player.play_swing(prof, func(): _melee_hit(cell))
+	# KILIC 2'li kombo (12.3/12.5): pes pese basista ters yon + ileri adim
+	var combo := false
+	if bool(prof.get("combo", false)):
+		var now := Time.get_ticks_msec()
+		if now - _last_attack_ms < 700:
+			_combo_flip = not _combo_flip
+			combo = _combo_flip
+		else:
+			_combo_flip = false
+		_last_attack_ms = now
+	var did := player.play_swing(prof, func(): _melee_hit(cell), 0, combo)
+	if did and combo:
+		# Ikinci kesikte kucuk ileri adim — saldiriya yon hissi
+		var fo := Vector2i(player.facing.round())
+		if fo == Vector2i.ZERO:
+			fo = Vector2i(0, 1)
+		var step := Vector3(float(fo.x), 0, float(fo.y)).normalized() * 0.3
+		var tw := create_tween()
+		tw.tween_property(player, "position", player.position + step, 0.12)
 
 func _on_attack_hold_started() -> void:
 	# Menzilli silahsa nisan modu (Asama 5); degilse normal saldiri gibi

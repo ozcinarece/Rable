@@ -45,6 +45,12 @@ const CRAFT_RECIPES: Dictionary = {
 	# --- Savas & Av ---
 	"mizrak": {"output": {"mizrak": 1}, "cost": {"cubuk": 2, "tas": 1, "ip": 1},
 			"station": "tezgah", "category": "savas", "time": 3.0},
+	"sopa": {"output": {"sopa": 1}, "cost": {"kalas": 2},
+			"station": "tezgah", "category": "savas", "time": 2.0},
+	"kilic": {"output": {"kilic": 1}, "cost": {"kalas": 1, "tas": 3, "ip": 1},
+			"station": "tezgah", "category": "savas", "time": 4.0},
+	"kukla": {"output": {"kukla": 1}, "cost": {"odun": 4, "ip": 2},
+			"station": "tezgah", "category": "savas", "time": 3.0},
 	"zirh": {"output": {"zirh": 1}, "cost": {"ip": 4, "kalas": 2, "tas": 2},
 			"station": "tezgah", "category": "savas", "time": 5.0},
 	"sapka": {"output": {"sapka": 1}, "cost": {"ip": 2, "yaprak": 3},
