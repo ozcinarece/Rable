@@ -1894,7 +1894,7 @@ func is_swimmable(cell: Vector2i) -> bool:
 
 ## Komsu hucrede su var mi? (11.7 sulama tarimin kapisi)
 func has_adjacent_water(cell: Vector2i) -> bool:
-	for n in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+	for n: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
 		var c := cell + n
 		if is_water_source(c) or float(_water_level.get(c, 0.0)) > 0.0:
 			return true
