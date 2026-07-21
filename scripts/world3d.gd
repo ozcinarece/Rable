@@ -106,6 +106,12 @@ const PLACE_MODELS := {
 
 const REGROW_SECONDS := 60.0
 const CAM_BASE_DIST := 12.5  # genis bakis (Longvinter benzeri olcek)
+# harita-v2 Asama 2: uzak varsayilan (genis dunya hissi). Zoom carpani:
+#   en yakin = mevcut yakinlik (0.55), varsayilan = orta nokta (1.375),
+#   en uzak = ~1.6x varsayilan (2.2). Pinch/tekerlek bu araligi kullanir.
+const CAM_ZOOM_MIN := 0.55
+const CAM_ZOOM_DEFAULT := 1.375
+const CAM_ZOOM_MAX := 2.2
 const SETTINGS_PATH := "user://cam3d.json"
 
 # Doga modelleri (CC0, Quaternius). Hucreye gore deterministik secilir:
@@ -247,7 +253,7 @@ var _autosave_timer: float = 0.0
 var _loading: bool = false     # yukleme sirasinda autosave/kirlilik bastir
 
 # Kamera + gorunum ayarlari (kaydedilir)
-var cam_distance: float = 1.0  # yakinlik carpani
+var cam_distance: float = CAM_ZOOM_DEFAULT  # yakinlik carpani (uzak varsayilan)
 var cam_pitch: float = 52.0    # bakis acisi (derece)
 var character_path: String = "custom:f2c29b/4fa7d8/5b6b8c"  # varsayilan: yuvarlak
 var hat_id: String = "yok"
@@ -302,6 +308,23 @@ func _ready() -> void:
 		_setup_screenshot(OS.get_environment("RABLE_SCREENSHOT"))
 
 func _setup_screenshot(save_path: String) -> void:
+	# harita-v2 MAPTEST: uretim istatistikleri (128x128 + su/agac/kaya/kil/dogus)
+	var water_n := 0
+	for c: Vector2i in _ground_char:
+		if _ground_char[c] == "~":
+			water_n += 1
+	var tree_n := 0
+	var rock_n := 0
+	for c: Vector2i in _objects:
+		if _objects[c] == "T":
+			tree_n += 1
+		elif _objects[c] == "#":
+			rock_n += 1
+	print("MAPTEST: boyut=%dx%d su=%d agac=%d kaya=%d kil=%d dogus=%s zemin=%s" % [
+		_map_w, _map_h, water_n, tree_n, rock_n, _clay_cells.size(),
+		str(_spawn_cell), _ground_char.get(_spawn_cell, "?")])
+	print("CAMTEST: zoom_var=%.3f min=%.2f max=%.2f" % [
+		cam_distance, CAM_ZOOM_MIN, CAM_ZOOM_MAX])
 	# Vitrin: ornek gorunum, kamera OYUN VARSAYILANINDA
 	# (referansla olcek karsilastirmasi icin)
 	player.set_character("custom:f2c29b/4fa7d8/5b6b8c")
@@ -311,7 +334,9 @@ func _setup_screenshot(save_path: String) -> void:
 	_snap(save_path)
 	# Ikinci kare: kusbakisi tum ada (teshis icin)
 	_cam_locked = true
-	camera.position = Vector3(_map_w / 2.0, 42.0, _map_h / 2.0 + 12.0)
+	# harita-v2: kusbakisi tum 128x128 adayi kapsar (yukseklik boyutla olcekli)
+	camera.position = Vector3(_map_w / 2.0, _map_w * 0.85,
+			_map_h / 2.0 + _map_w * 0.22)
 	camera.rotation_degrees = Vector3(-74, 0, 0)
 	await get_tree().create_timer(1.0).timeout
 	_snap(save_path.replace(".png", "_wide.png"))
@@ -969,7 +994,8 @@ func _load_settings() -> void:
 		return
 	var parsed = JSON.parse_string(file.get_as_text())
 	if parsed is Dictionary:
-		cam_distance = clampf(float(parsed.get("zoom", 1.0)), 0.55, 1.7)
+		cam_distance = clampf(float(parsed.get("zoom", CAM_ZOOM_DEFAULT)),
+				CAM_ZOOM_MIN, CAM_ZOOM_MAX)
 		cam_pitch = clampf(float(parsed.get("pitch", 52.0)), 35.0, 68.0)
 		# v3 gecisi: karakter secimi sifirlandi (Sam denemesi geri alindi);
 		# v>=3 kayitlardaki secimler aynen korunur
@@ -1212,7 +1238,8 @@ func _unhandled_input(event: InputEvent) -> void:
 		if _touches.has(0) and _touches.has(1):
 			var dist: float = _touches[0].distance_to(_touches[1])
 			if _pinch_last > 0.0 and dist > 1.0:
-				cam_distance = clampf(cam_distance * (_pinch_last / dist), 0.55, 1.7)
+				cam_distance = clampf(cam_distance * (_pinch_last / dist),
+						CAM_ZOOM_MIN, CAM_ZOOM_MAX)
 				if _zoom_slider != null:
 					_zoom_slider.set_value_no_signal(cam_distance)
 			_pinch_last = dist
@@ -1263,8 +1290,8 @@ func _build_camera_ui() -> void:
 	zoom_label.add_theme_font_size_override("font_size", 16)
 	box.add_child(zoom_label)
 	_zoom_slider = HSlider.new()
-	_zoom_slider.min_value = 0.55
-	_zoom_slider.max_value = 1.7
+	_zoom_slider.min_value = CAM_ZOOM_MIN
+	_zoom_slider.max_value = CAM_ZOOM_MAX
 	_zoom_slider.step = 0.01
 	_zoom_slider.value = cam_distance
 	_zoom_slider.custom_minimum_size = Vector2(0, 36)
