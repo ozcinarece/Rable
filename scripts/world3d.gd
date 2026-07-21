@@ -197,9 +197,10 @@ func _setup_screenshot(save_path: String) -> void:
 		await get_tree().create_timer(1.2).timeout
 		_snap(save_path.replace(".png", String(frame["suffix"]) + ".png"))
 	# Tema ornek sayfasi (Turkce karakter testi dahil)
-	_build_theme_test()
+	var theme_layer := _build_theme_test()
 	await get_tree().create_timer(0.6).timeout
 	_snap(save_path.replace(".png", "_tema.png"))
+	theme_layer.queue_free()  # envanter karesini kapatmasin
 	# Son kare: envanter paneli acik + ilk esya secili (UI Adim 2)
 	hud.inventory_button.button_pressed = true
 	if not hud._inv_slots.is_empty():
@@ -210,7 +211,7 @@ func _setup_screenshot(save_path: String) -> void:
 
 # Tema test sayfasi: paneller, sekme, butonlar, kategori daireleri.
 # Sadece CI ekran goruntusu modunda kurulur.
-func _build_theme_test() -> void:
+func _build_theme_test() -> CanvasLayer:
 	var UIColors := preload("res://scripts/ui_colors.gd")
 	var layer := CanvasLayer.new()
 	layer.layer = 50
@@ -268,6 +269,7 @@ func _build_theme_test() -> void:
 		sb.set_corner_radius_all(999)
 		dot.add_theme_stylebox_override("panel", sb)
 		dots.add_child(dot)
+	return layer
 
 func _snap(path: String) -> void:
 	get_viewport().get_texture().get_image().save_png(path)
