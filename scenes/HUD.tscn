@@ -9,9 +9,9 @@ script = ExtResource("1_script")
 
 [node name="InventoryButton" type="Button" parent="."]
 anchor_left = 1.0
-anchor_top = 0.3
+anchor_top = 0.2
 anchor_right = 1.0
-anchor_bottom = 0.3
+anchor_bottom = 0.2
 offset_left = -80.0
 offset_top = 0.0
 offset_right = -16.0
@@ -24,9 +24,9 @@ expand_icon = true
 
 [node name="CraftButton" type="Button" parent="."]
 anchor_left = 1.0
-anchor_top = 0.3
+anchor_top = 0.2
 anchor_right = 1.0
-anchor_bottom = 0.3
+anchor_bottom = 0.2
 offset_left = -80.0
 offset_top = 76.0
 offset_right = -16.0
@@ -39,9 +39,9 @@ expand_icon = true
 
 [node name="ResearchButton" type="Button" parent="."]
 anchor_left = 1.0
-anchor_top = 0.3
+anchor_top = 0.2
 anchor_right = 1.0
-anchor_bottom = 0.3
+anchor_bottom = 0.2
 offset_left = -80.0
 offset_top = 152.0
 offset_right = -16.0
@@ -54,9 +54,9 @@ text = "Ar"
 [node name="CraftMiniBar" type="ProgressBar" parent="."]
 visible = false
 anchor_left = 1.0
-anchor_top = 0.3
+anchor_top = 0.2
 anchor_right = 1.0
-anchor_bottom = 0.3
+anchor_bottom = 0.2
 offset_left = -80.0
 offset_top = 144.0
 offset_right = -16.0
