@@ -12,6 +12,8 @@ extends Node3D
 ## Oyun mantigi autoload'larda; HUD 3D ustunde 2D katman.
 
 const MapData = preload("res://scripts/map_data.gd")
+const MapGen = preload("res://scripts/map_gen.gd")       # harita-v2: noise ureteci
+const MapBalance = preload("res://scripts/map_balance.gd")
 const Player3DScript = preload("res://scripts/player3d.gd")
 const DigRules = preload("res://scripts/dig_rules.gd")
 const WaterRules = preload("res://scripts/water_rules.gd")
@@ -231,6 +233,8 @@ var _mesh_cache: Dictionary = {}   # model adi -> Mesh (GLB'den bir kez cikarili
 var _solid_cells: Dictionary = {}
 var _map_w: int = 0
 var _map_h: int = 0
+var _map_seed: int = MapBalance.SEED_DEFAULT  # harita-v2 (sabit; aynı harita)
+var _clay_cells: Dictionary = {}   # kil-işaretli kum hücreleri (kürek kaynağı)
 var _spawn_cell := Vector2i(5, 5)
 var _held_item: String = ""
 
@@ -1477,9 +1481,13 @@ func _build_environment() -> void:
 # --- Dunya kurulumu -----------------------------------------------------
 
 func _build_world() -> void:
-	var rows: Array[String] = MapData.MAP
+	# harita-v2: taban harita noise ile üretilir (aynı seed = aynı harita).
+	# Kayıt taban haritayı yazmaz; delta (kazı/nesne/yapı) yazar — bu yüzden
+	# seed sabit ki reload'da taban aynı çıksın.
+	var rows: Array[String] = MapGen.generate(_map_seed)
 	_map_h = rows.size()
 	_map_w = rows[0].length()
+	_clay_cells.clear()
 
 	var ground_cells: Dictionary = {}
 	for ch in GROUND_DEFS:
@@ -1502,6 +1510,11 @@ func _build_world() -> void:
 				"#", "m":
 					_objects[cell] = ch
 					_solid_cells[cell] = true
+				"k":
+					# Kil-işaretli kum (kürek kaynağı): zemin kum gibi kazılır,
+					# görsel işaret + kazıda garanti kil (aşağıda).
+					ground = "s"
+					_clay_cells[cell] = true
 				"o":
 					# Eski ikili cukur: kazi modulunde depth=2 cukura donusur
 					ground = "d"
@@ -1532,6 +1545,75 @@ func _build_world() -> void:
 	_build_sea_rocks()
 	_build_decor(ground_cells["."] + ground_cells["h"])
 	_rebuild_objects()
+	_build_ground_markers()  # harita-v2: kil işaretleri + yüzey cevher ipuçları
+
+## harita-v2: kil-işaretli kum hücrelerine kil-rengi yassı yama (kürek ipucu)
+## + birkaç kaya öbeğinin yanına bakır-tonlu yüzey cevher ipucu. İkisi de
+## MultiMesh (ucuz). Görsel; mekanik kazıda (kil garanti) _try_dig'te.
+func _build_ground_markers() -> void:
+	# --- Kil yamaları ---
+	if not _clay_cells.is_empty():
+		var disc := CylinderMesh.new()
+		disc.top_radius = 0.34
+		disc.bottom_radius = 0.34
+		disc.height = 0.04
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = disc
+		mm.instance_count = _clay_cells.size()
+		var i := 0
+		for cell: Vector2i in _clay_cells:
+			mm.set_instance_transform(i,
+					Transform3D(Basis(), _cell_center(cell) + Vector3(0, 0.03, 0)))
+			i += 1
+		var inst := MultiMeshInstance3D.new()
+		inst.multimesh = mm
+		var cmat := StandardMaterial3D.new()
+		cmat.albedo_color = Color(0.58, 0.44, 0.30)
+		cmat.roughness = 1.0
+		inst.material_override = cmat
+		add_child(inst)
+	# --- Yüzey cevher ipuçları (birkaç kaya öbeği yanında) ---
+	var rock_cells: Array = []
+	for cell: Vector2i in _objects:
+		if _objects[cell] == "#":
+			rock_cells.append(cell)
+	rock_cells.sort_custom(func(a: Vector2i, b: Vector2i) -> bool:
+		return a.x * 100000 + a.y < b.x * 100000 + b.y)
+	var hints: Array = []
+	var want: int = MapBalance.ORE_HINT_CLUSTERS
+	if not rock_cells.is_empty() and want > 0:
+		var stride: int = maxi(1, rock_cells.size() / want)
+		var idx := 0
+		while idx < rock_cells.size() and hints.size() < want:
+			var rc: Vector2i = rock_cells[idx]
+			# Komşu yürünür hücreye ipucu koy
+			for off: Vector2i in [Vector2i(1, 0), Vector2i(0, 1), Vector2i(-1, 0),
+					Vector2i(0, -1)]:
+				var hc := rc + off
+				if is_walkable(hc) and not _objects.has(hc):
+					hints.append(hc)
+					break
+			idx += stride
+	if not hints.is_empty():
+		var pebble := SphereMesh.new()
+		pebble.radius = 0.16
+		pebble.height = 0.24
+		var mm2 := MultiMesh.new()
+		mm2.transform_format = MultiMesh.TRANSFORM_3D
+		mm2.mesh = pebble
+		mm2.instance_count = hints.size()
+		for j in hints.size():
+			mm2.set_instance_transform(j,
+					Transform3D(Basis(), _cell_center(hints[j]) + Vector3(0, 0.12, 0)))
+		var inst2 := MultiMeshInstance3D.new()
+		inst2.multimesh = mm2
+		var omat := StandardMaterial3D.new()
+		omat.albedo_color = Color(0.72, 0.45, 0.28)  # bakır tonu
+		omat.metallic = 0.4
+		omat.roughness = 0.6
+		inst2.material_override = omat
+		add_child(inst2)
 
 # Kiyi/deniz kayalari: ada cevresine serpistirilmis gri kayalar
 # (yari batik adaciklar - referans gorunumun imzasi)
@@ -1633,7 +1715,7 @@ func _sample_terrain(x: float, z: float) -> Array:
 
 # Arazi 8x8 hucrelik PARCALAR halinde kurulur: kazi yalnizca ilgili
 # parcalari yeniden uretir (tum haritayi degil - mobil performansi).
-const CHUNK_CELLS := 8
+const CHUNK_CELLS := 16  # harita-v2: 16x16 hucre/parca (128x128'de 8x8=64 parca)
 var _terrain_chunks: Dictionary = {}  # parca koordinati -> MeshInstance3D
 var _terrain_material: StandardMaterial3D
 
@@ -2478,6 +2560,9 @@ func _try_dig(cell: Vector2i) -> bool:
 	var bonus := DigRules.roll_loot(new_depth)
 	for item_id in bonus:
 		drops[item_id] = int(drops.get(item_id, 0)) + int(bonus[item_id])
+	# harita-v2: kil-işaretli hücre kazılınca garanti +1 kil (kürek kaynağı)
+	if _clay_cells.has(cell):
+		drops["kil"] = int(drops.get("kil", 0)) + 1
 	if not Inventory.can_add_all(drops):
 		_spawn_floating_text(cell, "Envanter dolu!", Color(1, 0.6, 0.6))
 		return true
