@@ -185,6 +185,14 @@ var _map_h: int = 0
 var _spawn_cell := Vector2i(5, 5)
 var _held_item: String = ""
 
+# KALICILIK (3D): dunya durumu (kazi/su/yapi/nesne) + hayatta kalma
+# autoload'lari periyodik ve arka plana alininca kaydedilir. Arastirma
+# kendi dosyasina yazar (research.json), buraya dahil degil.
+const SAVE3D_PATH := "user://save3d.json"
+var _dirty: bool = false       # son kayittan beri degisiklik oldu mu
+var _autosave_timer: float = 0.0
+var _loading: bool = false     # yukleme sirasinda autosave/kirlilik bastir
+
 # Kamera + gorunum ayarlari (kaydedilir)
 var cam_distance: float = 1.0  # yakinlik carpani
 var cam_pitch: float = 52.0    # bakis acisi (derece)
@@ -219,6 +227,10 @@ func _ready() -> void:
 	hud.chest_dismantle_requested.connect(_on_chest_dismantle)
 	hud.chest_closed.connect(func(): _open_chest = Vector2i(-999, -999))
 	_build_camera_ui()
+	# Kayitli oyunu geri yukle (varsa). CI modunda atlanir ki sahneler
+	# hep temiz baslasin.
+	if not OS.has_environment("RABLE_SCREENSHOT"):
+		_load_game_3d()
 	# CI ekran goruntusu modu: birkac saniye sonra kare kaydet ve cik
 	if OS.has_environment("RABLE_SCREENSHOT"):
 		_setup_screenshot(OS.get_environment("RABLE_SCREENSHOT"))
@@ -558,6 +570,21 @@ func _process(delta: float) -> void:
 	# Eldeki esya envanterden ciktiysa birak
 	if _held_item != "" and Inventory.get_count(_held_item) <= 0:
 		_on_hold_requested("")
+	# Periyodik otomatik kayit (yalnizca degisiklik olduysa)
+	_autosave_timer += delta
+	if _autosave_timer >= 5.0:
+		_autosave_timer = 0.0
+		if _dirty:
+			_save_game_3d()
+
+# Uygulama arka plana alininca / kapatilinca son durumu kaydet.
+# Android'de kritik: kullanici oyundan cikinca APPLICATION_PAUSED gelir.
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_APPLICATION_PAUSED \
+			or what == NOTIFICATION_WM_CLOSE_REQUEST \
+			or what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		if _map_w > 0 and not OS.has_environment("RABLE_SCREENSHOT"):
+			_save_game_3d()
 
 func is_walkable(cell: Vector2i) -> bool:
 	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
@@ -601,6 +628,163 @@ func _save_settings() -> void:
 				"pitch": cam_pitch, "character": character_path,
 				"hat": hat_id, "face": face_path,
 				"hair": hair_style, "hair_color": "#" + hair_color.to_html(false)}))
+
+# --- 3D dunya kalicilik (kazi/su/yapi/nesne + hayatta kalma) ---------------
+# Vector2i anahtarli sozlukleri JSON'a "x,y" -> deger olarak yazar.
+
+func _cells_to_json(d: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for cell: Vector2i in d:
+		out["%d,%d" % [cell.x, cell.y]] = d[cell]
+	return out
+
+func _key_to_cell(key: String) -> Vector2i:
+	var parts := key.split(",")
+	return Vector2i(int(parts[0]), int(parts[1]))
+
+func _save_game_3d() -> void:
+	if _map_w == 0:
+		return
+	var chest_json: Dictionary = {}
+	for cell: Vector2i in _chests:
+		chest_json["%d,%d" % [cell.x, cell.y]] = _chests[cell]
+	var ground_json: Array = []
+	for entry in _ground_items:
+		ground_json.append({"x": entry["cell"].x, "y": entry["cell"].y,
+				"id": entry["id"], "count": entry["count"]})
+	var data := {
+		"v": 1,
+		"w": _map_w, "h": _map_h,
+		"depth": _cells_to_json(_depth),
+		"water": _cells_to_json(_water_level),
+		"objects": _cells_to_json(_objects),
+		"object_hits": _cells_to_json(_object_hits),
+		"regrow": _cells_to_json(_regrow),
+		"regrow_type": _cells_to_json(_regrow_type),
+		"placed": _cells_to_json(_placed),
+		"chests": chest_json,
+		"ground_items": ground_json,
+		"player": [player.position.x, player.position.z],
+		"held": _held_item,
+		"inventory": Inventory.to_save(),
+		"craft_queue": Crafting.to_save(),
+		"hunger": Hunger.value,
+		"thirst": Thirst.value,
+		"hp": Health.value,
+		"day": DayNight.day,
+		"is_night": DayNight.is_night,
+		"cycle_elapsed": DayNight.elapsed,
+	}
+	var file := FileAccess.open(SAVE3D_PATH, FileAccess.WRITE)
+	if file == null:
+		push_warning("3D kayit yazilamadi: " + str(FileAccess.get_open_error()))
+		return
+	file.store_string(JSON.stringify(data))
+	file.close()
+	_dirty = false
+
+func _load_game_3d() -> void:
+	if not FileAccess.file_exists(SAVE3D_PATH):
+		return
+	var file := FileAccess.open(SAVE3D_PATH, FileAccess.READ)
+	if file == null:
+		return
+	var parsed = JSON.parse_string(file.get_as_text())
+	file.close()
+	if not (parsed is Dictionary):
+		return
+	var data: Dictionary = parsed
+	# Harita boyutu degistiyse eski kaydi yok say (hucre koordinatlari kayar)
+	if int(data.get("w", 0)) != _map_w or int(data.get("h", 0)) != _map_h:
+		return
+	_loading = true
+	# Kazi + su
+	_depth.clear()
+	for key in data.get("depth", {}):
+		_depth[_key_to_cell(key)] = int(data["depth"][key])
+	_water_level.clear()
+	for key in data.get("water", {}):
+		_water_level[_key_to_cell(key)] = float(data["water"][key])
+	# Nesneler (kesilmis agac/kaya, yeniden buyume)
+	_objects.clear()
+	for key in data.get("objects", {}):
+		_objects[_key_to_cell(key)] = String(data["objects"][key])
+	_object_hits.clear()
+	for key in data.get("object_hits", {}):
+		_object_hits[_key_to_cell(key)] = int(data["object_hits"][key])
+	_regrow.clear()
+	for key in data.get("regrow", {}):
+		_regrow[_key_to_cell(key)] = float(data["regrow"][key])
+	_regrow_type.clear()
+	for key in data.get("regrow_type", {}):
+		_regrow_type[_key_to_cell(key)] = String(data["regrow_type"][key])
+	# Yerlestirilmis yapilar (dugumleri kur), sonra sandik icerikleri
+	for cell in _placed_nodes.values():
+		cell.queue_free()
+	_placed.clear()
+	_placed_nodes.clear()
+	_chests.clear()
+	for key in data.get("placed", {}):
+		var item_id := String(data["placed"][key])
+		if PLACE_MODELS.has(item_id):
+			_set_placed(_key_to_cell(key), item_id)
+	for key in data.get("chests", {}):
+		var contents: Dictionary = {}
+		for item_id in data["chests"][key]:
+			contents[item_id] = int(data["chests"][key][item_id])
+		_chests[_key_to_cell(key)] = contents
+	# Yerdeki esyalar
+	for entry in data.get("ground_items", []):
+		if entry is Dictionary and Items.ITEMS.has(entry.get("id", "")):
+			_add_ground_item(Vector2i(int(entry["x"]), int(entry["y"])),
+					String(entry["id"]), int(entry["count"]))
+	# Katilik ve gorseli sifirdan tut
+	_recompute_solids()
+	_build_terrain()
+	_recompute_water()
+	_build_decor(_decor_cells)
+	_rebuild_objects()
+	# Oyuncu konumu + eldeki alet
+	var ppos = data.get("player", null)
+	if ppos is Array and ppos.size() == 2:
+		player.position = Vector3(float(ppos[0]),
+				player.position.y, float(ppos[1]))
+		camera.position = player.position + _camera_offset()
+	# Hayatta kalma autoload'lari
+	if data.has("inventory"):
+		Inventory.load_save(data["inventory"])
+	Crafting.load_save(data.get("craft_queue", []))
+	Hunger.value = clampf(float(data.get("hunger", Hunger.value)), 0.0, Hunger.MAX_VALUE)
+	Hunger.changed.emit()
+	Thirst.value = clampf(float(data.get("thirst", Thirst.value)), 0.0, Thirst.MAX_VALUE)
+	Thirst.changed.emit()
+	Health.value = clampf(float(data.get("hp", Health.value)), 0.0, Health.MAX_VALUE)
+	Health.changed.emit()
+	DayNight.load_state(int(data.get("day", DayNight.day)),
+			bool(data.get("is_night", DayNight.is_night)),
+			float(data.get("cycle_elapsed", DayNight.elapsed)))
+	# Eldeki alet gecerliyse tekrar tak
+	var held := String(data.get("held", ""))
+	if held != "" and Inventory.get_count(held) > 0:
+		_on_hold_requested(held)
+	_loading = false
+
+## _solid_cells'i sifirdan kurar: zemin (su/tepe) + kati nesneler + yapilar.
+## Yukleme sonrasi ve durum bozulmasin diye tek kaynaktan turetilir.
+func _recompute_solids() -> void:
+	_solid_cells.clear()
+	for cell: Vector2i in _ground_char:
+		var g: String = _ground_char[cell]
+		if GROUND_DEFS.has(g) and GROUND_DEFS[g].get("solid", false):
+			_solid_cells[cell] = true
+	for cell: Vector2i in _objects:
+		# Cicek/mantar yurunebilir; agac/kaya/cali engeldir
+		if not (String(_objects[cell]) in ["cicek", "mantar"]):
+			_solid_cells[cell] = true
+	for cell: Vector2i in _placed:
+		var item_id: String = _placed[cell]
+		if PLACE_MODELS.has(item_id) and PLACE_MODELS[item_id].get("solid", false):
+			_solid_cells[cell] = true
 
 # Iki parmakla yakinlastirma (pinch); oyuncu hareketi 1. parmakta kalir
 func _unhandled_input(event: InputEvent) -> void:
@@ -1825,6 +2009,7 @@ func _try_dig(cell: Vector2i) -> bool:
 			hud.fly_pickup(item_id, fly_from)
 	_spawn_floating_text(cell, " ".join(gained), Color(0.9, 0.8, 0.6))
 	_refresh_terrain_at(cell)
+	_dirty = true
 	return true
 
 ## Toprak yigma (11.3): cukuru doldurur ya da duz zemini yukseltir
@@ -1844,6 +2029,7 @@ func _try_pile(cell: Vector2i) -> bool:
 	_recompute_water()  # 11.2: kapasite dustu; tasan su yok olur
 	_spawn_floating_text(cell, "Toprak döküldü", Color(0.85, 0.95, 0.7))
 	_refresh_terrain_at(cell)
+	_dirty = true
 	return true
 
 # --- Su modeli (KAZI_SU_MODULU.md 11.2) ------------------------------------
@@ -1913,6 +2099,7 @@ func add_water(cell: Vector2i, amount: float) -> float:
 	var target: Vector2i = pool["cells"][0]
 	_water_level[target] = float(_water_level.get(target, 0.0)) + accepted
 	_recompute_water()
+	_dirty = true
 	return accepted
 
 ## Su cekme kapisi (kova alir, ileride boru emer). Alinan miktari doner;
@@ -1937,6 +2124,7 @@ func take_water(cell: Vector2i, amount: float) -> float:
 			_water_level[c] = w - cut
 			left -= cut
 	_recompute_water()
+	_dirty = true
 	return taken
 
 # --- Su gorseli (11.2): havuz basina TEK duz yuzey --------------------------
@@ -2074,6 +2262,7 @@ func _try_place(cell: Vector2i) -> bool:
 	_set_placed(cell, _held_item)
 	_spawn_floating_text(cell, Items.display_name(_placed[cell]) + " kuruldu",
 			Color(0.8, 1.0, 0.8))
+	_dirty = true
 	return true
 
 func _set_placed(cell: Vector2i, item_id: String) -> void:
@@ -2119,6 +2308,7 @@ func _remove_placed(cell: Vector2i) -> void:
 		_placed_nodes[cell].queue_free()
 		_placed_nodes.erase(cell)
 	_spawn_floating_text(cell, "Geri alındı", Color(0.95, 0.9, 0.7))
+	_dirty = true
 
 # Oyuncu 3x3 cevresindeki istasyonlara gore uretim/arastirma yakinligi
 func _update_station_proximity() -> void:
@@ -2163,6 +2353,7 @@ func _on_chest_transfer(item_id: String, to_chest: bool) -> void:
 		else:
 			hud.show_chest(chest, "Envanter dolu!")
 			return
+	_dirty = true
 	hud.show_chest(chest)
 
 func _on_chest_dismantle() -> void:
@@ -2189,18 +2380,22 @@ func _on_drop_item(slot_index: int) -> void:
 	if target == pc:
 		return  # bos komsu hucre yok
 	Inventory.clear_slot(slot_index)
+	_add_ground_item(target, String(content["id"]), int(content["count"]))
+	_spawn_floating_text(target, "Yere bırakıldı", Color(0.95, 0.9, 0.7))
+	_dirty = true
+
+## Yere bir esya yigini (Sprite3D) koyar; hem birakma hem yuklemede kullanilir
+func _add_ground_item(cell: Vector2i, item_id: String, count: int) -> void:
 	var spr := Sprite3D.new()
-	var icon_path := String(Items.ITEMS.get(content["id"], {}).get("icon", ""))
+	var icon_path := String(Items.ITEMS.get(item_id, {}).get("icon", ""))
 	if icon_path != "" and ResourceLoader.exists(icon_path):
 		spr.texture = load(icon_path)
 	spr.pixel_size = 0.014
 	spr.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	spr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	spr.position = _cell_center(target) + Vector3(0, 0.35, 0)
+	spr.position = _cell_center(cell) + Vector3(0, 0.35, 0)
 	add_child(spr)
-	_ground_items.append({"cell": target, "id": content["id"],
-			"count": content["count"], "node": spr})
-	_spawn_floating_text(target, "Yere bırakıldı", Color(0.95, 0.9, 0.7))
+	_ground_items.append({"cell": cell, "id": item_id, "count": count, "node": spr})
 
 func _ground_item_at(cell: Vector2i) -> int:
 	for i in _ground_items.size():
@@ -2222,6 +2417,7 @@ func _try_pickup_ground(cell: Vector2i) -> bool:
 				camera.unproject_position(_cell_center(cell) + Vector3(0, 0.5, 0)))
 	entry["node"].queue_free()
 	_ground_items.remove_at(idx)
+	_dirty = true
 	return true
 
 func _on_action_pressed() -> void:
@@ -2283,6 +2479,7 @@ func _try_harvest(cell: Vector2i) -> bool:
 		_objects.erase(cell)
 		_solid_cells.erase(cell)
 	_rebuild_objects()
+	_dirty = true
 	return true
 
 func _tick_regrow(delta: float) -> void:
@@ -2296,8 +2493,10 @@ func _tick_regrow(delta: float) -> void:
 	for cell in ready_cells:
 		_regrow.erase(cell)
 		_objects[cell] = _regrow_type.get(cell, "m")
+		_solid_cells[cell] = true
 		_regrow_type.erase(cell)
 	_rebuild_objects()
+	_dirty = true
 
 ## Eline alinan aletin 3D modeli (Kenney Survival Kit)
 const TOOL_MODELS := {
@@ -2313,6 +2512,8 @@ func _on_hold_requested(item_id: String) -> void:
 	_held_item = item_id
 	hud.set_held_item(item_id)
 	player.set_held_tool(TOOL_MODELS.get(item_id, ""))
+	if not _loading:
+		_dirty = true
 
 func _compute_action_state() -> String:
 	var pc := _player_cell()

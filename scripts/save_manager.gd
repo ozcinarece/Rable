@@ -5,6 +5,8 @@ extends Node
 ## silinmedikce kayit durur. Ne kaydedilecegine World karar verir.
 
 const SAVE_PATH: String = "user://save.json"
+## 3D dunya kaydi (world3d.gd yonetir; "Yeni Oyun" burdan da silinir)
+const SAVE3D_PATH: String = "user://save3d.json"
 
 func save_data(data: Dictionary) -> void:
 	var file := FileAccess.open(SAVE_PATH, FileAccess.WRITE)
@@ -28,5 +30,6 @@ func load_data() -> Dictionary:
 	return {}
 
 func delete_save() -> void:
-	if FileAccess.file_exists(SAVE_PATH):
-		DirAccess.remove_absolute(ProjectSettings.globalize_path(SAVE_PATH))
+	for path in [SAVE_PATH, SAVE3D_PATH]:
+		if FileAccess.file_exists(path):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path))
