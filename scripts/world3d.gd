@@ -772,6 +772,8 @@ func _process(delta: float) -> void:
 	if not _torch_lights.is_empty():
 		_update_torches(delta)  # 13.5 isik butcesi + flicker
 	_tick_regrow(delta)
+	if not _ground_items.is_empty():
+		_tick_ground_items(delta)  # #1: suzulme + donme
 	_station_timer += delta
 	if _station_timer >= 0.25:
 		_station_timer = 0.0
@@ -2812,18 +2814,114 @@ func _on_drop_item(slot_index: int) -> void:
 	_spawn_floating_text(target, "Yere bırakıldı", Color(0.95, 0.9, 0.7))
 	_dirty = true
 
-## Yere bir esya yigini (Sprite3D) koyar; hem birakma hem yuklemede kullanilir
+## Dunyada ayni anda durabilecek yer-esyasi siniri (performans + kalabalik).
+## Dolunca en eski esya silinir (kaybolur).
+const GROUND_ITEM_LIMIT: int = 100
+
+## Yere bir esya yigini koyar; hem birakma, hem agac/kaya/yikim sacisi, hem
+## de yuklemede kullanilir (#1: hepsi TEK sistem). Gorsel = kategori renkli
+## low-poly kutu/kure; suzulme + yavas donme animasyonu (_tick_ground_items).
+## Ayni id zaten o hucredeyse istiflenir (yeni node yok).
 func _add_ground_item(cell: Vector2i, item_id: String, count: int) -> void:
-	var spr := Sprite3D.new()
-	var icon_path := String(Items.ITEMS.get(item_id, {}).get("icon", ""))
-	if icon_path != "" and ResourceLoader.exists(icon_path):
-		spr.texture = load(icon_path)
-	spr.pixel_size = 0.014
-	spr.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	spr.texture_filter = BaseMaterial3D.TEXTURE_FILTER_NEAREST
-	spr.position = _cell_center(cell) + Vector3(0, 0.35, 0)
-	add_child(spr)
-	_ground_items.append({"cell": cell, "id": item_id, "count": count, "node": spr})
+	var existing := _ground_item_at(cell)
+	if existing != -1 and String(_ground_items[existing]["id"]) == item_id:
+		_ground_items[existing]["count"] = \
+				int(_ground_items[existing]["count"]) + count
+		return
+	# ~100 sinir: en eskiyi at (dunya cop yigini olmasin)
+	while _ground_items.size() >= GROUND_ITEM_LIMIT:
+		var oldest: Dictionary = _ground_items[0]
+		var on: Variant = oldest.get("node", null)
+		if on != null and is_instance_valid(on):
+			(on as Node).queue_free()
+		_ground_items.remove_at(0)
+	var node := _ground_item_visual(item_id)
+	var base_y := 0.35
+	node.position = _cell_center(cell) + Vector3(0, base_y, 0)
+	add_child(node)
+	_ground_items.append({"cell": cell, "id": item_id, "count": count,
+			"node": node, "base_y": base_y, "phase": randf() * TAU})
+
+## Kategori rengine gore basit low-poly govde (kutu; yenilebilir/yuvarlaklar
+## kure). Ikon dokusu YOK — uzaktan net, ucuz, "dunya objesi" hissi.
+func _ground_item_visual(item_id: String) -> Node3D:
+	var root := Node3D.new()
+	var mi := MeshInstance3D.new()
+	if _item_is_round(item_id):
+		var sm := SphereMesh.new()
+		sm.radius = 0.12
+		sm.height = 0.24
+		mi.mesh = sm
+	else:
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.2, 0.2, 0.2)
+		mi.mesh = bm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = _item_category_color(item_id)
+	mat.roughness = 0.7
+	mi.material_override = mat
+	root.add_child(mi)
+	return root
+
+## Esya kategorisi -> renk (yer-esyasi govdesi). Kaba gruplar; bilinmeyen
+## notr kahve-gri.
+func _item_category_color(item_id: String) -> Color:
+	match item_id:
+		"odun", "kalas", "cubuk", "yaprak", "tohum":
+			return Color(0.55, 0.38, 0.22)          # ahsap/bitki: kahve
+		"tas", "cakil", "kil", "kum", "toprak":
+			return Color(0.55, 0.56, 0.60)          # tas/toprak: gri
+		"komur":
+			return Color(0.18, 0.18, 0.20)          # komur: koyu
+		"altin":
+			return Color(0.85, 0.70, 0.25)          # altin: sari
+		"bakir":
+			return Color(0.78, 0.50, 0.30)          # bakir: turuncu-kahve
+		"meyve", "cicek":
+			return Color(0.85, 0.30, 0.35)          # yiyecek/cicek: kirmizi
+		"mantar":
+			return Color(0.80, 0.72, 0.60)          # mantar: bej
+		"ip":
+			return Color(0.80, 0.75, 0.55)          # ip: acik bej
+		_:
+			return Color(0.62, 0.55, 0.45)          # varsayilan
+
+## Yuvarlak govde alan (kure) esyalar: yiyecek/toplanabilir.
+func _item_is_round(item_id: String) -> bool:
+	return item_id in ["meyve", "mantar", "altin", "bakir", "cakil"]
+
+## Dususleri hucre cevresine sacar (agac/kaya hasadi + yikim ayni sistem #1).
+## Her (id,adet) merkeze yakin, mumkunse bos bir yer-esyasi hucresine konur.
+func _scatter_drops(center: Vector2i, drops: Dictionary) -> void:
+	for item_id: String in drops:
+		_add_ground_item(_free_scatter_cell(center), item_id, int(drops[item_id]))
+
+## Merkeze en yakin, uzerinde yer-esyasi olmayan hucre (spiral); yoksa merkez.
+func _free_scatter_cell(center: Vector2i) -> Vector2i:
+	if _ground_item_at(center) == -1:
+		return center
+	for off: Vector2i in [Vector2i(0, 1), Vector2i(1, 0), Vector2i(-1, 0),
+			Vector2i(0, -1), Vector2i(1, 1), Vector2i(-1, 1), Vector2i(1, -1),
+			Vector2i(-1, -1)]:
+		if _ground_item_at(center + off) == -1:
+			return center + off
+	return center
+
+var _ground_anim_t: float = 0.0
+
+## Yer-esyalarini suzer (yukari-asagi) + yavasca dondurur. Her esya kendi
+## fazinda (senkron degil).
+func _tick_ground_items(_delta: float) -> void:
+	_ground_anim_t += _delta
+	for entry in _ground_items:
+		var n: Variant = entry.get("node", null)
+		if n == null or not is_instance_valid(n):
+			continue
+		var node: Node3D = n
+		var ph: float = float(entry.get("phase", 0.0))
+		var by: float = float(entry.get("base_y", 0.35))
+		node.position.y = by + sin(_ground_anim_t * 2.0 + ph) * 0.06
+		node.rotation.y = wrapf(_ground_anim_t * 1.1 + ph, 0.0, TAU)
 
 func _ground_item_at(cell: Vector2i) -> int:
 	for i in _ground_items.size():
@@ -2843,7 +2941,12 @@ func _try_pickup_ground(cell: Vector2i) -> bool:
 	if hud != null and hud.has_method("fly_pickup"):
 		hud.fly_pickup(entry["id"],
 				camera.unproject_position(_cell_center(cell) + Vector3(0, 0.5, 0)))
-	entry["node"].queue_free()
+	# Toplama pop'u: kucuk partikul patlamasi (his)
+	_spawn_particles(_cell_center(cell) + Vector3(0, 0.4, 0),
+			_item_category_color(String(entry["id"])), 5)
+	var pn: Variant = entry.get("node", null)
+	if pn != null and is_instance_valid(pn):
+		(pn as Node).queue_free()
 	_ground_items.remove_at(idx)
 	_dirty = true
 	return true
@@ -3620,18 +3723,14 @@ func _try_harvest(cell: Vector2i) -> bool:
 	var drops: Dictionary = {}
 	for item_id in def["drops"]:
 		drops[item_id] = int(def["drops"][item_id]) * mult
-	if not Inventory.can_add_all(drops):
-		_spawn_floating_text(cell, "Envanter dolu!", Color(1, 0.6, 0.6))
-		return false
 	_object_hits.erase(cell)
+	# #1: agac/kaya dususleri artik ENVANTERE ucmaz — yere sacilir (yikimla
+	# ayni sistem). Oyuncu "al" ile toplar. Envanter dolu olsa da hasat olur;
+	# esyalar yerde bekler. Klasik survival dongusu (kes -> topla).
+	_scatter_drops(cell, drops)
 	var gained: PackedStringArray = []
-	var fly_from := camera.unproject_position(_cell_center(cell) + Vector3(0, 0.8, 0))
 	for item_id in drops:
-		Inventory.add_item(item_id, drops[item_id])
 		gained.append("+%d %s" % [drops[item_id], Items.display_name(item_id)])
-		# Toplama geri bildirimi: ikon envanter butonuna ucar (UI 4.5)
-		if hud != null and hud.has_method("fly_pickup"):
-			hud.fly_pickup(item_id, fly_from)
 	_spawn_floating_text(cell, " ".join(gained), Color(0.7, 1.0, 0.7))
 	# 12.6 his: kirilma aninda vurus durmasi + buyuk partikul patlamasi
 	_hit_stop(0.55, 0.05)
