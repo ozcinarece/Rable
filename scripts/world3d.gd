@@ -55,10 +55,11 @@ const PLACE_MODELS := {
 	"tezgah": {"model": "res://assets/models/tools/workbench.glb",
 			"h": 0.85, "solid": true},
 	"arastirma_masasi": {"model": "res://assets/models/nature/quat_table.glb",
-			"h": 0.8, "solid": true},
+			"h": 0.8, "solid": true, "long": 1.0},
 	"sandik": {"model": "res://assets/models/tools/chest.glb",
 			"h": 0.55, "solid": true},
 	"kamp_evi": {"model": "res://assets/models/tools/tent.glb",
+			"extra": "res://assets/models/tools/tent-canvas.glb",
 			"h": 1.3, "solid": true},
 	"ahsap_duvar": {"model": "res://assets/models/tools/fence.glb",
 			"h": 0.9, "solid": true, "long": 1.0},
@@ -1683,16 +1684,20 @@ func _set_placed(cell: Vector2i, item_id: String) -> void:
 	var holder := Node3D.new()
 	holder.position = _cell_center(cell)
 	add_child(holder)
-	var scene: Node3D = load(def["model"]).instantiate()
-	holder.add_child(scene)
-	var aabb := _scene_aabb(scene)
+	# Cok parcali yapilar (orn. cadir govde + tente) tek pakette olceklenir
+	var bundle := Node3D.new()
+	holder.add_child(bundle)
+	bundle.add_child(load(def["model"]).instantiate())
+	if def.has("extra"):
+		bundle.add_child(load(def["extra"]).instantiate())
+	var aabb := _scene_aabb(bundle)
 	var by_long: bool = def.has("long")
 	var basis_size: float = aabb.get_longest_axis_size() if by_long else aabb.size.y
 	var target: float = def["long"] if by_long else def["h"]
 	if basis_size > 0.01:
 		var s: float = target / basis_size
-		scene.scale = Vector3.ONE * s
-		scene.position = Vector3(-aabb.get_center().x * s, -aabb.position.y * s,
+		bundle.scale = Vector3.ONE * s
+		bundle.position = Vector3(-aabb.get_center().x * s, -aabb.position.y * s,
 				-aabb.get_center().z * s)
 	_placed_nodes[cell] = holder
 	if item_id == "sandik" and not _chests.has(cell):
