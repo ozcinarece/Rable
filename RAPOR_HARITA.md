@@ -48,8 +48,8 @@ haritası + kamera uzaklığı. Yaratık kodu yok.
 |---|---|---|
 | MAP_SIZE | 128 | harita kenarı (hücre) |
 | SEED_DEFAULT | 20260721 | harita tohumu (değiştir=yeni harita) |
-| DIRT_SCALE / DIRT_THRESHOLD | 0.05 / 0.34 | toprak leke frekansı / eşik |
-| HILL_SCALE / HILL_THRESHOLD | 0.035 / 0.60 | plato frekansı / eşik |
+| DIRT_SCALE / DIRT_THRESHOLD | 0.05 / 0.62 | toprak leke frekansı / eşik (yüksek=azınlık) |
+| HILL_SCALE / HILL_THRESHOLD | 0.035 / 0.72 | plato frekansı / eşik (seyrek plato) |
 | LAKE_CENTER | (0.24, 0.76) | göl köşe konumu (normalize) |
 | LAKE_RADIUS / EDGE_JITTER | 20 / 8 | göl yarıçapı / kıyı düzensizliği |
 | SHORE_WIDTH | 3 | kum kıyı genişliği |
@@ -57,8 +57,8 @@ haritası + kamera uzaklığı. Yaratık kodu yok.
 | ROCK_CLUSTERS | 16 | kaya öbek sayısı |
 | ROCK_CLUSTER_MIN/MAX | 3 / 6 | öbek başına kaya |
 | ORE_HINT_CLUSTERS | 5 | yüzey cevher ipucu sayısı |
-| FOREST_SCALE / THRESHOLD | 0.045 / 0.58 | orman frekansı / alan eşiği |
-| FOREST_DENSITY | 0.55 | orman içi ağaç şansı |
+| FOREST_SCALE / THRESHOLD | 0.045 / 0.62 | orman frekansı / alan eşiği |
+| FOREST_DENSITY | 0.50 | orman içi ağaç şansı |
 | SPARSE_TREE_CHANCE | 0.015 | açıklıkta seyrek ağaç |
 | BUSH_CHANCE | 0.006 | çim hücresinde çalı şansı |
 | SPAWN_CLEAR_RADIUS | 4 | doğuş çevresi temiz yarıçap |

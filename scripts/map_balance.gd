@@ -10,9 +10,9 @@ const SEED_DEFAULT: int = 20260721
 
 # --- Zemin lekeleri (çim ana; toprak/plato noise ile) -------------------
 const DIRT_SCALE: float = 0.05        # toprak leke noise frekansı (büyük leke)
-const DIRT_THRESHOLD: float = 0.34    # bu üstü toprak (0..1)
+const DIRT_THRESHOLD: float = 0.62    # bu üstü toprak (yüksek=azınlık leke; çim ana)
 const HILL_SCALE: float = 0.035       # yükseltilmiş plato noise frekansı
-const HILL_THRESHOLD: float = 0.60    # bu üstü yüksek plato "h"
+const HILL_THRESHOLD: float = 0.72    # bu üstü yüksek plato "h" (seyrek plato)
 
 # --- Göl (bir köşede) + kıyı + kil --------------------------------------
 const LAKE_CENTER := Vector2(0.24, 0.76)  # normalize köşe (güney-batı)
@@ -30,8 +30,8 @@ const ORE_HINT_CLUSTERS: int = 5          # kaç öbekte yüzey cevher ipucu
 
 # --- Ağaçlar (öbekli orman + seyrek tekil) ------------------------------
 const FOREST_SCALE: float = 0.045
-const FOREST_THRESHOLD: float = 0.58      # bu üstü orman alanı (0..1)
-const FOREST_DENSITY: float = 0.55        # orman içinde ağaç şansı
+const FOREST_THRESHOLD: float = 0.62      # bu üstü orman alanı (0..1; öbekli)
+const FOREST_DENSITY: float = 0.50        # orman içinde ağaç şansı
 const SPARSE_TREE_CHANCE: float = 0.015   # açıklıkta seyrek ağaç
 # (world3d ağaç seyreltme kuralı: 1 hücre max 1 ağaç + min 1 boş komşu)
 
