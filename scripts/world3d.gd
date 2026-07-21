@@ -378,10 +378,10 @@ func _run_save_load_selftest() -> void:
 	var after_wsum := 0.0
 	for c in _water_level:
 		after_wsum += float(_water_level[c])
-	var ok := (_depth.size() == before["depth"]
-			and _water_level.size() == before["water"]
-			and _placed.size() == before["placed"]
-			and _objects.size() == before["objects"]
+	var ok: bool = (_depth.size() == int(before["depth"])
+			and _water_level.size() == int(before["water"])
+			and _placed.size() == int(before["placed"])
+			and _objects.size() == int(before["objects"])
 			and absf(after_dsum - float(before["depth_sum"])) < 0.001
 			and absf(after_wsum - float(before["water_sum"])) < 0.001
 			and Inventory.get_count("odun") == int(before["inv_odun"]))
