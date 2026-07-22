@@ -147,11 +147,11 @@ func _lay_out(models: Array) -> void:
 		var holder := Node3D.new()
 		holder.position = Vector3(x, 0, 0)
 		add_child(holder)
-		var res := load(TEST_DIR + fn)
-		if res == null:
+		var packed := load(TEST_DIR + fn) as PackedScene
+		if packed == null:
 			_label(holder, "%s\n(YUKLENEMEDI)" % fn, Color(1, 0.5, 0.5))
 			continue
-		var inst: Node3D = res.instantiate()
+		var inst: Node3D = packed.instantiate()
 		var aabb := _aabb_of(inst)
 		var raw_h := maxf(aabb.size.y, 0.001)
 		var mult := DISPLAY_H / raw_h
