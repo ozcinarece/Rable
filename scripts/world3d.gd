@@ -365,10 +365,6 @@ func _setup_screenshot(save_path: String) -> void:
 	# gorulsun. Iskeletsiz statik mesh; animasyon yok (poz sabit).
 	player.set_character("res://assets/models/test/character.glb")
 	player.set_held_tool("balta")  # yeni axe.glb elde gorunsun
-	# STIL: yeni storage box'i oyuncunun yanina koy (ayni karede gorunsun)
-	var _box_cell := _player_cell() + Vector2i(2, 0)
-	if not _placed.has(_box_cell) and not _objects.has(_box_cell):
-		_set_placed(_box_cell, "sandik")
 	await get_tree().create_timer(4.0).timeout
 	_snap(save_path)
 	# Ikinci kare: kusbakisi tum ada (teshis icin)
