@@ -2484,7 +2484,7 @@ const TREE_MODELS: Array[String] = ["tree_pineDefaultA", "tree_pineDefaultB",
 ## AYNI kalir. UYARI: pine_tree.glb 524k ucgen + materyalsiz — once decimate
 ## (~2-4k ucgen) + doku bake edilmeli; ham haliyle mobilde kullanilmaz
 ## (bkz. RAPOR_STIL.md). Model hazir olunca burayi doldurmak yeterli.
-const TREE_MODEL_OVERRIDE := ""
+const TREE_MODEL_OVERRIDE := "res://assets/models/test/pine_tree.glb"
 
 func _tree_pool() -> Array:
 	if TREE_MODEL_OVERRIDE != "":
