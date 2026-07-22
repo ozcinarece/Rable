@@ -375,6 +375,17 @@ func set_held_tool(model_path: String) -> void:
 	if size > 0.01:
 		var s := 0.5 / (size * _node_world_scale(_tool_attach))
 		visual.scale = Vector3(s, s, s)
+		# STIL: Meshy aletleri (override) orijini ORTADA gelir -> el ortadan
+		# kavrar (kullanici: "ucundan tutuyor"). Sapindan tutsun diye en uzun
+		# eksende ALT uca (min = sap) dogru kaydir: el, alt uctan ~%25 yukarida.
+		if TOOL_GLB_OVERRIDE.has(model_path):
+			var sz := aabb.size
+			var g := aabb.get_center()
+			var li := 0
+			if sz.y >= sz.x and sz.y >= sz.z: li = 1
+			elif sz.z >= sz.x and sz.z >= sz.y: li = 2
+			g[li] = aabb.position[li] + 0.25 * sz[li]  # sap kavrama noktasi
+			visual.position = -g * s
 
 ## Uc fazli alet sallamasi (12.3). Profil pozlarini Tween ile oynatir;
 ## strike aninda on_strike cagrilir (ETKI orada uygulanir, buton aninda
