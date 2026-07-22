@@ -1496,7 +1496,10 @@ func _pill_button(text: String) -> Button:
 	var b := Button.new()
 	b.text = text
 	b.add_theme_font_size_override("font_size", 22)
-	b.custom_minimum_size = Vector2(0, 48)
+	b.custom_minimum_size = Vector2(0, 56)
+	b.theme_type_variation = "PrimaryButton"  # gorunur + genis dokunma alani
+	b.mouse_filter = Control.MOUSE_FILTER_STOP
+	b.focus_mode = Control.FOCUS_ALL
 	return b
 
 ## _solid_cells'i sifirdan kurar: zemin (su/tepe) + kati nesneler + yapilar.
@@ -1563,7 +1566,9 @@ func _build_camera_ui() -> void:
 	# R1: Kamera/Gorunum debug butonlari artik HUD'da surekli durmaz;
 	# yalnizca HUD Ayarlar menusu acikken gorunur (settings_toggled).
 	_cam_layer = CanvasLayer.new()
-	_cam_layer.layer = 2
+	# BUGFIX: HUD (layer 3) Ayarlar overlay'i bu paneli yutuyordu -> HUD'un
+	# ustune al (4) ki Ayarlar acikken Kamera kontrolleri tiklanabilsin.
+	_cam_layer.layer = 4
 	_cam_layer.visible = false
 	add_child(_cam_layer)
 	var layer := _cam_layer
@@ -1571,32 +1576,23 @@ func _build_camera_ui() -> void:
 	var button := Button.new()
 	button.text = "Kamera"
 	button.toggle_mode = true
+	button.button_pressed = true  # Ayarlar acilinca panel dogrudan gorunur
 	button.position = Vector2(12, 190)
 	button.size = Vector2(120, 46)
 	button.add_theme_font_size_override("font_size", 18)
 	layer.add_child(button)
 
-	var look_button := Button.new()
-	look_button.text = "Görünüm"
-	look_button.toggle_mode = true
-	look_button.position = Vector2(12, 244)
-	look_button.size = Vector2(120, 46)
-	look_button.add_theme_font_size_override("font_size", 18)
-	layer.add_child(look_button)
+	# NOT: "Görünüm" (karakter/orman stili) paneli kullanici istegiyle kaldirildi.
 
 	var panel := PanelContainer.new()
-	panel.visible = false
+	panel.visible = true
 	panel.position = Vector2(144, 190)
 	panel.custom_minimum_size = Vector2(320, 0)
 	layer.add_child(panel)
 	button.toggled.connect(func(pressed: bool):
 		panel.visible = pressed
-		if pressed:
-			look_button.button_pressed = false
-		else:
+		if not pressed:
 			_save_settings())
-
-	_build_look_panel(layer, look_button, button)
 
 	var box := VBoxContainer.new()
 	box.add_theme_constant_override("separation", 6)

@@ -392,7 +392,9 @@ func set_held_tool(model_path: String) -> void:
 			var li := 0
 			if sz.y >= sz.x and sz.y >= sz.z: li = 1
 			elif sz.z >= sz.x and sz.z >= sz.y: li = 2
-			g[li] = aabb.position[li] + 0.25 * sz[li]  # sap kavrama noktasi
+			# BUGFIX: onceki %25 (min uc) balta BASINDAN tutturuyordu ("ucundan
+			# tutuyor"). Sap DIGER uctadir -> kavramayi max uca yakin al (%80).
+			g[li] = aabb.position[li] + 0.80 * sz[li]  # sap kavrama noktasi (dip)
 			visual.position = -g * s
 
 ## Uc fazli alet sallamasi (12.3). Profil pozlarini Tween ile oynatir;
