@@ -108,6 +108,7 @@ var _hair_color := Color(0.25, 0.18, 0.12)
 var _anim_idle: String = ""
 var _anim_walk: String = ""
 var _anim_run: String = ""
+var _anim_attack: String = ""  # saldiri/savurma animasyonu (varsa, tek sefer)
 
 # STIL: skinned karakter olcek duzeltmesi. Bazi Meshy/Mixanimate modeller
 # Armature'da 0.01 gibi olcek tasir; mesh yerel AABB'si (1.7 m) dogru gorunse
@@ -296,6 +297,7 @@ func _detect_animations() -> void:
 	_anim_idle = ""
 	_anim_walk = ""
 	_anim_run = ""
+	_anim_attack = ""
 	if _anim == null:
 		return
 	for anim_name in _anim.get_animation_list():
@@ -307,6 +309,11 @@ func _detect_animations() -> void:
 			_anim_walk = anim_name
 		if _anim_run == "" and (lower.contains("run") or lower.contains("sprint")):
 			_anim_run = anim_name
+		# Saldiri/savurma: hammer/swing/slash/attack/chop/axe
+		if _anim_attack == "" and (lower.contains("swing") or lower.contains("slash") \
+				or lower.contains("attack") or lower.contains("chop") \
+				or lower.contains("hammer")):
+			_anim_attack = anim_name
 	# Tercih: tam adlar varsa onlari kullan (KayKit)
 	for pair in [["Idle", "idle"], ["Walking_A", "walk"], ["Running_A", "run"]]:
 		if _anim.has_animation(pair[0]):
@@ -325,6 +332,9 @@ func _detect_animations() -> void:
 	for anim_name in [_anim_idle, _anim_walk, _anim_run]:
 		if anim_name != "" and _anim.has_animation(anim_name):
 			_anim.get_animation(anim_name).loop_mode = Animation.LOOP_LINEAR
+	# Saldiri animasyonu TEK SEFER oynar (donmez)
+	if _anim_attack != "" and _anim.has_animation(_anim_attack):
+		_anim.get_animation(_anim_attack).loop_mode = Animation.LOOP_NONE
 
 ## Eldeki aletin 3D modelini ele takar; bos yol = eli bosalt.
 ## "spear" ozel degeri: pakette mizrak yok, basit bir tane insa edilir.
@@ -382,6 +392,16 @@ func play_swing(profile: Dictionary, on_strike: Callable,
 	var recover: float = maxf(0.03, float(profile.get("recover", 0.20)) * f)
 	if combo_second:
 		recover = 0.12
+	# STIL: karakterin GOVDE saldiri animasyonu (varsa) savurmaya uydurulur —
+	# tek sefer oynar, sallanma boyunca. Hareket animasyonu bu sirada bastirilir
+	# (_physics_process _swinging'e bakar). Iskeletsiz/animasyonsuz karakterlerde
+	# _anim_attack bostur -> yalniz proseduel alet savurmasi calisir (eskisi gibi).
+	if _anim != null and _anim_attack != "" and _anim.has_animation(_anim_attack):
+		var total: float = windup + strike + recover
+		var alen: float = _anim.get_animation(_anim_attack).length
+		var spd: float = (alen / total) if total > 0.05 and alen > 0.05 else 1.0
+		_anim.play(_anim_attack, 0.05, spd)
+		_current_anim = _anim_attack
 	var rest: Vector3 = profile.get("rest", Vector3.ZERO)
 	var wind: Vector3 = profile.get("wind", Vector3.ZERO)
 	var hit: Vector3 = profile.get("hit", Vector3.ZERO)
@@ -780,13 +800,15 @@ func _physics_process(delta: float) -> void:
 	var dir := _get_input_direction()
 	if dir == Vector2.ZERO:
 		_exerting_move = false
-		_play(_anim_idle)
+		if not _swinging:  # saldiri animasyonunu ezme
+			_play(_anim_idle)
 		return
 	facing = dir
 	# Kosma: parmagi uzaga cek (veya klavyede Shift)
 	var running := _wants_run()
 	_exerting_move = running  # efor: kosma aclik carpanini artirir (yasam)
-	_play(_anim_run if running else _anim_walk)
+	if not _swinging:  # saldiri animasyonunu ezme
+		_play(_anim_run if running else _anim_walk)
 	var speed := (RUN_SPEED if running else SPEED) * water_factor * action_factor
 	_try_move(Vector3(dir.x, 0, dir.y) * speed * delta)
 	# Yuruyus yonune yumusakca don (model +Z yonune bakar)
