@@ -2477,7 +2477,18 @@ func _rebuild_objects() -> void:
 const TREE_MODELS: Array[String] = ["tree_pineDefaultA", "tree_pineDefaultB",
 	"tree_pineRoundA", "tree_pineTallA", "tree_pineRoundC"]
 
+## STIL (Bolum 17): tek bir GLB ile tum agaclari degistirmek icin tam yol yaz
+## (orn. "res://assets/models/test/pine_tree.glb"). "" = yukaridaki Quaternius
+## cam paketi (varsayilan). Agac sistemi zaten MultiMesh + _cell_variance ile
+## Y-donus/olcek cesitliligi uygular; sadece MESH degisir, kesme/hucre kurali
+## AYNI kalir. UYARI: pine_tree.glb 524k ucgen + materyalsiz — once decimate
+## (~2-4k ucgen) + doku bake edilmeli; ham haliyle mobilde kullanilmaz
+## (bkz. RAPOR_STIL.md). Model hazir olunca burayi doldurmak yeterli.
+const TREE_MODEL_OVERRIDE := ""
+
 func _tree_pool() -> Array:
+	if TREE_MODEL_OVERRIDE != "":
+		return _model_pool(TREE_MODEL_OVERRIDE, TREE_HEIGHT)
 	var out: Array = []
 	for m: String in TREE_MODELS:
 		out += _model_pool(m, TREE_HEIGHT)
@@ -2619,11 +2630,19 @@ func _merged_node_mesh(node: Node, target_h: float) -> ArrayMesh:
 # Tek parcali modellerde havuz tek elemanlidir.
 var _pool_cache: Dictionary = {}
 
+## STIL: model bir kisa ad ("tree_pineDefaultA") ya da tam yol
+## ("res://.../pine_tree.glb") olabilir. Boylece test/ altindaki modeller de
+## dogaya kopyalanmadan baglanabilir.
+func _nature_path(model: String) -> String:
+	if model.begins_with("res://") or model.ends_with(".glb"):
+		return model
+	return NATURE_PATH % model
+
 func _model_pool(model: String, target_h: float) -> Array:
 	var key := model + ":" + str(target_h)
 	if _pool_cache.has(key):
 		return _pool_cache[key]
-	var scene: Node3D = load(NATURE_PATH % model).instantiate()
+	var scene: Node3D = load(_nature_path(model)).instantiate()
 	var parts: Array = []
 	for child in scene.get_children():
 		if _scene_aabb(child).size.y > 0.001:
