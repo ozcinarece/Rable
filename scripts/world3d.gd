@@ -22,6 +22,7 @@ const WaterSim = preload("res://scripts/water_sim.gd")
 const ToolProfiles = preload("res://scripts/tool_profiles.gd")
 const HittableDummy = preload("res://scripts/hittable_dummy.gd")
 const StructureManager = preload("res://scripts/structure_manager.gd")
+const EngBalance = preload("res://scripts/engineering_balance.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const ChestStore = preload("res://scripts/inventory.gd")  # 14.1 sandik deposu
@@ -103,6 +104,11 @@ const PLACE_MODELS := {
 	"mesale": {"model": "res://assets/models/tools/campfire-stand.glb",
 			"h": 0.7, "solid": false,
 			"behavior": "torch", "max_hp": 30},
+	# MUHENDISLIK 11.5: merdiven — kazilmis cukura (pit_only) konur, kenara
+	# yaslanir (rotatable = hangi kenar). Cukurdan cikis saglar (can_step).
+	"merdiven": {"model": "ladder", "h": 1.0, "solid": false,
+			"behavior": "ladder", "max_hp": 40,
+			"rotatable": true, "in_pit": true, "pit_only": true},
 }
 
 const REGROW_SECONDS := 60.0
@@ -568,8 +574,30 @@ func _setup_screenshot(save_path: String) -> void:
 	await _run_base_selftest(save_path)  # BASE (Bolum 14): sandik/yatak/ocak/platform
 	await _run_survival_selftest(save_path)  # YASAM: can/aclik/yeme/pisirme/olum
 	_run_time_selftest()  # gunduz/gece: faz + uyku kurali
+	_run_muhendislik_selftest()  # MUHENDISLIK: merdiven tirmanma kurali
 	_run_save_load_selftest()
 	get_tree().quit()
+
+## MUHENDISLIK self-test — Asama 1 merdiven (11.5): derin cukurdan (depth>=3)
+## merdivensiz cikilamaz; sig cukur (1-2) serbest; merdiven konunca cikilir.
+func _run_muhendislik_selftest() -> void:
+	var deep := Vector2i(40, 40)
+	var shallow := Vector2i(41, 40)
+	var out := Vector2i(40, 41)
+	_depth[deep] = 3
+	_depth[shallow] = 1
+	# depth 3 cukurdan cikis (out depth 0) merdivensiz KAPALI
+	var no_ladder := can_step(deep, out)
+	# sig cukur (depth 1) -> serbest
+	var shallow_free := can_step(shallow, out)
+	# merdiveni cukura koy -> cikis ACIK
+	_placed[deep] = "merdiven"
+	var with_ladder := can_step(deep, out)
+	_placed.erase(deep)
+	_depth.erase(deep); _depth.erase(shallow)
+	print("LADDERTEST: derin_merdivensiz=%s sig_serbest=%s merdivenli=%s ok=%s" % [
+		str(no_ladder), str(shallow_free), str(with_ladder),
+		str(no_ladder == false and shallow_free == true and with_ladder == true)])
 
 ## gunduz/gece self-test: faz/gün-oranı + uyku kuralı (ilk 3 gece).
 func _run_time_selftest() -> void:
@@ -1029,6 +1057,30 @@ func is_walkable(cell: Vector2i) -> bool:
 	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
 		return false
 	return not _solid_cells.has(cell)
+
+## 11.5 MERDIVEN KURALI: from->to adimina izin var mi? Derin cukurdan
+## (depth >= LADDER_DEEP_MIN) daha sig bir hucreye CIKMAK ancak merdiven
+## erisimi varsa mumkun (1-2 serbest). player3d._try_move buraya danisir.
+func can_step(from: Vector2i, to: Vector2i) -> bool:
+	var df := int(_depth.get(from, 0))
+	var dt := int(_depth.get(to, 0))
+	if df >= EngBalance.LADDER_DEEP_MIN and dt < df:
+		return _has_ladder_access(from)
+	return true
+
+func _is_ladder(cell: Vector2i) -> bool:
+	return _placed.get(cell, "") == "merdiven"
+
+## Merdiven bu hucrede mi (veya izinliyse 4-komsusunda mi)?
+func _has_ladder_access(cell: Vector2i) -> bool:
+	if _is_ladder(cell):
+		return true
+	if EngBalance.LADDER_ADJACENT_OK:
+		for n: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0),
+				Vector2i(0, 1), Vector2i(0, -1)]:
+			if _is_ladder(cell + n):
+				return true
+	return false
 
 # --- Kamera -------------------------------------------------------------
 
@@ -3074,6 +3126,8 @@ func _build_structure_visual(item_id: String) -> Node3D:
 	# ground_height ile eslesir; oyuncu deck ustunde durur.
 	if item_id == "platform":
 		return _build_platform_visual()
+	if item_id == "merdiven":
+		return _build_ladder_visual()
 	var holder := Node3D.new()
 	var bundle := Node3D.new()
 	holder.add_child(bundle)
@@ -3125,6 +3179,32 @@ func _build_platform_visual() -> Node3D:
 		step.position = Vector3(0, h - 0.08, 0.5 + i * 0.24)
 		step.material_override = _flat_mat(wood if i % 2 == 0 else wood_d)
 		holder.add_child(step)
+	return holder
+
+## 11.5 Merdiven: cukur tabanindan yukselen iki ray + basamaklar (prosedurel).
+## +z kenara yaslanir; holder rotasyonu hangi kenar oldugunu secer.
+func _build_ladder_visual() -> Node3D:
+	var holder := Node3D.new()
+	var wood := Color(0.60, 0.42, 0.24)
+	var woodd := Color(0.45, 0.31, 0.18)
+	var top := 1.3
+	var zedge := 0.36
+	for sx in [-1, 1]:
+		var rail := MeshInstance3D.new()
+		var rm := BoxMesh.new(); rm.size = Vector3(0.08, top, 0.08)
+		rail.mesh = rm
+		rail.position = Vector3(sx * 0.18, top * 0.5, zedge)
+		rail.material_override = _flat_mat(wood)
+		holder.add_child(rail)
+	var y := 0.16
+	while y < top:
+		var rung := MeshInstance3D.new()
+		var gm := BoxMesh.new(); gm.size = Vector3(0.44, 0.06, 0.06)
+		rung.mesh = gm
+		rung.position = Vector3(0, y, zedge)
+		rung.material_override = _flat_mat(woodd)
+		holder.add_child(rung)
+		y += 0.22
 	return holder
 
 func _flat_mat(c: Color) -> StandardMaterial3D:
@@ -3244,6 +3324,9 @@ func _place_valid(cell: Vector2i) -> Dictionary:
 	# Kazilmis cukur (depth>=1): trap disi gecersiz; tumsek (depth<0) gecerli
 	if int(_depth.get(cell, 0)) >= 1 and not bool(def.get("in_pit", false)):
 		return {"valid": false, "reason": "çukur"}
+	# 11.5/11.9: pit_only yapilar (merdiven/kazik) YALNIZ kazilmis cukura konur
+	if bool(def.get("pit_only", false)) and int(_depth.get(cell, 0)) < 1:
+		return {"valid": false, "reason": "çukur gerek"}
 	# Zemin turu: cim/toprak/kum uzerine (su/tepe degil)
 	if not (_ground_char.get(cell, "") in [".", "d", "s"]):
 		return {"valid": false, "reason": "zemin"}

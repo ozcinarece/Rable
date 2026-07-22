@@ -15,6 +15,7 @@ const CATEGORIES: Dictionary = {
 	"yapi": "Yapılar",
 	"tarim": "Tarım",
 	"pisirme": "Pişirme",
+	"muhendislik": "Mühendislik",
 }
 
 const CRAFT_RECIPES: Dictionary = {
@@ -91,6 +92,10 @@ const CRAFT_RECIPES: Dictionary = {
 			"station": "tezgah", "category": "yapi", "time": 4.0},
 	"kamp_evi": {"output": {"kamp_evi": 1}, "cost": {"kalas": 6, "ip": 2, "yaprak": 4},
 			"station": "", "category": "yapi", "time": 6.0},
+	# --- Muhendislik (Bolum 11.5/11.8/11.9) ---
+	# Merdiven (11.5): kazilmis cukura konur; derin cukurdan cikis saglar.
+	"merdiven": {"output": {"merdiven": 1}, "cost": {"odun": 4, "ip": 1},
+			"station": "tezgah", "category": "muhendislik", "time": 3.0},
 	# --- Tarim ---
 	"tohum": {"output": {"tohum": 2}, "cost": {"meyve": 1},
 			"station": "", "category": "tarim", "time": 1.0},

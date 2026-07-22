@@ -56,6 +56,8 @@ const ITEMS: Dictionary = {
 	# YASAM (yiyecek): cig_et hayvandan (yaratik fazi), pismis_et ocakta pisirilir
 	"cig_et": {"name": "Çiğ Et", "icon": "res://assets/items/cig_et.png"},
 	"pismis_et": {"name": "Pişmiş Et", "icon": "res://assets/items/pismis_et.png"},
+	# MUHENDISLIK (Bolum 11.5/11.8/11.9): merdiven, kazik, boru/pompa/vana
+	"merdiven": {"name": "Merdiven", "icon": "res://assets/items/merdiven.png"},
 }
 
 ## Elde tutulunca yere yerlestirilebilen yapilar: esya -> harita karakteri.
@@ -76,6 +78,8 @@ const PLACEABLE: Dictionary = {
 	# yalniz "Yerleştir" butonunu gosterir (2D world.gd legacy, ana sahne degil).
 	"ocak": "O",
 	"platform": "P",
+	# MUHENDISLIK: cukur ici/kenari yapilari (3D PLACE_MODELS'ten gecer)
+	"merdiven": "M",
 }
 
 ## Ele alinabilen esyalar - artik her esya ele alinabilir; bu liste
@@ -130,6 +134,7 @@ const DESCRIPTIONS: Dictionary = {
 	"mesale": "Eline al ve yere koy: cevreyi sicak isikla aydinlatir.",
 	"yatak": "Gece uyu: sabah olur (+30 can).",
 	"tuzak": "Ustunden gecen yaratik hasar alir.",
+	"merdiven": "Eline al: kazilmis cukura koy. Derin cukurdan (3-4) ancak merdivenle cikilir.",
 }
 
 static func description(item_id: String) -> String:

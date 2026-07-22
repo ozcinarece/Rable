@@ -141,7 +141,7 @@ var _cat_buttons: Dictionary = {}   # kategori -> buton
 # Eski oyun kategorileri -> UI kategori renk anahtari
 const CAT_COLOR_KEY := {"malzeme": "resource", "alet": "tool",
 		"savas": "weapon", "yapi": "structure", "tarim": "farming",
-		"pisirme": "resource"}
+		"pisirme": "resource", "muhendislik": "engineering"}
 
 func _ready() -> void:
 	Inventory.changed.connect(_refresh)
