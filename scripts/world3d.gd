@@ -1415,6 +1415,11 @@ func to_save_data() -> Dictionary:
 		"regrow_type": _cells_to_json(_regrow_type),
 		"placed": _cells_to_json(_placed),
 		"structures": _structures.to_save_data(),  # 13.6: yon/hp/durum
+		# EV/CATI Asama 4: cati ust katmani + hp/durum + ev kutlama bayragi.
+		# is_indoor kaydedilmez -> yuklemede yapilardan yeniden turer.
+		"roofs": _cells_to_json(_roofs),
+		"roof_structures": _roof_structures.to_save_data(),
+		"home_celebrated": _home_celebrated,
 		"chests": chest_json,
 		"ground_items": ground_json,
 		"dummies": dummy_json,
@@ -1474,6 +1479,14 @@ func from_save_data(data: Dictionary) -> bool:
 		var item_id := String(data["placed"][key])
 		if PLACE_MODELS.has(item_id):
 			_set_placed(_key_to_cell(key), item_id)  # sandik icin bos depo kurar
+	# EV/CATI Asama 4: catilari yukle (duvarlardan SONRA ki destek/is_indoor
+	# dogru turesin). Once hp/durum metasi, sonra gorseller.
+	_roof_structures.from_save_data(data.get("roof_structures", []))
+	for key in data.get("roofs", {}):
+		var rid := String(data["roofs"][key])
+		if PLACE_MODELS.has(rid):
+			_set_roof(_key_to_cell(key), rid)
+	_home_celebrated = bool(data.get("home_celebrated", false))
 	# 14.1: sandik iceriklerini mevcut depolara yukle (yeni format=slots dict;
 	# eski format=duz {esya:adet} -> load_from_dict ile geriye uyumlu)
 	for key in data.get("chests", {}):
@@ -1509,6 +1522,8 @@ func from_save_data(data: Dictionary) -> bool:
 			_spawn_dummy(Vector2i(int(entry[0]), int(entry[1])))
 	# Katilik ve gorseli sifirdan tut
 	_recompute_solids()
+	# EV/CATI Asama 4: is_indoor + rozetler yuklenen yapilardan turer (kayitta yok)
+	_recompute_indoor()
 	_build_terrain()
 	_recompute_water()
 	_build_decor(_decor_cells)
