@@ -99,6 +99,10 @@ const CRAFT_RECIPES: Dictionary = {
 	# Cukur kazigi (11.9): cukur tabanina konur; dusen hasar alir.
 	"kazik": {"output": {"kazik": 1}, "cost": {"tas": 3, "cubuk": 2},
 			"station": "tezgah", "category": "muhendislik", "time": 3.0},
+	# Boru (11.8): su aktarimi. GAME_DESIGN 8'de 1 metal_part; metal isleme
+	# gelene kadar MUHAFAZAKAR malzeme (tas+kil), cok sayida gerektigi icin ucuz.
+	"boru": {"output": {"boru": 2}, "cost": {"tas": 1, "kil": 1},
+			"station": "tezgah", "category": "muhendislik", "time": 1.5},
 	# --- Tarim ---
 	"tohum": {"output": {"tohum": 2}, "cost": {"meyve": 1},
 			"station": "", "category": "tarim", "time": 1.0},

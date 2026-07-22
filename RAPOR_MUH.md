@@ -49,3 +49,26 @@ ok=true` — derin çukurdan merdivensiz çıkılamaz, sığ serbest, merdiven k
 
 **CI:** `SPIKETEST: hook_hasar=8 ... hook_ok=true hasar_ok=true` — kazığa
 giren oyuncu hasar alır, yaratık kancası doğru hasarı döner.
+
+## Aşama 3 — Boru sistemi (11.8 altyapısı)
+
+**Kararlar:**
+- **Tarif:** `boru` = 1 taş + 1 kil → 2 boru, tezgah (GAME_DESIGN 8'de 1
+  `metal_part`; metal işleme gelene kadar **muhafazakâr** malzeme, çok gerekir).
+- **Yerleştirme:** `PLACE_MODELS.boru` → `in_pit:true`, pit_only DEĞİL (zemine
+  ya da çukura konur). `solid:false`.
+- **Otomatik bağlanma:** `_pipe_mask(cell)` 4-komşu bit maskesi → `_build_pipe_visual`
+  merkez küp + açık yönlere kollar (düz/dirsek/T/haç **otomatik** çıkar).
+  Yerleştirme/sökmede hücre + 4 komşu görseli tazelenir (`_refresh_pipe_neighborhood`).
+- **Ağ = graf:** `_pipe_components()` bağlı boru/pompa/vana hücrelerini flood-fill
+  bileşenlere ayırır. Her bileşende `_transfer_in_component` en yüksek **kaynağı**
+  (göl `~` veya dolu havuz, boruya komşu) bulur, uygun **hedefe** (boş kapasiteli
+  kazılmış havuz) taşır. Mevcut `add_water`/`take_water`/`pool_at` kapıları
+  kullanılır — su fiziksel akmaz, **mantıksal** transfer (`NET_TICK_SECONDS`'ta bir).
+- **YÜKSEKLİK KURALI:** `_cell_elevation` (−depth) ile kaynak yüksekliği ≥ hedef
+  olmalı; su yalnız **aşağı/aynı** seviyeye akar. Yukarı taşıma pompa ister (Aşama 4).
+
+**Denge:** `PIPE_TRANSFER_PER_SEC=2.0`, `NET_TICK_SECONDS=0.5`.
+
+**CI:** `PIPETEST: down_akar=true up_engel=true ok=true` — kaynak yüksekse
+(down) su akar; kaynak alçaksa (up) pompasız akmaz.

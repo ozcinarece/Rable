@@ -59,6 +59,7 @@ const ITEMS: Dictionary = {
 	# MUHENDISLIK (Bolum 11.5/11.8/11.9): merdiven, kazik, boru/pompa/vana
 	"merdiven": {"name": "Merdiven", "icon": "res://assets/items/merdiven.png"},
 	"kazik": {"name": "Çukur Kazığı", "icon": "res://assets/items/kazik.png"},
+	"boru": {"name": "Boru", "icon": "res://assets/items/boru.png"},
 }
 
 ## Elde tutulunca yere yerlestirilebilen yapilar: esya -> harita karakteri.
@@ -82,6 +83,7 @@ const PLACEABLE: Dictionary = {
 	# MUHENDISLIK: cukur ici/kenari yapilari (3D PLACE_MODELS'ten gecer)
 	"merdiven": "M",
 	"kazik": "X",
+	"boru": "I",
 }
 
 ## Ele alinabilen esyalar - artik her esya ele alinabilir; bu liste
@@ -138,6 +140,7 @@ const DESCRIPTIONS: Dictionary = {
 	"tuzak": "Ustunden gecen yaratik hasar alir.",
 	"merdiven": "Eline al: kazilmis cukura koy. Derin cukurdan (3-4) ancak merdivenle cikilir.",
 	"kazik": "Eline al: kazilmis cukurun tabanina koy. Dusen hasar alir.",
+	"boru": "Eline al ve yere/cukura koy: komsu borularla baglanir, su tasir (asagi/ayni seviye).",
 }
 
 static func description(item_id: String) -> String:
