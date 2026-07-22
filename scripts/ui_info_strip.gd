@@ -15,6 +15,7 @@ var _circle: Panel
 var _circle_style: StyleBoxFlat
 var _icon: TextureRect
 var _name: Label
+var _chips: HBoxContainer
 var _desc: Label
 var _pills: HBoxContainer
 
@@ -53,6 +54,10 @@ func _init() -> void:
 	_name = Label.new()
 	_name.theme_type_variation = "BadgeLabel"
 	mid.add_child(_name)
+	# Cip satiri (malzeme/maliyet 3/5 renkli cipleri — R4/R5)
+	_chips = HBoxContainer.new()
+	_chips.add_theme_constant_override("separation", 8)
+	mid.add_child(_chips)
 	_desc = Label.new()
 	_desc.theme_type_variation = "SubtleLabel"
 	_desc.clip_text = true
@@ -73,15 +78,44 @@ func show_item(icon_tex: Texture2D, name_text: String, desc_text: String,
 	_icon.visible = icon_tex != null
 	_name.text = name_text
 	_desc.text = desc_text
+	_desc.visible = desc_text != ""
 	_circle_style.bg_color = circle_color
+	clear_chips()  # craft/research show_item'dan SONRA set_chips cagirir
 
 ## Secim yokken: kisa yonlendirme metni, ikon bos, notr daire.
 func set_placeholder(text: String) -> void:
 	_icon.texture = null
 	_name.text = ""
 	_desc.text = text
+	_desc.visible = true
 	_circle_style.bg_color = UIColors.PANEL_CREAM_DARK
 	clear_pills()
+	clear_chips()
+
+## Renkli cipler (malzeme/maliyet): [{text, color, icon(Texture2D, ops.)}].
+func set_chips(chips: Array) -> void:
+	clear_chips()
+	for c: Dictionary in chips:
+		var chip := HBoxContainer.new()
+		chip.add_theme_constant_override("separation", 3)
+		var tex: Texture2D = c.get("icon", null)
+		if tex != null:
+			var ic := TextureRect.new()
+			ic.texture = tex
+			ic.custom_minimum_size = Vector2(22, 22)
+			ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			chip.add_child(ic)
+		var lbl := Label.new()
+		lbl.text = String(c.get("text", ""))
+		lbl.add_theme_font_size_override("font_size", 16)
+		lbl.add_theme_color_override("font_color", c.get("color", UIColors.INK_DARK))
+		chip.add_child(lbl)
+		_chips.add_child(chip)
+
+func clear_chips() -> void:
+	for c in _chips.get_children():
+		c.queue_free()
 
 ## Eylem pill'leri: [{text, primary(bool), on(Callable), danger(bool)}].
 func set_pills(pills: Array) -> void:

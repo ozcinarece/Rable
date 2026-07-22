@@ -339,9 +339,10 @@ size_flags_vertical = 3
 [node name="Scroll" type="ScrollContainer" parent="CraftRoot/CraftPanel/HBox/RightBox/Body"]
 horizontal_scroll_mode = 0
 
-[node name="Cards" type="VBoxContainer" parent="CraftRoot/CraftPanel/HBox/RightBox/Body/Scroll"]
+[node name="Cards" type="HFlowContainer" parent="CraftRoot/CraftPanel/HBox/RightBox/Body/Scroll"]
 size_flags_horizontal = 3
-theme_override_constants/separation = 10
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 10
 
 [node name="QueueRow" type="HBoxContainer" parent="CraftRoot/CraftPanel/HBox/RightBox"]
 visible = false

@@ -77,3 +77,24 @@ sadece menüye taşındı). Aşama başına bir commit; oyun her commit'te açı
 
 **Değişen/eklenen dosyalar:** `scripts/ui_info_strip.gd` (yeni),
 `scripts/hud.gd`, `scenes/HUD.tscn`.
+
+## Aşama 4 — R4 üretim ızgarası + detay bandı + sekmeler (commit 4)
+
+**Teşhis → çözüm:**
+- **Liste → ızgara:** Tarifler artık **88px kare kart** (`HFlowContainer`
+  akışkan ızgara): kategori dairesi + %65 ikon + altında ad. Satır başına
+  Üret **iptal**. Craftlanamayan kart **%55 soluk** + sağ üstte **eksik
+  malzeme sayısı** danger rozeti.
+- **Detay bandı (ORTAK bileşen):** Karta dokun → alt `UiInfoStrip` bandı
+  dolar: büyük ikon + ad + **malzeme çipleri (3/5 yeşil-kırmızı, ikonlu)** +
+  **istasyon durumu** ("Tezgah gerekli — yanında değilsin" artık BURADA) +
+  TEK büyük **"Üret"**. `set_chips()` bileşene eklendi (R5'te de kullanılır).
+- **Kategori sekmeleri:** Sol dikey **56px**, kategori RENKLİ dolgulu daire +
+  **ikon** (o kategorinin ilk tarifinin ikonu; "Tümü"=anahtar). Kırpık "Tü/Ma"
+  etiketleri **kalktı** (isim tooltip + detay bandında). Aktif sekme 1.08x +
+  tam opak.
+- **Arama:** Üstte tek satır (mevcut) korundu; kart ızgarası artık üst şeridi
+  israf etmiyor.
+
+**Değişen dosyalar:** `scripts/hud.gd`, `scripts/ui_info_strip.gd`,
+`scenes/HUD.tscn`.

@@ -117,7 +117,7 @@ var _drop_bar: ProgressBar
 @onready var craft_close: Button = $CraftRoot/CraftPanel/HBox/RightBox/TopRow/CloseButton
 @onready var cat_box: VBoxContainer = $CraftRoot/CraftPanel/HBox/CatColumn
 @onready var search_edit: LineEdit = $CraftRoot/CraftPanel/HBox/RightBox/TopRow/Search
-@onready var cards_box: VBoxContainer = $CraftRoot/CraftPanel/HBox/RightBox/Body/Scroll/Cards
+@onready var cards_box: HFlowContainer = $CraftRoot/CraftPanel/HBox/RightBox/Body/Scroll/Cards
 @onready var queue_row: HBoxContainer = $CraftRoot/CraftPanel/HBox/RightBox/QueueRow
 @onready var queue_label: Label = $CraftRoot/CraftPanel/HBox/RightBox/QueueRow/QueueLabel
 @onready var queue_bar: ProgressBar = $CraftRoot/CraftPanel/HBox/RightBox/QueueRow/QueueBar
@@ -210,6 +210,7 @@ func _ready() -> void:
 	_build_settings_menu()  # R1: Ayarlar menusu (Yeni Oyun + Kamera/Gorunum)
 	_style_action_buttons() # R2: ana/saldiri butonlari + baglam etiketi
 	_build_category_buttons()
+	_build_craft_detail()  # R4: uretim alt detay bandi (ORTAK bilesen)
 	_rebuild_cards()
 	_refresh()
 	_update_health()
@@ -1017,27 +1018,22 @@ func _flash_night_pill(text: String) -> void:
 
 # --- Uretim paneli ------------------------------------------------------
 
+# R4: sol dikey 56px kategori sekmeleri — kategori RENKLI dolgulu daire +
+# ikon (etiket KIRPILMAZ; isim tooltip + detay bandinda). "Tümü" ayri durur.
 func _build_category_buttons() -> void:
 	var group := ButtonGroup.new()
 	var cats := {"tumu": "Tümü"}
 	cats.merge(Recipes.CATEGORIES)
 	for cat_id in cats:
-		var color: Color = UIColors.INK_FAINT
+		var color: Color = UIColors.category_color("resource")
 		if CAT_COLOR_KEY.has(cat_id):
 			color = UIColors.category_color(CAT_COLOR_KEY[cat_id])
 		var button := Button.new()
 		button.toggle_mode = true
 		button.button_group = group
-		button.custom_minimum_size = Vector2(64, 64)
-		button.text = String(cats[cat_id]).substr(0, 2)
 		button.tooltip_text = String(cats[cat_id])
-		var sb := StyleBoxFlat.new()
-		sb.bg_color = color
-		sb.set_corner_radius_all(999)
-		for state in ["normal", "hover", "pressed", "disabled"]:
-			button.add_theme_stylebox_override(state, sb)
-		for cname in ["font_color", "font_pressed_color", "font_hover_color"]:
-			button.add_theme_color_override(cname, UIColors.INK_DARK)
+		button.icon = _category_icon(cat_id)
+		_style_cat_button(button, color)
 		button.button_pressed = cat_id == _current_cat
 		_apply_cat_state(button, cat_id == _current_cat)
 		var cid: String = cat_id
@@ -1049,18 +1045,51 @@ func _build_category_buttons() -> void:
 		cat_box.add_child(button)
 		_cat_buttons[cat_id] = button
 
-# Aktif sekme tam opak + hafif buyuk; pasifler %70 opak (UI_DESIGN 4.3)
+# 56px kategori sekmesi: renkli dolgulu daire + %65+ dolduran koyu kahve ikon.
+func _style_cat_button(button: Button, color: Color) -> void:
+	button.custom_minimum_size = Vector2(56, 56)
+	button.expand_icon = true
+	button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	button.vertical_icon_alignment = VERTICAL_ALIGNMENT_CENTER
+	button.text = ""
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = color
+	sb.set_corner_radius_all(999)
+	sb.content_margin_left = 9
+	sb.content_margin_right = 9
+	sb.content_margin_top = 9
+	sb.content_margin_bottom = 9
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		button.add_theme_stylebox_override(state, sb)
+	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	for cn in ["icon_normal_color", "icon_hover_color", "icon_pressed_color",
+			"icon_disabled_color"]:
+		button.add_theme_color_override(cn, UIColors.INK_DARK)
+
+# Kategoriyi temsil eden ikon: o kategorideki ilk tarifin cikti ikonu.
+func _category_icon(cat_id: String) -> Texture2D:
+	if cat_id != "tumu":
+		for rid in Recipes.CRAFT_RECIPES:
+			if Recipes.CRAFT_RECIPES[rid]["category"] == cat_id:
+				var p := String(Items.ITEMS.get(rid, {}).get("icon", ""))
+				if p != "" and ResourceLoader.exists(p):
+					return load(p)
+	return load("res://assets/ui/wrench.png")
+
+# Aktif sekme tam opak + hafif buyuk; pasifler %65 opak (UI_DESIGN 4.3)
 func _apply_cat_state(button: Button, active: bool) -> void:
-	button.modulate.a = 1.0 if active else 0.7
+	button.modulate.a = 1.0 if active else 0.65
 	button.pivot_offset = button.custom_minimum_size / 2.0
 	button.scale = Vector2.ONE * (1.08 if active else 1.0)
 
-# Kart listesini filtreye gore yeniden kurar.
+# R4: kart izgarasi (88px kare kart: ikon %65 + altinda ad). Kart faded
+# durumu + eksik-malzeme rozeti _update_cards'ta tazelenir.
 func _rebuild_cards() -> void:
 	for child in cards_box.get_children():
 		child.queue_free()
 	_recipe_cards.clear()
 	var query := search_edit.text.strip_edges().to_lower()
+	var still := false
 	for recipe_id in Recipes.CRAFT_RECIPES:
 		var recipe: Dictionary = Recipes.CRAFT_RECIPES[recipe_id]
 		if _current_cat != "tumu" and recipe["category"] != _current_cat:
@@ -1068,97 +1097,132 @@ func _rebuild_cards() -> void:
 		if query != "" and not Items.display_name(recipe_id).to_lower().contains(query):
 			continue
 		cards_box.add_child(_make_recipe_card(recipe_id, recipe))
+		if recipe_id == _sel_recipe:
+			still = true
+	if not still:
+		_sel_recipe = ""
 	_update_cards()
 
-# Yatay tarif karti (UI_DESIGN 4.3):
-# [kategori dairesi + ikon] [ad, malzemeler, istasyon] [Uret pill]
+# 88px kare tarif karti: kategori dairesi + %65 ikon + altinda ad + eksik rozeti.
 func _make_recipe_card(recipe_id: String, recipe: Dictionary) -> PanelContainer:
 	var card := PanelContainer.new()
 	card.theme_type_variation = "CardPanel"
-	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 12)
-	card.add_child(row)
+	card.custom_minimum_size = Vector2(88, 88)
+	var v := VBoxContainer.new()
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	v.add_theme_constant_override("separation", 3)
+	card.add_child(v)
 
 	var circle := Panel.new()
-	circle.custom_minimum_size = Vector2(56, 56)
-	circle.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	circle.custom_minimum_size = Vector2(50, 50)
+	circle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = UIColors.category_color(
 			CAT_COLOR_KEY.get(recipe["category"], "resource"))
 	sb.set_corner_radius_all(999)
 	circle.add_theme_stylebox_override("panel", sb)
-	row.add_child(circle)
 	var icon := TextureRect.new()
 	icon.texture = load(Items.ITEMS[recipe_id]["icon"])
 	icon.set_anchors_preset(Control.PRESET_FULL_RECT)
-	icon.offset_left = 10
-	icon.offset_top = 10
-	icon.offset_right = -10
-	icon.offset_bottom = -10
+	icon.offset_left = 8
+	icon.offset_top = 8
+	icon.offset_right = -8
+	icon.offset_bottom = -8
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	circle.add_child(icon)
+	v.add_child(circle)
 
-	var mid := VBoxContainer.new()
-	mid.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	mid.add_theme_constant_override("separation", 2)
-	row.add_child(mid)
 	var name_label := Label.new()
-	var out_count: int = recipe["output"][recipe_id]
-	name_label.text = Items.display_name(recipe_id) + \
-			(" ×%d" % out_count if out_count > 1 else "")
-	name_label.theme_type_variation = "BadgeLabel"
-	mid.add_child(name_label)
-	var mats_row := HBoxContainer.new()
-	mats_row.add_theme_constant_override("separation", 10)
-	mid.add_child(mats_row)
-	var mats: Array = []
-	for item_id in recipe["cost"]:
-		var mat_box := HBoxContainer.new()
-		mat_box.add_theme_constant_override("separation", 3)
-		var mat_icon := TextureRect.new()
-		mat_icon.texture = load(Items.ITEMS[item_id]["icon"])
-		mat_icon.custom_minimum_size = Vector2(20, 20)
-		mat_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-		mat_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-		mat_box.add_child(mat_icon)
-		var mat_label := Label.new()
-		mat_label.add_theme_font_size_override("font_size", 15)
-		mat_box.add_child(mat_label)
-		# Renk korlugu icin: yetersiz malzemede minik unlem rozeti
-		var warn := Label.new()
-		warn.text = "!"
-		warn.theme_type_variation = "BadgeLabel"
-		warn.add_theme_color_override("font_color", UIColors.DANGER)
-		warn.visible = false
-		mat_box.add_child(warn)
-		mats_row.add_child(mat_box)
-		mats.append({"id": item_id, "need": recipe["cost"][item_id],
-				"label": mat_label, "warn": warn})
-	var station_label := Label.new()
-	station_label.theme_type_variation = "SubtleLabel"
-	station_label.visible = recipe["station"] != ""
-	mid.add_child(station_label)
+	name_label.text = Items.display_name(recipe_id)
+	name_label.theme_type_variation = "SubtleLabel"
+	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_label.clip_text = true
+	name_label.add_theme_font_size_override("font_size", 13)
+	name_label.custom_minimum_size = Vector2(84, 0)
+	v.add_child(name_label)
 
-	var craft_btn := Button.new()
-	craft_btn.theme_type_variation = "PrimaryButton"
-	craft_btn.text = "Üret"
-	craft_btn.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	craft_btn.pressed.connect(func(): _on_card_craft(recipe_id, craft_btn))
-	row.add_child(craft_btn)
+	# Eksik malzeme sayisi rozeti (sag ust; danger)
+	var badge := PanelContainer.new()
+	var bstyle := StyleBoxFlat.new()
+	bstyle.bg_color = UIColors.DANGER
+	bstyle.set_corner_radius_all(999)
+	bstyle.content_margin_left = 8
+	bstyle.content_margin_right = 8
+	bstyle.content_margin_top = 0
+	bstyle.content_margin_bottom = 1
+	badge.add_theme_stylebox_override("panel", bstyle)
+	badge.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	badge.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	badge.visible = false
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var badge_label := Label.new()
+	badge_label.add_theme_font_size_override("font_size", 14)
+	badge_label.add_theme_color_override("font_color", UIColors.PANEL_CREAM)
+	badge.add_child(badge_label)
+	card.add_child(badge)
 
 	card.gui_input.connect(func(event: InputEvent):
 		if (event is InputEventMouseButton and event.pressed) \
 				or (event is InputEventScreenTouch and event.pressed):
-			if Crafting.max_craftable(recipe_id) < 1:
-				_shake_card(recipe_id))
-	_recipe_cards[recipe_id] = {"card": card, "button": craft_btn,
-			"mats": mats, "station": station_label}
+			_select_recipe(recipe_id))
+	_recipe_cards[recipe_id] = {"card": card, "badge": badge, "badge_label": badge_label}
 	return card
 
-func _on_card_craft(recipe_id: String, from_button: Control) -> void:
-	if Crafting.enqueue(recipe_id, 1):
-		_fly_to_hotbar(recipe_id, from_button.get_global_rect().get_center())
+func _select_recipe(recipe_id: String) -> void:
+	_sel_recipe = recipe_id
+	_update_craft_detail()
+
+# R4: alt detay bandi (ORTAK bilesen) — buyuk ikon + ad + malzeme cipleri
+# (3/5 yesil-kirmizi) + istasyon durumu + TEK "Üret".
+var _sel_recipe := ""
+var _craft_info: UiInfoStrip
+
+func _build_craft_detail() -> void:
+	_craft_info = UiInfoStrip.new()
+	var rightbox: VBoxContainer = $CraftRoot/CraftPanel/HBox/RightBox
+	rightbox.add_child(_craft_info)
+	rightbox.move_child(_craft_info, queue_row.get_index())  # kuyrugun ustune
+	_update_craft_detail()
+
+func _update_craft_detail() -> void:
+	if _craft_info == null:
+		return
+	if _sel_recipe == "" or not Recipes.CRAFT_RECIPES.has(_sel_recipe):
+		_craft_info.set_placeholder("Bir tarif seç: malzemeler ve Üret burada.")
+		return
+	var recipe: Dictionary = Recipes.CRAFT_RECIPES[_sel_recipe]
+	var out_count: int = recipe["output"][_sel_recipe]
+	var title := Items.display_name(_sel_recipe) + \
+			(" ×%d" % out_count if out_count > 1 else "")
+	_craft_info.show_item(load(Items.ITEMS[_sel_recipe]["icon"]), title, "",
+			UIColors.category_color(CAT_COLOR_KEY.get(recipe["category"], "resource")))
+	var chips: Array = []
+	for item_id in recipe["cost"]:
+		var have := Inventory.get_count(item_id)
+		var need: int = recipe["cost"][item_id]
+		var col: Color = UIColors.SUCCESS.darkened(0.25) if have >= need else UIColors.DANGER
+		chips.append({"text": "%d/%d" % [have, need], "color": col,
+				"icon": load(Items.ITEMS[item_id]["icon"])})
+	if recipe["station"] != "":
+		var is_hearth: bool = recipe["station"] == "ocak"
+		var near: bool = Crafting.near_hearth if is_hearth else Crafting.near_station
+		var st_name: String = "Ocak" if is_hearth else "Tezgah"
+		var st_text: String = "%s yanında ✓" % st_name if near \
+				else "%s gerekli — yanında değilsin" % st_name
+		chips.append({"text": st_text, "color": UIColors.SUCCESS.darkened(0.25) if near \
+				else UIColors.WARNING.darkened(0.3)})
+	_craft_info.set_chips(chips)
+	_craft_info.set_pills([{"text": "Üret", "primary": true, "on": _on_detail_craft}])
+
+func _on_detail_craft() -> void:
+	if _sel_recipe == "":
+		return
+	if Crafting.max_craftable(_sel_recipe) < 1:
+		return  # yetersiz — cipler zaten kirmizi
+	if Crafting.enqueue(_sel_recipe, 1):
+		_fly_to_hotbar(_sel_recipe, _craft_info.get_global_rect().get_center())
 
 # Uretim geri bildirimi: sonuc ikonu karttan hotbara minik yay cizerek
 # ucar (0.4sn) + hotbar minik pop yapar (UI_DESIGN 4.3)
@@ -1230,25 +1294,6 @@ func fly_pickup(item_id: String, from_screen: Vector2) -> void:
 		pop.tween_property(inventory_button, "scale", Vector2.ONE * 1.12, 0.08)
 		pop.tween_property(inventory_button, "scale", Vector2.ONE, 0.12))
 
-# Yetersiz malzemeyle karta dokununca: yatay minik sallanma + eksik
-# malzemeler kisa parlar. Ceza degil, "suna bak" hissi (UI_DESIGN 4.5)
-func _shake_card(recipe_id: String) -> void:
-	var refs: Dictionary = _recipe_cards.get(recipe_id, {})
-	if refs.is_empty():
-		return
-	var card: Control = refs["card"]
-	var base_x: float = card.position.x
-	var tween := create_tween()
-	for offset in [4.0, -4.0, 4.0, -4.0, 0.0]:
-		tween.tween_property(card, "position:x", base_x + offset, 0.05)
-	for mat in refs["mats"]:
-		if mat["warn"].visible:
-			var warn: Label = mat["warn"]
-			warn.pivot_offset = warn.size / 2.0
-			var flash := create_tween()
-			flash.tween_property(warn, "scale", Vector2.ONE * 1.5, 0.12)
-			flash.tween_property(warn, "scale", Vector2.ONE, 0.15)
-
 # --- Gece efektleri (UI_DESIGN 4.5) ---------------------------------------
 
 var _vignette: TextureRect
@@ -1311,31 +1356,23 @@ func _make_vignette_texture() -> ImageTexture:
 			img.set_pixel(x, y, Color(col.r, col.g, col.b, pow(a, 1.6)))
 	return ImageTexture.create_from_image(img)
 
-# Kartlarin yeterlilik/istasyon durumunu tazeler (envanter degisiminde)
+# R4: kartlarin faded durumu + eksik malzeme rozeti; detay bandi da tazelenir.
 func _update_cards() -> void:
 	for recipe_id in _recipe_cards:
 		var refs: Dictionary = _recipe_cards[recipe_id]
 		var recipe: Dictionary = Recipes.CRAFT_RECIPES[recipe_id]
 		var can := Crafting.max_craftable(recipe_id) >= 1
-		refs["card"].modulate.a = 1.0 if can else 0.6
-		refs["button"].disabled = not can
-		for mat in refs["mats"]:
-			var have := Inventory.get_count(mat["id"])
-			var enough: bool = have >= int(mat["need"])
-			mat["label"].text = "%d/%d" % [have, mat["need"]]
-			mat["label"].add_theme_color_override("font_color",
-					UIColors.SUCCESS.darkened(0.25) if enough else UIColors.DANGER)
-			mat["warn"].visible = not enough
-		if recipe["station"] != "":
-			# Istasyon adi + yakinlik: ocak (pisirme) ya da tezgah
-			var is_hearth: bool = recipe["station"] == "ocak"
-			var near: bool = Crafting.near_hearth if is_hearth else Crafting.near_station
-			var st_name: String = "Ocak" if is_hearth else "Tezgah"
-			refs["station"].text = "%s yanında ✓" % st_name if near \
-					else "%s gerekli — yanında değilsin" % st_name
-			refs["station"].add_theme_color_override("font_color",
-					UIColors.SUCCESS.darkened(0.25) if near \
-					else UIColors.WARNING.darkened(0.3))
+		# Craftlanamayan kart %55 soluk (hedef gostermek motivasyondur)
+		refs["card"].modulate.a = 1.0 if can else 0.55
+		var missing := 0
+		for item_id in recipe["cost"]:
+			if Inventory.get_count(item_id) < int(recipe["cost"][item_id]):
+				missing += 1
+		refs["badge"].visible = missing > 0
+		if missing > 0:
+			refs["badge_label"].text = str(missing)
+	if craft_root.visible and _sel_recipe != "":
+		_update_craft_detail()
 
 # --- Gorsel tema ----------------------------------------------------------
 
