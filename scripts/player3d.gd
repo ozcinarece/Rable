@@ -109,6 +109,14 @@ var _anim_idle: String = ""
 var _anim_walk: String = ""
 var _anim_run: String = ""
 
+# STIL: skinned karakter olcek duzeltmesi. Bazi Meshy/Mixanimate modeller
+# Armature'da 0.01 gibi olcek tasir; mesh yerel AABB'si (1.7 m) dogru gorunse
+# de POZLANMIS iskelet minicik render eder. Bir kare bekleyip kemik dunya
+# pozlarindan GERCEK boyu olcup yeniden olcekleriz (yalniz cok sapan modeller).
+var _rescale_skel: Skeleton3D = null
+var _rescale_model: Node3D = null
+var _rescale_wait: int = 0
+
 func _ready() -> void:
 	_visual = Node3D.new()
 	add_child(_visual)
@@ -218,6 +226,12 @@ func set_character(model_path: String) -> void:
 	set_hat(_hat_id)
 	set_face(_face_path)
 	set_hair(_hair_style, _hair_color)
+	# STIL: iskeletli modelde gercek boyu kemik pozlarindan dogrula (bir kare
+	# sonra). Armature 0.01 gibi olcekler mesh AABB'siyle yakalanamaz.
+	if skeleton != null:
+		_rescale_skel = skeleton
+		_rescale_model = model
+		_rescale_wait = 2
 
 # Gorunur mesh'lerin BIRIKIMLI donusumlerle birlesik sinir kutusu
 # (iskelet dugumundeki 100x gibi olcekler dahil edilir)
@@ -728,6 +742,39 @@ func _find_mesh_instance(node: Node) -> MeshInstance3D:
 func _process(_delta: float) -> void:
 	# Kemik aynalarini her kare guncelle (animasyonla birlikte tasinir)
 	_sync_attach_mirrors()
+	if _rescale_wait > 0:
+		_rescale_wait -= 1
+		if _rescale_wait == 0:
+			_fix_skinned_scale()
+
+## Iskeletli karakterin GERCEK render boyunu kemik dunya pozlarindan olcup,
+## hedeften cok saparsa (armature 0.01 gibi) yeniden olcekler. Normal boyda
+## olan karakterlere (Rogue/Quaternius) dokunmaz — sadece asiri sapmayi duzeltir.
+func _fix_skinned_scale() -> void:
+	var skel := _rescale_skel
+	var model := _rescale_model
+	_rescale_skel = null
+	_rescale_model = null
+	if skel == null or not is_instance_valid(skel) or model == null \
+			or not is_instance_valid(model):
+		return
+	var mn := INF
+	var mx := -INF
+	for i in skel.get_bone_count():
+		var wy: float = (skel.global_transform * skel.get_bone_global_pose(i).origin).y
+		mn = minf(mn, wy)
+		mx = maxf(mx, wy)
+	var h := mx - mn  # kemiklerin dunya-uzayi Y boyu (~gercek render boyu)
+	if h <= 0.0001:
+		return
+	# Kemik boyu gercek boydan biraz kisa (bas/ayak payi) -> ~1.12 faktor.
+	# Sadece hedefin yarisindan kucuk / iki katindan buyuk olursa duzelt.
+	if h < TARGET_HEIGHT * 0.5 or h > TARGET_HEIGHT * 2.0:
+		var s: float = model.scale.y * (TARGET_HEIGHT / 1.12) / h
+		if s > 0.0001:
+			model.scale = Vector3(s, s, s)
+			_model_scale = s
+			set_held_tool(_held_tool_path)  # alet olcegini yeni boya gore yenile
 
 func _physics_process(delta: float) -> void:
 	var dir := _get_input_direction()
