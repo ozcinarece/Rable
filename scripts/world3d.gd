@@ -2481,9 +2481,9 @@ const TREE_MODELS: Array[String] = ["tree_pineDefaultA", "tree_pineDefaultB",
 ## (orn. "res://assets/models/test/pine_tree.glb"). "" = yukaridaki Quaternius
 ## cam paketi (varsayilan). Agac sistemi zaten MultiMesh + _cell_variance ile
 ## Y-donus/olcek cesitliligi uygular; sadece MESH degisir, kesme/hucre kurali
-## AYNI kalir. UYARI: pine_tree.glb 524k ucgen + materyalsiz — once decimate
-## (~2-4k ucgen) + doku bake edilmeli; ham haliyle mobilde kullanilmaz
-## (bkz. RAPOR_STIL.md). Model hazir olunca burayi doldurmak yeterli.
+## AYNI kalir. pine_tree.glb decimate edildi (~2.679 ucgen) + dokulu (1
+## materyal, 4 doku) — artik ormanda kullanilabilir. "" yaparsan Quaternius
+## cam paketine doner. (bkz. RAPOR_STIL.md)
 const TREE_MODEL_OVERRIDE := "res://assets/models/test/pine_tree.glb"
 
 func _tree_pool() -> Array:
@@ -2505,14 +2505,6 @@ func _tree_neighbor(cell: Vector2i) -> bool:
 	return false
 
 func _build_trees(cells: Array[Vector2i]) -> void:
-	# STIL DENEME: agir override modeli (pine_tree 524k ucgen) tum ormanda
-	# render edilemez (CI yazilim GL'de tek kare bile timeout). Yalniz CI
-	# ekran goruntusu modunda + override aktifken agac sayisini sinirla ki
-	# renkli agac GERCEK oyun dunyasinda (arazi/su/oyuncu) gorulebilsin.
-	# Normal oyunda (override kapali) bu blok tetiklenmez.
-	if OS.has_environment("RABLE_SCREENSHOT") and TREE_MODEL_OVERRIDE != "" \
-			and cells.size() > 8:
-		cells = cells.slice(0, 8)
 	var pool := _tree_pool()
 	var groups: Dictionary = {}
 	for cell in cells:
