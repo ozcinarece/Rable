@@ -352,6 +352,8 @@ func _update_backdrop() -> void:
 			top = craft_root
 		elif research_button.button_pressed:
 			top = research_root
+		elif _settings_panel != null and _settings_panel.visible:
+			top = _settings_panel  # AYARLAR paneli de overlay'in USTUNDE olmali
 		if top != null:
 			move_child(top, get_child_count() - 1)
 	# Oyun HUD ogeleri panel acikken gizlenir, kapaninca geri gelir.
