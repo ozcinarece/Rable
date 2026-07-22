@@ -105,6 +105,12 @@ func _die() -> void:
 		world.respawn_player()
 	Health.value = Balance.RESPAWN_HEALTH
 	Hunger.value = Balance.RESPAWN_HUNGER
+	# Ev/Çatı: doğuş yatağı iç mekandaysa "yuva" bonusu (+can +tokluk)
+	if world != null and world.has_method("home_spawn_bonus"):
+		var b: float = world.home_spawn_bonus()
+		if b > 0.0:
+			Health.value = minf(Balance.HEALTH_MAX, Health.value + b)
+			Hunger.value = minf(Balance.HUNGER_MAX, Hunger.value + b)
 	_nausea_time = 0.0
 	_was_warning = false
 	Health.changed.emit()

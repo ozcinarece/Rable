@@ -24,6 +24,8 @@ const HEALTH_REGEN_PER_SEC: float = 1.0
 # --- Ölüm / yeniden doğuş ----------------------------------------------
 const RESPAWN_HEALTH: float = 50.0
 const RESPAWN_HUNGER: float = 50.0
+## Ev/Çatı: yatak İÇ MEKAN'daysa doğuşta ekstra can + tokluk bonusu ("yuva").
+const HOME_INDOOR_RESPAWN_BONUS: float = 10.0
 ## v1: envanter ölümde KORUNUR. İleride açılabilir bayrak (denge kararı).
 const DROP_ITEMS_ON_DEATH: bool = false
 

@@ -1084,6 +1084,23 @@ func _flash_night_pill(text: String) -> void:
 	tw.tween_property(_night_pill, "modulate:a", 0.0, 0.4)
 	tw.tween_callback(func(): _night_pill.visible = false)
 
+## Ev/Çatı: tek seferlik "Bir evin var artık" bildirimi. Gece pill'ini sıcak
+## tonda yeniden kullanır (abartısız, UI dili).
+func flash_home_pill(text: String) -> void:
+	if _night_pill == null:
+		return
+	_night_pill_label.text = text
+	_night_pill.visible = true
+	_night_pill.modulate = Color(1.0, 0.88, 0.7)
+	_night_pill.modulate.a = 0.0
+	var tw := create_tween()
+	tw.tween_property(_night_pill, "modulate:a", 1.0, 0.3)
+	tw.tween_interval(2.5)
+	tw.tween_property(_night_pill, "modulate:a", 0.0, 0.5)
+	tw.tween_callback(func():
+		_night_pill.visible = false
+		_night_pill.modulate = Color.WHITE)
+
 # --- Uretim paneli ------------------------------------------------------
 
 # R4: sol dikey 56px kategori sekmeleri — kategori RENKLI dolgulu daire +
