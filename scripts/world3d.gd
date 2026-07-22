@@ -284,7 +284,7 @@ var _loading: bool = false     # yukleme sirasinda autosave/kirlilik bastir
 var _cam_layer: CanvasLayer      # R1: Kamera/Gorunum debug UI'si (Ayarlar'dan acilir)
 var cam_distance: float = CAM_ZOOM_DEFAULT  # yakinlik carpani (uzak varsayilan)
 var cam_pitch: float = 52.0    # bakis acisi (derece)
-var character_path: String = "custom:f2c29b/4fa7d8/5b6b8c"  # yuvarlak karakter (animasyonlu Meshy olcek fix bekliyor)
+var character_path: String = "res://assets/models/test/character_animated.glb"  # rigli animasyonlu Meshy (skinned olcek fix'li)
 var hat_id: String = "yok"
 var face_path: String = ""
 var hair_style: String = ""
@@ -361,12 +361,9 @@ func _setup_screenshot(save_path: String) -> void:
 		str(_spawn_cell), _ground_char.get(_spawn_cell, "?")])
 	print("CAMTEST: zoom_var=%.3f min=%.2f max=%.2f" % [
 		cam_distance, CAM_ZOOM_MIN, CAM_ZOOM_MAX])
-	# NOT: animasyonlu Meshy karakteri (character_animated.glb) Armature
-	# olcegi 0.01 tasidigi icin skinned mesh minicik render ediliyor; olcek
-	# duzeltmesi ayri ele alinacak. Web yayini icin calisan yuvarlak karakter.
-	player.set_character("custom:f2c29b/4fa7d8/5b6b8c")
-	player.set_hair("kut", Color(0.35, 0.22, 0.12))
-	player.set_hat("yok")
+	# STIL: animasyonlu Meshy karakteri — skinned olcek fix'i (_fix_skinned_scale)
+	# Armature 0.01 olcegini kemik pozlarindan duzeltir.
+	player.set_character("res://assets/models/test/character_animated.glb")
 	player.set_held_tool("balta")  # yeni axe.glb elde gorunsun
 	await get_tree().create_timer(4.0).timeout
 	_snap(save_path)
