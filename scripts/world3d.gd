@@ -1797,8 +1797,9 @@ func _build_environment() -> void:
 	sun.light_energy = 1.05
 	sun.shadow_enabled = true
 	# Golge haritasi kamera menziline daraltilir: uzak/yuksek agac
-	# golgeleri dev bulanik leke olmasin (netlik dramatik artar)
-	sun.directional_shadow_max_distance = 40.0
+	# golgeleri dev bulanik leke olmasin (netlik dramatik artar).
+	# MOBIL PERF: 40 -> 22 m; golge alani kucuk = golge gecisi ucuz.
+	sun.directional_shadow_max_distance = 22.0
 	sun.shadow_blur = 0.6
 	add_child(sun)
 	_sun = sun
@@ -2524,7 +2525,10 @@ func _build_trees(cells: Array[Vector2i]) -> void:
 			groups[idx] = []
 		groups[idx].append(Transform3D(_cell_variance(cell), _cell_center(cell)))
 	for idx in groups:
-		_keep(_make_mesh_multimesh(pool[idx], groups[idx]))
+		# MOBIL PERF: yogun orman golge yansitmaz (golge gecisi tum agaclari
+		# ikinci kez cizerdi — en pahali kalem). Agaclar isik ALIR ama GOLGE
+		# ATMAZ; AC/Longvinter stili. Buyuk FPS kazanci, sik ormani korur.
+		_keep(_make_mesh_multimesh(pool[idx], groups[idx], false))
 
 # Hucrenin tas turu: %60 normal (iki gorunum), %30 komur, %10 altin
 func _stone_variant(cell: Vector2i) -> int:
@@ -2546,7 +2550,7 @@ func _build_stones(cells: Array[Vector2i]) -> void:
 		groups[key].append(Transform3D(_cell_variance(cell), _cell_center(cell)))
 	for key in groups:
 		var pool: Array = _model_pool(STONE_VARIANTS[key.x]["model"], STONE_VARIANTS[key.x]["h"])
-		_keep(_make_mesh_multimesh(pool[key.y], groups[key]))
+		_keep(_make_mesh_multimesh(pool[key.y], groups[key], false))  # mobil: golge yok
 
 # Toplanabilir cicek/mantar gorselleri
 func _pickup_pool(kind: String) -> Array:
@@ -2578,9 +2582,9 @@ func _build_bushes(full: Array[Vector2i], empty: Array[Vector2i]) -> void:
 			if _bush_variant(cell) == v:
 				e.append(cell)
 		if not f.is_empty():
-			_keep(_make_mesh_multimesh(_bush_game_mesh(v, true), _bush_transforms(f)))
+			_keep(_make_mesh_multimesh(_bush_game_mesh(v, true), _bush_transforms(f), false))
 		if not e.is_empty():
-			_keep(_make_mesh_multimesh(_bush_game_mesh(v, false), _bush_transforms(e)))
+			_keep(_make_mesh_multimesh(_bush_game_mesh(v, false), _bush_transforms(e), false))
 
 # Her cali hucresi iki secilen turden birine baglanir (deterministik:
 # toplayip yeniden buyuyunce ayni tur kalir)
