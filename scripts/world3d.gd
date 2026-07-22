@@ -76,7 +76,7 @@ const PLACE_MODELS := {
 	"arastirma_masasi": {"model": "res://assets/models/nature/quat_table.glb",
 			"h": 0.8, "solid": true, "long": 1.0,
 			"behavior": "station", "max_hp": 120},
-	"sandik": {"model": "res://assets/models/tools/chest.glb",
+	"sandik": {"model": "res://assets/models/test/storege_box.glb",
 			"h": 0.55, "solid": true, "behavior": "station", "max_hp": 60},
 	"ocak": {"model": "res://assets/models/tools/campfire-pit.glb",
 			"h": 0.9, "solid": true, "behavior": "hearth", "max_hp": 400},
@@ -284,7 +284,7 @@ var _loading: bool = false     # yukleme sirasinda autosave/kirlilik bastir
 var _cam_layer: CanvasLayer      # R1: Kamera/Gorunum debug UI'si (Ayarlar'dan acilir)
 var cam_distance: float = CAM_ZOOM_DEFAULT  # yakinlik carpani (uzak varsayilan)
 var cam_pitch: float = 52.0    # bakis acisi (derece)
-var character_path: String = "custom:f2c29b/4fa7d8/5b6b8c"  # varsayilan: yuvarlak
+var character_path: String = "res://assets/models/test/character.glb"  # STIL: yeni Meshy karakteri (statik)
 var hat_id: String = "yok"
 var face_path: String = ""
 var hair_style: String = ""
@@ -361,11 +361,10 @@ func _setup_screenshot(save_path: String) -> void:
 		str(_spawn_cell), _ground_char.get(_spawn_cell, "?")])
 	print("CAMTEST: zoom_var=%.3f min=%.2f max=%.2f" % [
 		cam_distance, CAM_ZOOM_MIN, CAM_ZOOM_MAX])
-	# Vitrin: ornek gorunum, kamera OYUN VARSAYILANINDA
-	# (referansla olcek karsilastirmasi icin)
-	player.set_character("custom:f2c29b/4fa7d8/5b6b8c")
-	player.set_hair("kut", Color(0.35, 0.22, 0.12))
-	player.set_hat("yok")
+	# STIL: yeni Meshy karakteri (test/character.glb) — ekran goruntusunde
+	# gorulsun. Iskeletsiz statik mesh; animasyon yok (poz sabit).
+	player.set_character("res://assets/models/test/character.glb")
+	player.set_held_tool("balta")  # yeni axe.glb elde gorunsun
 	await get_tree().create_timer(4.0).timeout
 	_snap(save_path)
 	# Ikinci kare: kusbakisi tum ada (teshis icin)
