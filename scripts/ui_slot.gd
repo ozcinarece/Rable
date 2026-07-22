@@ -143,9 +143,10 @@ func _draw() -> void:
 	elif item_id != "":
 		bg = UIColors.item_color(item_id)
 	draw_circle(center, radius, bg)
-	# Eldeki esya (hotbar): koyu kahve ince halka
+	# Eldeki esya (hotbar): koyu kahve ince halka + ALT NOKTA (R7/UI_DESIGN 4.1)
 	if selected:
 		draw_arc(center, radius + 2.0, 0, TAU, 40, UIColors.INK_DARK, 3.0, true)
+		draw_circle(Vector2(center.x, size.y - 3.0), 3.5, UIColors.INK_DARK)
 	# Tasima icin secildi: kalin halka + hafif parlaklik
 	if picked:
 		draw_circle(center, radius, Color(1, 1, 1, 0.25))

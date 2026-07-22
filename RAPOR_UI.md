@@ -98,3 +98,29 @@ sadece menüye taşındı). Aşama başına bir commit; oyun her commit'te açı
 
 **Değişen dosyalar:** `scripts/hud.gd`, `scripts/ui_info_strip.gd`,
 `scenes/HUD.tscn`.
+
+## Aşama 5 — R5 araştırma + R6 HUD barları + R7 hotbar (commit 5)
+
+**R5 araştırma:**
+- Düğüm dairesine **ikon** eklendi (açtığı ilk tarifin ikonu, %65 doluluk);
+  **boş bej daireler** kalktı. Kilitli/gizli düğümde ikon **soluk** (desatüre
+  hissi) / gizli.
+- Taşan "5 Dal + 3 Çakıl Taşı" düğüm metni **kısaltıldı** ("Hazır"/"Malzeme"),
+  düğüm etiketi `clip_text`. Tam maliyet artık **alt bilgi bandında ikon+sayı
+  çipleri** (`_set_cost_chips`, yeterlilik renkli 3/5). Bant kalıbı korunur
+  (ad + açtıkları + maliyet çipleri + "Araştır").
+
+**R6 HUD barları + "Ye":**
+- Sol alttaki **krem kutu KALDIRILDI** (StatsPanel zemini `StyleBoxEmpty`).
+  3 **çıplak bar** (140x14) + solda 20px ikon + ince koyu kontur; arkada dünya
+  görünür. Bar değişiminde (hasar/yeme) **0.3sn nabız** (`_pulse_stat_bar`).
+- **"Ye" HUD butonu TAMAMEN KALDIRILDI.** Yeme akışı: hotbarda yiyecek
+  seçiliyken ana buton "Ye" bağlamı (R2) + envanter bilgi şeridi "Ye" pill'i.
+  Yeme **mantığı değişmedi** (yalnız tetik yüzeyi).
+
+**R7 hotbar:**
+- Seçili slot **1.15x + alt nokta** (`ui_slot._draw`). Hotbar **hep 5
+  kullanılabilir slot**; kilit ikonları kaldırıldı (kilit yalnız envanterde).
+
+**Değişen dosyalar:** `scripts/ui_research.gd`, `scripts/hud.gd`,
+`scripts/ui_slot.gd`.

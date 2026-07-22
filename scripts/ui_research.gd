@@ -15,6 +15,7 @@ extends Control
 
 const UIColors = preload("res://scripts/ui_colors.gd")
 const ItemDb = preload("res://scripts/item_db.gd")
+const Items = preload("res://scripts/items.gd")
 
 signal closed
 
@@ -32,6 +33,7 @@ var _selected_node: String = ""
 var _info_name: Label
 var _info_desc: Label
 var _info_cost: Label
+var _info_cost_chips: HBoxContainer
 var _research_btn: Button
 var _hint_label: Label
 
@@ -136,10 +138,16 @@ func _build() -> void:
 	info_row.add_theme_constant_override("separation", 12)
 	info_box.add_child(info_row)
 	_info_cost = Label.new()
+	_info_cost.text = "Maliyet:"
 	_info_cost.add_theme_font_size_override("font_size", 15)
-	_info_cost.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	_info_cost.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	info_row.add_child(_info_cost)
+	# R5: maliyet ikon+sayi CIPLERI (tasan metin yerine)
+	_info_cost_chips = HBoxContainer.new()
+	_info_cost_chips.add_theme_constant_override("separation", 10)
+	_info_cost_chips.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_info_cost_chips.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	info_row.add_child(_info_cost_chips)
 	_hint_label = Label.new()
 	_hint_label.theme_type_variation = "SubtleLabel"
 	_hint_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -210,11 +218,23 @@ func _make_card(node_id: String) -> Button:
 	box.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(box)
 	var circle := Panel.new()
-	circle.custom_minimum_size = Vector2(44, 44)
+	circle.custom_minimum_size = Vector2(48, 48)
 	circle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	circle.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	# R5: dugum ikonu (actigi ilk tarifin ikonu) — %65 doluluk, bos daire yok.
+	var icon := TextureRect.new()
+	icon.set_anchors_preset(Control.PRESET_FULL_RECT)
+	icon.offset_left = 8
+	icon.offset_top = 8
+	icon.offset_right = -8
+	icon.offset_bottom = -8
+	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	circle.add_child(icon)
 	box.add_child(circle)
 	var name_label := Label.new()
+	name_label.clip_text = true
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.add_theme_font_size_override("font_size", 14)
 	name_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -226,9 +246,20 @@ func _make_card(node_id: String) -> Button:
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	box.add_child(badge)
 	card.set_meta("circle", circle)
+	card.set_meta("icon", icon)
 	card.set_meta("name_label", name_label)
 	card.set_meta("badge", badge)
 	return card
+
+# R5: dugumun actigi ilk tarifin ikonu (yoksa null -> renkli daire kalir).
+func _unlock_icon(node_id: String) -> Texture2D:
+	var unlocks: Array = Research.NODES[node_id]["unlocks"]
+	if unlocks.is_empty():
+		return null
+	var p := String(Items.ITEMS.get(unlocks[0], {}).get("icon", ""))
+	if p != "" and ResourceLoader.exists(p):
+		return load(p)
+	return null
 
 # --- Durum yenileme ---------------------------------------------------------
 
@@ -244,6 +275,7 @@ func _refresh_card(node_id: String) -> void:
 	var card: Button = _cards[node_id]
 	var node: Dictionary = Research.NODES[node_id]
 	var circle: Panel = card.get_meta("circle")
+	var icon: TextureRect = card.get_meta("icon")
 	var name_label: Label = card.get_meta("name_label")
 	var badge: Label = card.get_meta("badge")
 	var branch_col: Color = UIColors.branch_color(node["branch"])
@@ -251,6 +283,14 @@ func _refresh_card(node_id: String) -> void:
 	sb.set_corner_radius_all(999)
 	var visible_node: bool = Research.is_visible(node_id)
 	name_label.text = _node_title(node_id) if visible_node else "???"
+	# R5: dugum ikonu — gizliyse yok; kilitliyse soluk (desature hissi).
+	if not visible_node:
+		icon.texture = null
+	else:
+		icon.texture = _unlock_icon(node_id)
+		var active := Research.is_unlocked(node_id) \
+				or Research.can_research(node_id) or _only_cost_missing(node_id)
+		icon.modulate = Color.WHITE if active else Color(0.5, 0.5, 0.5, 0.85)
 	card.modulate = Color.WHITE
 	if Research.is_unlocked(node_id):
 		sb.bg_color = branch_col
@@ -262,8 +302,10 @@ func _refresh_card(node_id: String) -> void:
 		badge.add_theme_color_override("font_color", UIColors.INK_FAINT)
 		card.modulate = Color(1, 1, 1, 0.65)
 	elif Research.can_research(node_id) or _only_cost_missing(node_id):
+		# R5: dugumde uzun maliyet metni YOK -> kisa durum; tam maliyet
+		# alt bilgi bandinda ikon+sayi cipleri olarak yasar.
 		sb.bg_color = branch_col
-		badge.text = _cost_short(node_id)
+		badge.text = "Hazır" if Research.can_research(node_id) else "Malzeme"
 		badge.add_theme_color_override("font_color",
 				UIColors.SUCCESS.darkened(0.3) if Research.can_research(node_id)
 				else UIColors.DANGER)
@@ -299,6 +341,36 @@ func _cost_short(node_id: String) -> String:
 		parts.append("%d %s" % [cost[item_id], ItemDb.display_name(item_id)])
 	return " + ".join(parts)
 
+# R5: alt bilgi bandinda maliyet ikon+sayi cipleri (yeterlilik renkli).
+func _set_cost_chips(node_id: String) -> void:
+	for c in _info_cost_chips.get_children():
+		c.queue_free()
+	if node_id == "" or not Research.NODES.has(node_id):
+		_info_cost.visible = false
+		return
+	var cost: Dictionary = Research.NODES[node_id]["cost"]
+	_info_cost.visible = not cost.is_empty()
+	for item_id in cost:
+		var need: int = cost[item_id]
+		var have := Inventory.get_count(item_id)
+		var chip := HBoxContainer.new()
+		chip.add_theme_constant_override("separation", 3)
+		var p := String(Items.ITEMS.get(item_id, {}).get("icon", ""))
+		if p != "" and ResourceLoader.exists(p):
+			var ic := TextureRect.new()
+			ic.texture = load(p)
+			ic.custom_minimum_size = Vector2(22, 22)
+			ic.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+			ic.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+			chip.add_child(ic)
+		var lbl := Label.new()
+		lbl.text = "%d/%d" % [have, need]
+		lbl.add_theme_font_size_override("font_size", 16)
+		lbl.add_theme_color_override("font_color",
+				UIColors.SUCCESS.darkened(0.25) if have >= need else UIColors.DANGER)
+		chip.add_child(lbl)
+		_info_cost_chips.add_child(chip)
+
 # --- Kavisli baglantilar -----------------------------------------------------
 
 func _draw_connections() -> void:
@@ -331,14 +403,14 @@ func _show_info(node_id: String) -> void:
 	if node_id == "" or not Research.NODES.has(node_id):
 		_info_name.text = "Bir düğüme dokun"
 		_info_desc.text = "Düğümler tarif açar; maliyeti ödeyip araştırırsın."
-		_info_cost.text = ""
+		_set_cost_chips("")
 		_hint_label.text = ""
 		_research_btn.visible = false
 		return
 	if not Research.is_visible(node_id):
 		_info_name.text = "???"
 		_info_desc.text = "Bu bilgi henüz keşfedilmedi. İlgili malzemeyi ilk kez topladığında görünür."
-		_info_cost.text = ""
+		_set_cost_chips("")
 		_hint_label.text = ""
 		_research_btn.visible = false
 		return
@@ -348,7 +420,7 @@ func _show_info(node_id: String) -> void:
 	for r in node["unlocks"]:
 		unlock_names.append(ItemDb.display_name(r))
 	_info_desc.text = "Açtıkları: " + ", ".join(unlock_names)
-	_info_cost.text = "Maliyet: " + _cost_short(node_id)
+	_set_cost_chips(node_id)
 	if Research.is_unlocked(node_id):
 		_research_btn.visible = false
 		_hint_label.text = "Araştırıldı ✓"

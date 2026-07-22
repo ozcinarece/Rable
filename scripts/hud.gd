@@ -91,7 +91,6 @@ const ACTION_ICONS := {
 @onready var research_root: Control = $ResearchRoot
 
 # Durum barlari (kalp/mide/damla) - _build_stats kurar (UI_DESIGN 4.1)
-var eat_button: Button
 var _heart_bar: ProgressBar
 var _stomach_bar: ProgressBar
 var _drop_bar: ProgressBar
@@ -169,7 +168,7 @@ func _ready() -> void:
 	move_button.icon = ICON_MOVE
 	move_button.toggled.connect(func(pressed: bool): move_toggled.emit(pressed))
 	_build_stats()
-	eat_button.pressed.connect(_on_eat_pressed)
+	# R6: "Ye" HUD butonu YOK — yeme akisi ana buton / envanter pill'i.
 	# R1: "Yeni Oyun" artik HUD'da durmaz -> Ayarlar menusune tasinir
 	# (_build_settings_menu). reset_button, Ayarlar toggle'ina donusturulur.
 
@@ -717,19 +716,18 @@ func _refresh() -> void:
 	_update_hunger()
 
 func _refresh_hotbar(slot_list: Array) -> void:
+	# R7: hotbar HEP 5 kullanilabilir slot; kilit ikonu yok (kilit yalniz
+	# envanterde, R0 cipinde yasar).
 	for i in slot_list.size():
 		var slot: UiSlotScript = slot_list[i]
-		if i >= Inventory.HOTBAR_UNLOCKED:
-			slot.set_locked(true)
-			continue
 		slot.set_locked(false)
-		var id: String = Inventory.hotbar[i]
+		var id: String = Inventory.hotbar[i] if i < Inventory.hotbar.size() else ""
 		slot.set_content(id, Inventory.get_count(id) if id != "" else 0)
 		var is_sel: bool = id != "" and id == _held_item
 		slot.selected = is_sel
-		# Secili slot hafif buyur (UI_DESIGN 4.1)
+		# Secili slot 1.15x + alt nokta (ui_slot ciziyor)
 		slot.pivot_offset = slot.size / 2.0
-		slot.scale = Vector2.ONE * (1.12 if is_sel else 1.0)
+		slot.scale = Vector2.ONE * (1.15 if is_sel else 1.0)
 
 # R3: secili esyayi ORTAK bilgi bandinda goster (ikon+ad+tek satir+pill'ler).
 func _update_detail() -> void:
@@ -833,23 +831,26 @@ func set_held_item(item_id: String) -> void:
 # Sag ustteki ikonlu gostergeler: kalp (can), mide (aclik), damla (su).
 # Ikonun ici degerle orantili dolar; ikona dokununca altinda "50/100"
 # gibi sayi acilir/kapanir.
+# R6: sol alt CIPLAK barlar (kutu YOK). StatsPanel zemini saydam yapilir;
+# 3 kompakt bar (140x14) + solda 20px ikon + ince koyu kontur. "Ye" HUD
+# butonu TAMAMEN KALDIRILDI (yeme akisi ana buton / envanter pill'i).
 func _build_stats() -> void:
+	# Panel zeminini kaldir: dunya arkada gorunur (hafif golgeyle okunur).
+	var stats_panel := get_node_or_null("StatsPanel")
+	if stats_panel != null:
+		(stats_panel as Control).add_theme_stylebox_override("panel", StyleBoxEmpty.new())
 	_heart_bar = _make_stat_bar("kalp", UIColors.DANGER)
 	_stomach_bar = _make_stat_bar("mide", UIColors.category_color("tool"))
 	_drop_bar = _make_stat_bar("damla", Color("#9FC5E8"))
-	eat_button = Button.new()
-	eat_button.text = "Ye"
-	eat_button.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
-	stats_box.add_child(eat_button)
 	_update_thirst()
 
-# Tek durum satiri: ikon + pastel dolgulu kisa bar (UI_DESIGN 4.1)
+# Tek CIPLAK durum bari: 20px ikon + 140x14 pastel dolgulu bar (ince kontur).
 func _make_stat_bar(icon_name: String, fill_color: Color) -> ProgressBar:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	var icon := TextureRect.new()
 	icon.texture = load("res://assets/ui/%s_dolu.png" % icon_name)
-	icon.custom_minimum_size = Vector2(26, 26)
+	icon.custom_minimum_size = Vector2(20, 20)
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	row.add_child(icon)
@@ -857,7 +858,7 @@ func _make_stat_bar(icon_name: String, fill_color: Color) -> ProgressBar:
 	bar.max_value = 100.0
 	bar.value = 100.0
 	bar.show_percentage = false
-	bar.custom_minimum_size = Vector2(150, 20)
+	bar.custom_minimum_size = Vector2(140, 14)
 	bar.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	var bg := StyleBoxFlat.new()
 	bg.bg_color = UIColors.PANEL_CREAM_DARK
@@ -873,19 +874,25 @@ func _make_stat_bar(icon_name: String, fill_color: Color) -> ProgressBar:
 	stats_box.add_child(row)
 	return bar
 
+# R6: bar degisiminde (hasar/yeme) 0.3 sn nabiz — kutu olmadan da dikkat ceker.
+func _pulse_stat_bar(bar: ProgressBar) -> void:
+	if bar == null:
+		return
+	bar.pivot_offset = bar.size / 2.0
+	var tw := create_tween()
+	tw.tween_property(bar, "scale", Vector2.ONE * 1.12, 0.15)
+	tw.tween_property(bar, "scale", Vector2.ONE, 0.15)
+
 func _update_hunger() -> void:
 	if _stomach_bar == null:
 		return
+	# R6: aclik ARTISINDA (yeme) bar nabiz atar (kutu yok, dikkat cekmek icin).
+	if Hunger.value > _prev_hunger + 0.5:
+		_pulse_stat_bar(_stomach_bar)
+	_prev_hunger = Hunger.value
 	_stomach_bar.value = Hunger.value
-	# Yenebilir bir sey var mi? (SurvivalBalance uzerinden — tek kaynak)
-	eat_button.disabled = not _has_edible() or Hunger.value >= Hunger.MAX_VALUE
 
-## Envanterde yenebilir (edible) bir esya var mi? (Ye butonu icin)
-func _has_edible() -> bool:
-	for item_id in Inventory.slots:
-		if item_id != null and PlayerStats.is_edible(String(item_id["id"])):
-			return true
-	return false
+var _prev_hunger: float = 100.0
 
 var _hunger_pulse: Tween
 
@@ -940,6 +947,8 @@ func _on_reset_pressed() -> void:
 func _update_health() -> void:
 	if _heart_bar != null:
 		_heart_bar.value = Health.value
+		if Health.value < _prev_hp:
+			_pulse_stat_bar(_heart_bar)  # R6: hasarda can bari nabiz atar
 	if _damage_flash != null and Health.value < _prev_hp:
 		_damage_flash.color.a = 0.3
 		create_tween().tween_property(_damage_flash, "color:a", 0.0, 0.4)
