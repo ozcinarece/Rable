@@ -32,6 +32,9 @@ signal move_toggled(enabled: bool)
 ## Envanterden bir esyayi eline alma istegi (bos string = birak)
 signal hold_requested(item_id: String)
 
+## R1: Ayarlar menusu acildi/kapandi — World Kamera/Gorunum panelini gosterir
+signal settings_toggled(open: bool)
+
 ## YASAM: yeme istegi (world3d ~1 sn tuketme eylemi olarak calistirir)
 signal eat_requested(food_id: String)
 
@@ -167,7 +170,8 @@ func _ready() -> void:
 	move_button.toggled.connect(func(pressed: bool): move_toggled.emit(pressed))
 	_build_stats()
 	eat_button.pressed.connect(_on_eat_pressed)
-	reset_button.pressed.connect(_on_reset_pressed)
+	# R1: "Yeni Oyun" artik HUD'da durmaz -> Ayarlar menusune tasinir
+	# (_build_settings_menu). reset_button, Ayarlar toggle'ina donusturulur.
 
 	inventory_button.toggled.connect(_on_inventory_toggled)
 	inventory_close.icon = ICON_CLOSE
@@ -201,6 +205,9 @@ func _ready() -> void:
 	_setup_backdrop()   # R0: panel acikken oyun ekrani karartilir + HUD gizlenir
 	_build_slots()
 	_build_lock_chip()  # R0: kilitli slotlar tek kompakt cip olur
+	_build_dock()           # R1: sag kenar dikey dock (canta/uretim/arastirma)
+	_build_settings_menu()  # R1: Ayarlar menusu (Yeni Oyun + Kamera/Gorunum)
+	_style_action_buttons() # R2: ana/saldiri butonlari + baglam etiketi
 	_build_category_buttons()
 	_rebuild_cards()
 	_refresh()
@@ -314,7 +321,8 @@ func _setup_backdrop() -> void:
 # Panel acik mi? (toggle butonlari + sandik durumu)
 func _any_panel_open() -> bool:
 	return inventory_button.button_pressed or craft_button.button_pressed \
-			or research_button.button_pressed or chest_panel.visible
+			or research_button.button_pressed or chest_panel.visible \
+			or (_settings_panel != null and _settings_panel.visible)
 
 func _update_backdrop() -> void:
 	if _overlay == null:
@@ -344,7 +352,7 @@ func _update_backdrop() -> void:
 
 # Panel acikken gizlenecek "oyun eylemi" HUD ogeleri (attack ayri yonetilir).
 func _hud_game_nodes() -> Array:
-	return [inventory_button, craft_button, research_button, reset_button,
+	return [get_node_or_null("Dock"), reset_button,
 			hotbar_strip, action_button, move_button, day_pill,
 			get_node_or_null("StatsPanel")]
 
@@ -373,6 +381,214 @@ func _build_lock_chip() -> void:
 	row.add_child(_lock_chip_label)
 	vbox.add_child(_lock_chip)
 	vbox.move_child(_lock_chip, inventory_grid.get_index() + 1)
+
+# --- R1: Sag kenar dikey DOCK (canta / uretim / arastirma) --------------
+# Dagitik beyaz daireler yerine TEK dikey dock: kategori renkli DOLGULU
+# 68px daire + %65 dolduran koyu kahve ikon + altinda 12px mini etiket.
+
+func _build_dock() -> void:
+	var theme := load("res://theme_main.tres")
+	# Arastirma butonuna ikon ver (arastirma masasi item ikonu — anlamli)
+	research_button.icon = load("res://assets/items/arastirma_masasi.png")
+	research_button.text = ""
+	var dock := VBoxContainer.new()
+	dock.name = "Dock"
+	dock.theme = theme
+	dock.anchor_left = 1.0
+	dock.anchor_right = 1.0
+	dock.anchor_top = 0.44   # dikey ortanin biraz altindan basla (basparmak)
+	dock.anchor_bottom = 0.44
+	dock.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	dock.grow_vertical = Control.GROW_DIRECTION_END
+	dock.offset_left = -84
+	dock.offset_right = -16
+	dock.add_theme_constant_override("separation", 12)
+	add_child(dock)
+	var entries := [
+		[inventory_button, "Çanta", UIColors.category_color("tool")],
+		[craft_button, "Üretim", UIColors.category_color("station")],
+		[research_button, "Araştırma", UIColors.RESEARCH],
+	]
+	for e in entries:
+		var btn: Button = e[0]
+		var entry := VBoxContainer.new()
+		entry.add_theme_constant_override("separation", 3)
+		entry.alignment = BoxContainer.ALIGNMENT_CENTER
+		var p := btn.get_parent()
+		if p != null:
+			p.remove_child(btn)
+		_style_dock_button(btn, e[2])
+		entry.add_child(btn)
+		var lbl := Label.new()
+		lbl.text = e[1]
+		lbl.add_theme_font_size_override("font_size", 13)
+		lbl.add_theme_color_override("font_color", UIColors.INK_DARK)
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		entry.add_child(lbl)
+		dock.add_child(entry)
+
+# 68px kategori renkli dolgulu daire + %68 dolduran koyu kahve ikon.
+func _style_dock_button(btn: Button, color: Color) -> void:
+	btn.custom_minimum_size = Vector2(68, 68)
+	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	btn.expand_icon = true
+	btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	btn.vertical_icon_alignment = VERTICAL_ALIGNMENT_CENTER
+	btn.text = ""
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = color
+	sb.set_corner_radius_all(999)
+	sb.content_margin_left = 11  # 68-2*11=46 -> ikon %68 (>=%65 kurali)
+	sb.content_margin_right = 11
+	sb.content_margin_top = 11
+	sb.content_margin_bottom = 11
+	for st in ["normal", "hover", "pressed", "disabled"]:
+		btn.add_theme_stylebox_override(st, sb)
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	for c in ["icon_normal_color", "icon_hover_color", "icon_pressed_color",
+			"icon_disabled_color"]:
+		btn.add_theme_color_override(c, UIColors.INK_DARK)
+
+# --- R1: Ayarlar (Duraklat) menusu --------------------------------------
+# "Yeni Oyun" (yanlislikla basilirsa oyun silinir!) ve Kamera/Gorunum debug
+# butonlari HUD'dan cikar; buraya toplanir. reset_button -> "Ayarlar" toggle.
+var _settings_panel: PanelContainer
+var _newgame_button: Button
+var _reset_confirm := false
+
+func _build_settings_menu() -> void:
+	reset_button.text = "Ayarlar"
+	reset_button.toggle_mode = true
+	reset_button.add_theme_font_size_override("font_size", 16)
+	reset_button.toggled.connect(_on_settings_toggled)
+	_settings_panel = PanelContainer.new()
+	_settings_panel.theme = load("res://theme_main.tres")
+	_settings_panel.set_anchors_preset(Control.PRESET_CENTER)
+	_settings_panel.custom_minimum_size = Vector2(360, 0)
+	_settings_panel.visible = false
+	add_child(_settings_panel)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 14)
+	_settings_panel.add_child(vb)
+	var header := Label.new()
+	header.text = "Ayarlar"
+	header.theme_type_variation = "HeaderLabel"
+	header.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(header)
+	var hint := Label.new()
+	hint.theme_type_variation = "SubtleLabel"
+	hint.text = "Kamera ve Görünüm ayarları sol kenarda görünür."
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(hint)
+	_newgame_button = Button.new()
+	_newgame_button.theme_type_variation = "PrimaryButton"
+	_newgame_button.text = "Yeni Oyun (kaydı siler)"
+	_newgame_button.pressed.connect(_on_newgame_pressed)
+	vb.add_child(_newgame_button)
+	var close := Button.new()
+	close.text = "Kapat"
+	close.pressed.connect(func(): reset_button.button_pressed = false)
+	vb.add_child(close)
+
+func _on_settings_toggled(pressed: bool) -> void:
+	if pressed:
+		inventory_button.button_pressed = false
+		craft_button.button_pressed = false
+		research_button.button_pressed = false
+		close_chest()
+		chest_closed.emit()
+	_settings_panel.visible = pressed
+	_reset_confirm = false
+	if _newgame_button != null:
+		_newgame_button.text = "Yeni Oyun (kaydı siler)"
+	settings_toggled.emit(pressed)  # World Kamera/Gorunum panelini ac/kapa
+	_update_backdrop()
+
+# Yanlislikla silmeyi onlemek icin iki adimli onay.
+func _on_newgame_pressed() -> void:
+	if not _reset_confirm:
+		_reset_confirm = true
+		_newgame_button.text = "Emin misin? (tekrar bas)"
+		return
+	_on_reset_pressed()
+
+# --- R2: Ana eylem + saldiri butonlari ----------------------------------
+# Baglam ikon -> butonun ICINDE alt mini etiket (Kes/Kaz/Topla/Aç/Ye...).
+const CTX_LABELS := {
+	"chop": "Kes", "mine": "Kaz", "dig": "Kaz", "pile": "Yığ",
+	"fill": "Doldur", "pour": "Dök", "harvest": "Topla", "grab": "Al",
+	"repair": "Onar", "open": "Aç", "attack": "Vur", "spear": "Sapla",
+	"fist": "",
+}
+var _action_label: Label
+
+func _style_action_buttons() -> void:
+	# ANA BUTON (96px): dolgulu ink_dark daire + BUYUK baglam ikonu (krem) +
+	# icte alt mini etiket. "+"/nisan placeholder'i KALDIRILDI.
+	action_button.offset_left = -120
+	action_button.offset_right = -24
+	action_button.offset_top = -192
+	action_button.offset_bottom = -96
+	_fill_circle_button(action_button, UIColors.INK_DARK, UIColors.PANEL_CREAM, 14)
+	action_button.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+	_action_label = Label.new()
+	_action_label.add_theme_color_override("font_color", UIColors.PANEL_CREAM)
+	_action_label.add_theme_font_size_override("font_size", 16)
+	_action_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_action_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	_action_label.offset_top = -28
+	_action_label.offset_bottom = -6
+	_action_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	action_button.add_child(_action_label)
+	# SALDIRI (72px): danger pastel dolgu + kilic (koyu) + "Saldır"
+	attack_button.offset_left = -108
+	attack_button.offset_right = -36
+	attack_button.offset_top = -280
+	attack_button.offset_bottom = -208
+	_fill_circle_button(attack_button, UIColors.DANGER, UIColors.INK_DARK, 12)
+	attack_button.vertical_icon_alignment = VERTICAL_ALIGNMENT_TOP
+	var atk_label := Label.new()
+	atk_label.text = "Saldır"
+	atk_label.add_theme_color_override("font_color", UIColors.INK_DARK)
+	atk_label.add_theme_font_size_override("font_size", 14)
+	atk_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	atk_label.set_anchors_preset(Control.PRESET_BOTTOM_WIDE)
+	atk_label.offset_top = -24
+	atk_label.offset_bottom = -5
+	atk_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	attack_button.add_child(atk_label)
+	# TASI (yapi geri-alma modu): sag-alt kumeden CIKAR -> sol-alt kompakt
+	# pill (islev korunur; sag altta yalniz ana+saldiri kalir).
+	move_button.anchor_left = 0.0
+	move_button.anchor_right = 0.0
+	move_button.anchor_top = 1.0
+	move_button.anchor_bottom = 1.0
+	move_button.offset_left = 16
+	move_button.offset_right = 120
+	move_button.offset_top = -232
+	move_button.offset_bottom = -188
+	move_button.text = "Taşı"
+	move_button.add_theme_font_size_override("font_size", 16)
+
+# Dolgulu daire buton (ana/saldiri): tek stylebox tum durumlar + ikon rengi.
+func _fill_circle_button(btn: Button, bg: Color, icon_col: Color, margin: float) -> void:
+	btn.expand_icon = true
+	btn.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = bg
+	sb.set_corner_radius_all(999)
+	sb.content_margin_left = margin
+	sb.content_margin_right = margin
+	sb.content_margin_top = margin
+	sb.content_margin_bottom = margin
+	for st in ["normal", "hover", "pressed", "disabled"]:
+		btn.add_theme_stylebox_override(st, sb)
+	btn.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
+	for c in ["icon_normal_color", "icon_hover_color", "icon_pressed_color",
+			"icon_disabled_color"]:
+		btn.add_theme_color_override(c, icon_col)
 
 # --- Slotlarin kurulumu -------------------------------------------------
 
@@ -1280,6 +1496,9 @@ func set_action_context(icon_name: String, valid: bool, weapon: bool) -> void:
 	if icon_name != _ctx_icon:
 		_ctx_icon = icon_name
 		action_button.icon = ACTION_ICONS.get(icon_name, ICON_FIST)
+		# R2: butonun ICINDE alt mini etiket (Kes/Kaz/Topla/Aç...)
+		if _action_label != null:
+			_action_label.text = CTX_LABELS.get(icon_name, "")
 	if valid != _ctx_valid:
 		_ctx_valid = valid
 		action_button.modulate = Color(1, 1, 1, 1) if valid \

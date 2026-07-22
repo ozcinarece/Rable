@@ -256,6 +256,7 @@ var _autosave_timer: float = 0.0
 var _loading: bool = false     # yukleme sirasinda autosave/kirlilik bastir
 
 # Kamera + gorunum ayarlari (kaydedilir)
+var _cam_layer: CanvasLayer      # R1: Kamera/Gorunum debug UI'si (Ayarlar'dan acilir)
 var cam_distance: float = CAM_ZOOM_DEFAULT  # yakinlik carpani (uzak varsayilan)
 var cam_pitch: float = 52.0    # bakis acisi (derece)
 var character_path: String = "custom:f2c29b/4fa7d8/5b6b8c"  # varsayilan: yuvarlak
@@ -294,6 +295,7 @@ func _ready() -> void:
 	hud.place_rotate.connect(_place_rotate)
 	hud.place_cancel.connect(_exit_place_mode)
 	hud.hold_requested.connect(_on_hold_requested)
+	hud.settings_toggled.connect(func(o: bool): _cam_layer.visible = o)
 	hud.move_toggled.connect(func(on: bool): _move_mode = on)
 	hud.drop_item_requested.connect(_on_drop_item)
 	hud.eat_requested.connect(_on_eat_requested)
@@ -1349,9 +1351,13 @@ func _unhandled_input(event: InputEvent) -> void:
 # Ayar panelleri: sol kenarda "Kamera" ve "Görünüm" butonlari.
 # Kamera: yakinlik/aci. Gorunum: karakter secimi + orman stili.
 func _build_camera_ui() -> void:
-	var layer := CanvasLayer.new()
-	layer.layer = 2
-	add_child(layer)
+	# R1: Kamera/Gorunum debug butonlari artik HUD'da surekli durmaz;
+	# yalnizca HUD Ayarlar menusu acikken gorunur (settings_toggled).
+	_cam_layer = CanvasLayer.new()
+	_cam_layer.layer = 2
+	_cam_layer.visible = false
+	add_child(_cam_layer)
+	var layer := _cam_layer
 
 	var button := Button.new()
 	button.text = "Kamera"

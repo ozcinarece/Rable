@@ -28,3 +28,30 @@ sadece menüye taşındı). Aşama başına bir commit; oyun her commit'te açı
   UI_DESIGN'ın izinli kuralı (ikon yoksa) — korunur.
 
 **Değişen dosyalar:** `scripts/ui_slot.gd`, `scripts/hud.gd`.
+
+## Aşama 2 — R1 dock + R2 ana/saldırı + Ayarlar menüsü (commit 2)
+
+**Teşhis → çözüm:**
+- **R1 dock:** Dağınık beyaz daireler yerine `_build_dock()` sağ kenarda tek
+  dikey dock (anchor 0.44, başparmak bölgesi, 12px aralık). Üç buton
+  (envanter/craft/araştırma) entry VBox'lara taşındı: **68px kategori renkli
+  DOLGULU daire** (çanta=bal turuncu, üretim=ahşap bej, araştırma=bilgi
+  mavisi) + **%68 dolduran koyu kahve ikon** + altında **13px mini etiket**
+  ("Çanta"/"Üretim"/"Araştırma"). Araştırmaya `arastirma_masasi.png` ikonu
+  verildi → "Ar" kırpık etiketi kalktı. Boş krem daire yok.
+- **R1 Ayarlar menüsü:** `reset_button` artık "Yeni Oyun" değil; **"Ayarlar"
+  toggle**'ı. `_build_settings_menu()` ortalanmış panel açar (overlay_dim ile).
+  İçinde **"Yeni Oyun"** iki adımlı onayla (yanlışlıkla silme koruması) +
+  Kapat. Kamera/Görünüm debug butonları (world3d) artık ayrı CanvasLayer'da
+  ve **yalnızca Ayarlar açıkken görünür** (`settings_toggled` sinyali →
+  `_cam_layer.visible`). HUD'da yalnızca oyun eylemleri kaldı.
+- **R2 ana buton (96px):** dolgulu **ink_dark daire** + büyük bağlam ikonu
+  (krem) + butonun İÇİNDE alt mini etiket (`CTX_LABELS`: Kes/Kaz/Topla/Aç/
+  Ye...). "+"/nişan placeholder'ı **kaldırıldı** (bağlam yokken fist + boş
+  etiket).
+- **R2 saldırı (72px):** danger pastel dolgu + kılıç + "Saldır" etiketi;
+  sadece silahken (mevcut kural). Ana butonla 16px arayla dikey hizalı.
+- **R2 "Taşı" (yapı geri-alma) butonu** sağ-alt kümeden çıkarıldı → sol-alt
+  kompakt pill (işlev korundu). Sağ altta yalnızca ana+saldırı kaldı.
+
+**Değişen dosyalar:** `scripts/hud.gd`, `scripts/world3d.gd` (yalnız UI gating).
