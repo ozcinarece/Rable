@@ -25,6 +25,7 @@ const StructureManager = preload("res://scripts/structure_manager.gd")
 const EngBalance = preload("res://scripts/engineering_balance.gd")
 const CreatureScript = preload("res://scripts/creature.gd")
 const CreatureBalance = preload("res://scripts/creature_balance.gd")
+const PerfBalance = preload("res://scripts/perf_balance.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const ChestStore = preload("res://scripts/inventory.gd")  # 14.1 sandik deposu
@@ -252,6 +253,17 @@ var _ghost_valid: bool = false
 var _ghost_needs_tint: bool = true
 var _torch_lights: Dictionary = {}  # hucre -> OmniLight3D (13.5 mesale)
 const MAX_TORCHES := 8              # ayni anda aktif isik butcesi (mobil)
+# --- PERF (Bolum 16): olcum overlay + kalite kademesi ------------------
+var _perf_layer: CanvasLayer       # debug performans overlay (Ayarlar'dan ac/kapa)
+var _perf_label: Label
+var _perf_on: bool = false
+var _perf_acc: float = 0.0         # overlay tazeleme sayaci (saniye)
+var _perf_fps: Array = []          # kayan FPS penceresi
+var _chunk_build_ms: float = 0.0   # son terrain yeniden insa suresi (ms)
+var _quality_tier: String = PerfBalance.DEFAULT_TIER
+var _max_torches: int = MAX_TORCHES  # kalite kademesiyle degisir (Asama 3)
+var _particles_on: bool = true       # kalite: partikul efektleri acik mi
+var _far_simplify_dist: float = 22.0 # kalite: uzak basitlesme mesafesi (m)
 var _target_ring: MeshInstance3D   # paylasilan hedef vurgu halkasi
 var _projectiles: Array = []       # ucan mermiler [{node, vel, ...}]
 var _aiming: bool = false          # menzilli silah nisan modu aktif mi
@@ -332,7 +344,11 @@ func _ready() -> void:
 	hud.chest_transfer_all_requested.connect(_on_chest_transfer_all)
 	hud.chest_dismantle_requested.connect(_on_chest_dismantle)
 	hud.chest_closed.connect(func(): _open_chest = Vector2i(-999, -999))
+	hud.perf_overlay_toggled.connect(_on_perf_overlay_toggled)
+	hud.quality_changed.connect(apply_quality)
 	_build_camera_ui()
+	_build_perf_overlay()
+	apply_quality(_quality_tier)  # baslangic kalite profilini uygula
 	# kayit-sistemi: SaveManager bu sahneyi (dünya durumu) kaydeder/yükler.
 	SaveManager.world = self
 	# Açılışta kayıt varsa "Devam Et / Yeni Oyun" seçimi; yoksa taze dünya
@@ -598,6 +614,7 @@ func _setup_screenshot(save_path: String) -> void:
 	_run_muhendislik_selftest()  # MUHENDISLIK: merdiven tirmanma kurali
 	_run_creature_selftest()     # YARATIK: varlik + take_hit + oz + melee
 	_run_save_load_selftest()
+	await _run_perf_selftest()   # PERF (Bolum 16): senaryo olcumleri (PERF* marker)
 	get_tree().quit()
 
 ## YARATIK self-test (Asama 1): spawn -> take_hit hasar -> melee _apply_hitbox
@@ -901,6 +918,91 @@ func _first_diff(a: Variant, b: Variant, path: String) -> String:
 		return "%s: %s != %s" % [path, str(a), str(b)]
 	return ""
 
+## PERF self-test (Bolum 16): senaryolari kurar, sayaclari ornekler ve
+## PERF* marker'lari basar. NOT: CI yazilim GL'de (llvmpipe) kosar; mutlak
+## FPS gercek telefonu TEMSIL ETMEZ. Bu yuzden renderer-bagimsiz yapisal
+## sayaclara (draw call, ucgen, aktif isik/nesne) + CPU script suresine
+## (frame_ms=TIME_PROCESS) bakariz — optimizasyonun gercekten oynattigi
+## degerler bunlar. RAPOR_PERF.md once/sonra tablolari bu marker'lardan gelir.
+func _run_perf_selftest() -> void:
+	_clear_creatures()
+	_cam_locked = true
+	# --- Senaryo A: bos alanda (temel referans) ---
+	var a := await _perf_probe_sample()
+	print("PERFBASE: frame_ms=%.2f peak_ms=%.2f draw=%d ucgen=%d nesne=%d isik=%d yaratik=%d nodes=%d mem_mb=%.1f chunk_ms=%.2f" % [
+		a["frame_ms"], a["peak_ms"], int(a["draw"]), int(a["prim"]),
+		int(a["objects"]), int(a["lights"]), int(a["creatures"]),
+		int(a["nodes"]), a["mem_mb"], a["chunk_ms"]])
+	# --- Senaryo B: yogun isik (mesale butcesi dogrulamasi) ---
+	var pc := _player_cell()
+	var stress := Node3D.new()
+	add_child(stress)
+	var placed := 0
+	var probe_cells: Array = []
+	for i in PerfBalance.PROBE_DENSE_TORCHES + 4:  # butcenin uzerinde uret
+		var oc := pc + Vector2i((i % 4) - 2, (i / 4) - 1)
+		if _torch_lights.has(oc):
+			continue
+		var h := Node3D.new()
+		h.position = _cell_center(oc)
+		stress.add_child(h)
+		_add_torch_light(oc, h)
+		probe_cells.append(oc)
+		placed += 1
+	var b := await _perf_probe_sample()
+	var budget := _max_torches + 2  # gunes + ocak paylari
+	print("PERFLIGHT: mesale_uretilen=%d aktif_isik=%d butce=%d butce_ok=%s frame_ms=%.2f draw=%d" % [
+		placed, int(b["lights"]), budget, str(int(b["lights"]) <= budget),
+		b["frame_ms"], int(b["draw"])])
+	for oc: Vector2i in probe_cells:
+		_torch_lights.erase(oc)
+	stress.queue_free()
+	# --- Senaryo D: gece dalgasi (max yaratik) ---
+	for i in PerfBalance.PROBE_WAVE_CREATURES:
+		spawn_creature(pc + Vector2i((i % 6) - 3, (i / 6) + 2), "normal")
+	var d := await _perf_probe_sample()
+	print("PERFWAVE: yaratik=%d frame_ms=%.2f peak_ms=%.2f draw=%d ucgen=%d nesne=%d nodes=%d" % [
+		int(d["creatures"]), d["frame_ms"], d["peak_ms"], int(d["draw"]),
+		int(d["prim"]), int(d["objects"]), int(d["nodes"])])
+	# --- Bellek: kisa tekrarli spawn/free dongusu (sizinti taramasi) ---
+	var mem0 := Performance.get_monitor(Performance.MEMORY_STATIC)
+	for cyc in 20:
+		_clear_creatures()
+		for i in 8:
+			spawn_creature(pc + Vector2i((i % 4) - 2, (i / 4) + 2), "normal")
+		await get_tree().process_frame
+	_clear_creatures()
+	for i in 6:
+		await get_tree().process_frame
+	var mem1 := Performance.get_monitor(Performance.MEMORY_STATIC)
+	print("PERFMEM: mem0_mb=%.2f mem1_mb=%.2f delta_mb=%.2f nodes=%d sizinti_kusku=%s" % [
+		mem0 / 1048576.0, mem1 / 1048576.0, (mem1 - mem0) / 1048576.0,
+		int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)),
+		str((mem1 - mem0) / 1048576.0 > 2.0)])
+
+## Bir senaryoyu isinma + N kare boyunca ornekler; ortalama/tepe metrikler.
+func _perf_probe_sample() -> Dictionary:
+	for i in PerfBalance.PROBE_WARMUP_FRAMES:
+		await get_tree().process_frame
+	var sum_frame := 0.0
+	var peak := 0.0
+	var sum_draw := 0.0
+	var sum_prim := 0.0
+	var last := {}
+	for i in PerfBalance.PROBE_SAMPLE_FRAMES:
+		await get_tree().process_frame
+		last = _perf_metrics()
+		sum_frame += last["frame_ms"]
+		peak = maxf(peak, last["frame_ms"])
+		sum_draw += last["draw"]
+		sum_prim += last["prim"]
+	var n := float(PerfBalance.PROBE_SAMPLE_FRAMES)
+	last["frame_ms"] = sum_frame / n
+	last["peak_ms"] = peak
+	last["draw"] = sum_draw / n
+	last["prim"] = sum_prim / n
+	return last
+
 # Tema test sayfasi: paneller, sekme, butonlar, kategori daireleri.
 # Sadece CI ekran goruntusu modunda kurulur.
 func _build_theme_test() -> CanvasLayer:
@@ -1157,6 +1259,8 @@ func _process(delta: float) -> void:
 		_autosave_timer = 0.0
 		if _dirty:
 			SaveManager.save()
+	if _perf_on:
+		_update_perf_overlay(delta)
 
 # Uygulama arka plana alininca / kapatilinca son durumu kaydet.
 # Android'de KRITIK: kullanici oyundan cikinca APPLICATION_PAUSED gelir
@@ -2091,12 +2195,14 @@ var _terrain_chunks: Dictionary = {}  # parca koordinati -> MeshInstance3D
 var _terrain_material: StandardMaterial3D
 
 func _build_terrain() -> void:
+	var t0 := Time.get_ticks_usec()  # PERF: chunk insa suresini olc
 	for key in _terrain_chunks:
 		_terrain_chunks[key].queue_free()
 	_terrain_chunks.clear()
 	for cj in ceili(float(_map_h) / CHUNK_CELLS):
 		for ci in ceili(float(_map_w) / CHUNK_CELLS):
 			_build_chunk(Vector2i(ci, cj))
+	_chunk_build_ms = (Time.get_ticks_usec() - t0) / 1000.0
 
 func _terrain_mat() -> StandardMaterial3D:
 	if _terrain_material == null:
@@ -4756,6 +4862,122 @@ func _add_torch_light(cell: Vector2i, holder: Node3D) -> void:
 
 ## Isik butcesi + flicker (13.5): oyuncuya en yakin MAX_TORCHES yanar,
 ## fazlasi soner (yapi durur). Her kare hafif titresim.
+# --- PERF (Bolum 16): olcum overlay + kalite kademesi ------------------
+
+## Debug performans overlay: sol ustte kucuk yari-saydam metin. Ayarlar
+## menusundeki "Performans göstergesi" ile acilip kapanir. Olcumu bozmasin
+## diye metin saniyede birkac kez tazelenir (PerfBalance.OVERLAY_REFRESH_SEC).
+func _build_perf_overlay() -> void:
+	_perf_layer = CanvasLayer.new()
+	_perf_layer.layer = 3
+	_perf_layer.visible = false
+	add_child(_perf_layer)
+	var panel := PanelContainer.new()
+	panel.position = Vector2(10, 10)
+	var st := StyleBoxFlat.new()
+	st.bg_color = Color(0.06, 0.07, 0.10, 0.66)
+	st.set_corner_radius_all(8)
+	st.set_content_margin_all(8)
+	panel.add_theme_stylebox_override("panel", st)
+	_perf_layer.add_child(panel)
+	_perf_label = Label.new()
+	_perf_label.add_theme_font_size_override("font_size", 15)
+	_perf_label.add_theme_color_override("font_color", Color(0.85, 1.0, 0.85))
+	_perf_label.text = "perf…"
+	panel.add_child(_perf_label)
+
+func _on_perf_overlay_toggled(on: bool) -> void:
+	_perf_on = on
+	if _perf_layer != null:
+		_perf_layer.visible = on
+	if on:
+		_perf_acc = 999.0  # hemen tazele
+		_perf_fps.clear()
+
+## Aktif (gorunur) yaratik/isik sayimi overlay + probe icin.
+func _active_light_count() -> int:
+	var n := 0
+	if _sun != null and is_instance_valid(_sun) and _sun.visible:
+		n += 1
+	if _hearth_light != null and is_instance_valid(_hearth_light) \
+			and _hearth_light.visible:
+		n += 1
+	for c: Vector2i in _torch_lights:
+		var l = _torch_lights[c]
+		if is_instance_valid(l) and l.visible:
+			n += 1
+	return n
+
+func _update_perf_overlay(delta: float) -> void:
+	_perf_fps.append(Performance.get_monitor(Performance.TIME_FPS))
+	if _perf_fps.size() > PerfBalance.FPS_WINDOW:
+		_perf_fps.pop_front()
+	_perf_acc += delta
+	if _perf_acc < PerfBalance.OVERLAY_REFRESH_SEC:
+		return
+	_perf_acc = 0.0
+	var m := _perf_metrics()
+	_perf_label.text = ("FPS %d  frame %.1f ms\ndraw %d  ucgen %s\nisik %d  yaratik %d\nchunk %.1f ms  node %d\nkalite: %s" % [
+		int(m["fps"]), m["frame_ms"], int(m["draw"]),
+		_fmt_thousands(int(m["prim"])), int(m["lights"]), int(m["creatures"]),
+		m["chunk_ms"], int(m["nodes"]),
+		PerfBalance.tier_val(_quality_tier, "label", _quality_tier)])
+
+## Anlik performans olcumleri (overlay + CI probe ortak kaynagi).
+## Not: draw/ucgen/frame renderer-bagimsiz yapisal sayaclar; CI yazilim
+## GL'de (llvmpipe) mutlak FPS temsili DEGIL — bu yuzden RAPOR'da
+## once/sonra icin bu yapisal sayaclara + script surelerine bakariz.
+func _perf_metrics() -> Dictionary:
+	var fps := 0.0
+	if not _perf_fps.is_empty():
+		for f in _perf_fps:
+			fps += f
+		fps /= _perf_fps.size()
+	else:
+		fps = Performance.get_monitor(Performance.TIME_FPS)
+	return {
+		"fps": fps,
+		"frame_ms": Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0,
+		"phys_ms": Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000.0,
+		"draw": Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME),
+		"prim": Performance.get_monitor(Performance.RENDER_TOTAL_PRIMITIVES_IN_FRAME),
+		"objects": Performance.get_monitor(Performance.RENDER_TOTAL_OBJECTS_IN_FRAME),
+		"lights": _active_light_count(),
+		"creatures": _creatures.size(),
+		"chunk_ms": _chunk_build_ms,
+		"nodes": Performance.get_monitor(Performance.OBJECT_NODE_COUNT),
+		"mem_mb": Performance.get_monitor(Performance.MEMORY_STATIC) / 1048576.0,
+	}
+
+func _fmt_thousands(n: int) -> String:
+	var s := str(n)
+	var out := ""
+	var c := 0
+	for i in range(s.length() - 1, -1, -1):
+		out = s[i] + out
+		c += 1
+		if c % 3 == 0 and i > 0:
+			out = "." + out
+	return out
+
+## 3 kademeli grafik kalitesi: golge/isik/partikul/uzak-basitlesme profili.
+## PerfBalance.TIERS'ten okur; gunes golgesi + mesale butcesi + partikul
+## bayragini gunceller. Ayarlar menusundeki secici baglanir (hud.quality_changed).
+func apply_quality(tier: String) -> void:
+	if not PerfBalance.TIERS.has(tier):
+		tier = PerfBalance.DEFAULT_TIER
+	_quality_tier = tier
+	var t := PerfBalance.tier(tier)
+	_max_torches = int(t["max_torches"])
+	_particles_on = bool(t["particles"])
+	_far_simplify_dist = float(t["far_simplify_dist"])
+	if _sun != null and is_instance_valid(_sun):
+		_sun.shadow_enabled = bool(t["dir_shadow"])
+		_sun.directional_shadow_max_distance = float(t["dir_shadow_dist"])
+	# Yonlu golge atlasi cozunurlugu (mobil: kucuk = ucuz). Compatibility
+	# renderer'da RenderingServer uzerinden calisir.
+	RenderingServer.directional_shadow_atlas_set_size(int(t["dir_shadow_size"]), true)
+
 func _update_torches(delta: float) -> void:
 	if _torch_lights.is_empty():
 		return
@@ -4770,13 +4992,17 @@ func _update_torches(delta: float) -> void:
 		return _cell_center(a).distance_squared_to(pp) \
 				< _cell_center(b).distance_squared_to(pp))
 	var t := Time.get_ticks_msec() / 1000.0
+	var flicker: bool = PerfBalance.tier_val(_quality_tier, "torch_flicker", true)
 	for i in cells.size():
 		var light: OmniLight3D = _torch_lights[cells[i]]
-		if i < MAX_TORCHES:
+		if i < _max_torches:
 			light.visible = true
-			# Flicker: enerjiyi hafifce oynat (hucreye gore faz)
-			var phase := float(cells[i].x * 7 + cells[i].y * 13)
-			light.light_energy = 2.2 * (0.86 + 0.14 * sin(t * 11.0 + phase))
+			if flicker:
+				# Flicker: enerjiyi hafifce oynat (hucreye gore faz)
+				var phase := float(cells[i].x * 7 + cells[i].y * 13)
+				light.light_energy = 2.2 * (0.86 + 0.14 * sin(t * 11.0 + phase))
+			else:
+				light.light_energy = 2.2  # sabit (dusuk kalite: enerji yazma yok)
 		else:
 			light.visible = false
 
