@@ -23,6 +23,8 @@ const ToolProfiles = preload("res://scripts/tool_profiles.gd")
 const HittableDummy = preload("res://scripts/hittable_dummy.gd")
 const StructureManager = preload("res://scripts/structure_manager.gd")
 const EngBalance = preload("res://scripts/engineering_balance.gd")
+const CreatureScript = preload("res://scripts/creature.gd")
+const CreatureBalance = preload("res://scripts/creature_balance.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const ChestStore = preload("res://scripts/inventory.gd")  # 14.1 sandik deposu
@@ -239,6 +241,7 @@ var _platform_cells: Dictionary = {}     # 14.4 platform hucresi -> true (yuksek
 var _ground_items: Array = []      # yere birakilanlar [{cell,id,count,node}]
 # ALET SISTEMI (Bolum 12)
 var _dummies: Dictionary = {}      # test kuklalari: hucre -> {node, hp, ...}
+var _creatures: Array = []         # BÖLÜM 15: aktif yaratik ornekleri (creature.gd)
 # YAPI YERLESTIRME MODU (13.2)
 var _place_mode: bool = false
 var _place_item: String = ""
@@ -591,8 +594,44 @@ func _setup_screenshot(save_path: String) -> void:
 	await _run_survival_selftest(save_path)  # YASAM: can/aclik/yeme/pisirme/olum
 	_run_time_selftest()  # gunduz/gece: faz + uyku kurali
 	_run_muhendislik_selftest()  # MUHENDISLIK: merdiven tirmanma kurali
+	_run_creature_selftest()     # YARATIK: varlik + take_hit + oz + melee
 	_run_save_load_selftest()
 	get_tree().quit()
+
+## YARATIK self-test (Asama 1): spawn -> take_hit hasar -> melee _apply_hitbox
+## yaratiga ulasir -> oldur -> oz duser. Tum silahlar ayni take_hit'i kullanir.
+func _run_creature_selftest() -> void:
+	_clear_creatures()
+	var cc := Vector2i(52, 52)
+	var cr = spawn_creature(cc, "normal")
+	var hp0: int = cr.hp
+	cr.take_hit(3, Vector3.FORWARD)
+	var dmg_ok: bool = cr.hp == hp0 - 3
+	# Melee _apply_hitbox yaratiga ulasiyor mu? (oyuncuyu yaratiga baktir)
+	var pc := _player_cell()
+	player.facing = Vector2(0, 1)
+	cr.position = _cell_center(pc + Vector2i(0, 1))
+	_held_item = "kilic"
+	var before2: int = cr.hp
+	_apply_hitbox(pc + Vector2i(0, 1))
+	var melee_ok: bool = cr.hp < before2
+	# Oldur -> oz duser
+	var kill_cell: Vector2i = cr.cell()
+	cr.take_hit(cr.hp, Vector3.FORWARD)
+	var dead_ok: bool = not cr.is_alive()
+	var essence_ok: bool = _ground_item_at(kill_cell) != -1
+	# Temizle (dusen oz item + yaratiklar; SAVELOAD'a temiz birak)
+	var gi := _ground_item_at(kill_cell)
+	if gi != -1:
+		var gn = _ground_items[gi].get("node")
+		if gn != null and is_instance_valid(gn):
+			gn.queue_free()
+		_ground_items.remove_at(gi)
+	_clear_creatures()
+	_held_item = ""
+	print("CREATURETEST: hasar=%s melee=%s oldu=%s oz_dustu=%s ok=%s" % [
+		str(dmg_ok), str(melee_ok), str(dead_ok), str(essence_ok),
+		str(dmg_ok and melee_ok and dead_ok and essence_ok)])
 
 ## MUHENDISLIK self-test — Asama 1 merdiven (11.5): derin cukurdan (depth>=3)
 ## merdivensiz cikilamaz; sig cukur (1-2) serbest; merdiven konunca cikilir.
@@ -1470,6 +1509,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			Research.debug_print_state()
 		elif event.keycode == KEY_F10:
 			Research.debug_research("stone_tools")
+		# BÖLÜM 15 debug: K = onunde bir yaratik spawn et (elle test)
+		elif event.keycode == KEY_K:
+			var fo := Vector2i(player.facing.round())
+			if fo == Vector2i.ZERO:
+				fo = Vector2i(0, 1)
+			spawn_creature(_player_cell() + fo * 2, "normal")
 		# YAPI YERLESTIRME klavye testi (13.2): R dondur, Esc iptal
 		elif _place_mode and event.keycode == KEY_R:
 			_place_rotate()
@@ -4430,8 +4475,21 @@ func _tick_projectiles(delta: float) -> void:
 		# Ekseni etrafinda hafif donme + ucus yonune bakis
 		node.rotate_object_local(Vector3(0, 1, 0), 12.0 * delta)
 		pr["life"] = float(pr["life"]) - delta
-		# Kukla carpismasi (xz yakinlik + yukseklik araligi)
+		# BÖLÜM 15: yaratik carpismasi (menzilli silahlar da yaratigi vurur)
 		var hit_dummy := false
+		for cr in _creatures:
+			if not is_instance_valid(cr) or not cr.is_alive():
+				continue
+			if Vector2(new_pos.x - cr.position.x, new_pos.z - cr.position.z).length() < 0.5 \
+					and new_pos.y > 0.1 and new_pos.y < 1.4:
+				cr.take_hit(int(pr["damage"]), vel.normalized())
+				_spawn_particles(new_pos, Color(0.95, 0.9, 0.7), 5)
+				hit_dummy = true
+				break
+		if hit_dummy:
+			_land_projectile(pr)
+			continue
+		# Kukla carpismasi (xz yakinlik + yukseklik araligi)
 		for c: Vector2i in _dummies:
 			var dc := _cell_center(c)
 			if Vector2(new_pos.x - dc.x, new_pos.z - dc.z).length() < 0.5 \
@@ -4479,6 +4537,15 @@ func _apply_hitbox(cell: Vector2i) -> void:
 	for r in range(1, reach + 1):
 		scan.append(pc + fo * r)
 	for c: Vector2i in scan:
+		# BÖLÜM 15: yaratik (kukla ile AYNI take_hit) — oncelikli hedef.
+		var cr := _creature_near(c)
+		if cr != null:
+			cr.take_hit(dmg, kdir)
+			_spawn_particles(_cell_center(c) + Vector3(0, 0.5, 0),
+					Color(0.95, 0.9, 0.7), 5)
+			_hit_stop(0.5, 0.05)
+			_play_sfx(String(prof.get("hit_sfx", "")))
+			return
 		var d = _dummies.get(c, null)
 		if d != null and is_instance_valid(d) and d.is_alive():
 			d.take_hit(dmg, kdir)
@@ -4493,6 +4560,45 @@ func _apply_hitbox(cell: Vector2i) -> void:
 			_hit_stop(0.5, 0.05)
 			_play_sfx(String(prof.get("hit_sfx", "")))
 			return
+
+# --- BÖLÜM 15: YARATIK VARLIĞI (Asama 1) ---------------------------------
+## Bir yaratik olusturur (konum + tip + gece can carpani). died -> oz duser.
+## Doner: creature node (debug/test). AI/dalga dis sistemde (Asama 2-3).
+func spawn_creature(cell: Vector2i, ctype: String = "normal",
+		hp_mult: float = 1.0) -> Node3D:
+	var cr = CreatureScript.new()
+	cr.setup(ctype, hp_mult)
+	cr.position = _cell_center(cell)
+	cr.died.connect(_on_creature_died)
+	add_child(cr)
+	_creatures.append(cr)
+	_spawn_particles(cr.position + Vector3(0, 0.4, 0), CreatureBalance.EYE_COLOR, 6)
+	return cr
+
+## Yaratik oldu (15.1): oz dunya item'i duser + dagilma efekti.
+func _on_creature_died(cell: Vector2i, essence_item: String, essence_count: int) -> void:
+	_spawn_particles(_cell_center(cell) + Vector3(0, 0.5, 0),
+			CreatureBalance.BODY_COLOR, 8)
+	if essence_count > 0:
+		_add_ground_item(cell, essence_item, essence_count)
+	_creatures = _creatures.filter(func(c): return is_instance_valid(c) and c.is_alive())
+
+## Vurus hedefi: verilen hucre merkezine YAKIN canli yaratik (yoksa null).
+func _creature_near(cell: Vector2i) -> Node3D:
+	var center := _cell_center(cell)
+	for cr in _creatures:
+		if not is_instance_valid(cr) or not cr.is_alive():
+			continue
+		if Vector2(cr.position.x - center.x, cr.position.z - center.z).length() < 0.75:
+			return cr
+	return null
+
+## Tum yaratiklari temizle (reset/reload/safak temizligi ortak yol).
+func _clear_creatures() -> void:
+	for cr in _creatures:
+		if is_instance_valid(cr):
+			cr.queue_free()
+	_creatures.clear()
 
 # --- YAPI DURUMLARI: take_hit / hasar / yikim / tamir (13.4) ---------------
 ## Yapiya hasar uygula (yaratiklar geldiginde ayni fonksiyonu cagiracak).

@@ -63,6 +63,8 @@ const ITEMS: Dictionary = {
 	"pompa": {"name": "Pompa", "icon": "res://assets/items/pompa.png"},
 	"vana": {"name": "Vana", "icon": "res://assets/items/vana.png"},
 	"metal_kova": {"name": "Metal Kova", "icon": "res://assets/items/metal_kova.png"},
+	# YARATIK (Bolum 15): oz = olen yaratigin dusurdugu ozut
+	"oz": {"name": "Öz", "icon": "res://assets/items/oz.png"},
 }
 
 ## Elde tutulunca yere yerlestirilebilen yapilar: esya -> harita karakteri.
@@ -145,6 +147,7 @@ const DESCRIPTIONS: Dictionary = {
 	"tuzak": "Ustunden gecen yaratik hasar alir.",
 	"merdiven": "Eline al: kazilmis cukura koy. Derin cukurdan (3-4) ancak merdivenle cikilir.",
 	"kazik": "Eline al: kazilmis cukurun tabanina koy. Dusen hasar alir.",
+	"oz": "Olen yaratigin ozutu; ileride yukseltme/ticaret malzemesi.",
 	"boru": "Eline al ve yere/cukura koy: komsu borularla baglanir, su tasir (asagi/ayni seviye).",
 	"pompa": "Boru hattina koy: suyu YUKARI tasir (yukseklik kuralini asar).",
 	"vana": "Boru hattina koy: dokununca AC/KAPA. Kapaliyken o hattan su akmaz.",
