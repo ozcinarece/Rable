@@ -79,3 +79,22 @@ const MORNING_REWARD := {          # hasarsız gece bonusu (gün kademesine gör
 # --- Performans (15.8) ---------------------------------------------------
 const MAX_ACTIVE := 16             # aynı anda max aktif yaratık
 const FAR_SIMPLIFY_DIST := 22.0    # bu uzaklıktan öte animasyon/karmaşa kapalı
+
+# --- 14.5 Maliyet bazlı yol bulma (BASE_SAVUNMA) -------------------------
+## Yaratık A* için hücre geçiş maliyeti (denge verisi). Yapı maliyetleri =
+## kırma süresi tahmini (hp/hasar) ile orantılı → güçlü duvar "pahalı yol".
+## Yaratık AI (Aşama 2+) bu tabloyu okuyacak; şimdilik veri + saf fonksiyon.
+const BASE_MOVE_COST := 1              # boş zemin
+const RAISE_COST := {1: 3, 2: 6}       # yükselti +1 / +2
+const STRUCTURE_COST := {              # yapı hücresi geçiş maliyeti (kırma zorluğu)
+	"fence": 5, "ahsap_duvar": 10, "tas_duvar": 18,
+	"tugla_sur": 26, "celik_kapi": 40,
+}
+## İÇ MEKAN CEZASI (Ev/Çatı paketi, 14.5): iç mekan hücreleri çok pahalı sayılır
+## → yaratıklar eve girmeyi SON ÇARE görür. Tabloya eklenen "iç mekan: +20".
+const INDOOR_COST_PENALTY := 20
+
+## Bir hücrenin toplam geçiş maliyeti: taban + (iç mekansa) ceza. Yol bulma
+## bu fonksiyonu çağırır → iç mekan otomatik pahalılaşır.
+static func traverse_cost(base_cost: int, cell_is_indoor: bool) -> int:
+	return base_cost + (INDOOR_COST_PENALTY if cell_is_indoor else 0)

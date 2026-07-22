@@ -249,6 +249,9 @@ var _roof_nodes: Dictionary = {}    # hucre -> cati gorseli (Node3D, duvar ustu 
 var _roof_structures = StructureManager.new()  # cati per-instance hp/durum/yon
 var _faded_roof_cells: Dictionary = {}  # su an seffaflastirilan cati hucreleri
 var _roof_fade_anchor := Vector2i(-9999, -9999)  # fade'i tetikleyen son oyuncu hucresi
+# EV/CATI Asama 2: IC MEKAN. Duvar/kapi ile cevrili + catili hucre grubu.
+# Yalnizca yapi degisiminde flood-fill ile hesaplanir (her kare degil).
+var _indoor_cells: Dictionary = {}  # hucre -> true (is_indoor sorgusu)
 var _chests: Dictionary = {}       # sandik hucresi -> Inventory ornegi (14.1 depo)
 var _move_mode: bool = false       # Tasi butonu: yapiyi geri alma modu
 var _open_chest := Vector2i(-999, -999)
@@ -630,11 +633,57 @@ func _setup_screenshot(save_path: String) -> void:
 	_run_time_selftest()  # gunduz/gece: faz + uyku kurali
 	_run_muhendislik_selftest()  # MUHENDISLIK: merdiven tirmanma kurali
 	_run_creature_selftest()     # YARATIK: varlik + take_hit + oz + melee
+	_run_ev_cati_selftest()      # EV/CATI: cati destek/cokme + is_indoor + maliyet
 	_run_save_load_selftest()
 	get_tree().quit()
 
 ## YARATIK self-test (Asama 1): spawn -> take_hit hasar -> melee _apply_hitbox
-## yaratiga ulasir -> oldur -> oz duser. Tum silahlar ayni take_hit'i kullanir.
+## EV/CATI self-test (Asama 2-3): kucuk kapali+catili oda kur -> is_indoor dogru;
+## muhur bozulunca (duvar ac) ic mekan biter; tum destek gidince catilar coker;
+## ic mekan hucresi yol-bulma maliyetinde +20 pahali (Asama 3 kancasi).
+func _run_ev_cati_selftest() -> void:
+	var c := Vector2i(60, 60)
+	var dirs := [Vector2i(0, -1), Vector2i(0, 1), Vector2i(1, 0), Vector2i(-1, 0)]
+	var walls: Array = []
+	for d in dirs:
+		walls.append(c + d)
+	# Temiz baslangic
+	for cc in ([c] + walls):
+		if _roofs.has(cc):
+			_release_roof_cell(cc)
+		if _placed.has(cc):
+			_release_structure_cell(cc)
+	_indoor_cells.clear()
+	# 4 duvar + 5 cati (duvar ustu + merkez) => merkez muhurlu ic mekan
+	for w in walls:
+		_set_placed(w, "ahsap_duvar")
+	for w in walls:
+		_set_roof(w, "ahsap_cati")
+	_set_roof(c, "ahsap_cati")  # _recompute_indoor tetiklenir
+	var sealed := is_indoor(c)
+	var cost_in := CreatureBalance.traverse_cost(1, is_indoor(c))
+	var cost_out := CreatureBalance.traverse_cost(1, false)
+	# Bir duvari ac -> muhur bozulur (ic mekan biter), catilar zincirle ayakta
+	_release_structure_cell(walls[0])
+	var opened := is_indoor(c)
+	var roofs_chain := _roofs.size()
+	# Kalan tum duvarlari kaldir -> hicbir cati duvara oturmaz -> hepsi coker
+	for i in range(1, walls.size()):
+		_release_structure_cell(walls[i])
+	var roofs_all := _roofs.size()
+	var cost_ok := cost_in == cost_out + CreatureBalance.INDOOR_COST_PENALTY
+	print("EVCATITEST: muhurlu=%s acildi=%s zincir=%d hepsi_coktu=%s maliyet(%d/%d)_ok=%s ok=%s" % [
+		str(sealed), str(opened), roofs_chain, str(roofs_all == 0),
+		cost_in, cost_out, str(cost_ok),
+		str(sealed == true and opened == false and roofs_all == 0 and cost_ok)])
+	# Temizlik
+	for cc in ([c] + walls):
+		if _roofs.has(cc):
+			_release_roof_cell(cc)
+		if _placed.has(cc):
+			_release_structure_cell(cc)
+	_indoor_cells.clear()
+
 func _run_creature_selftest() -> void:
 	_clear_creatures()
 	var cc := Vector2i(52, 52)
@@ -3532,6 +3581,10 @@ func _set_placed(cell: Vector2i, item_id: String, rot: int = 0) -> void:
 		# Vana varsayilan durumu place()'te open=false (= VALVE_DEFAULT_OPEN);
 		# kayittan gelen durum korunur (_structures.has ile place atlanir).
 		_refresh_pipe_neighborhood(cell)
+	# EV/CATI Asama 2: yeni duvar/kapi bir alani kapatmis olabilir -> ic mekan
+	# tazele (yukleme sirasinda toplu, sonda bir kez).
+	if not _loading and _roofs.size() > 0 and (behavior == "wall" or behavior == "door"):
+		_recompute_indoor()
 
 ## Bir yapinin olcekli 3D gorselini (holder+bundle) origin'de kurar; konum/
 ## donme cagirana kalir. Hem yerlestirme hem hayalet onizleme kullanir.
@@ -3797,9 +3850,11 @@ func _release_structure_cell(cell: Vector2i) -> void:
 	for n in _PIPE_DIRS:
 		_refresh_pipe_visual(cell + n)
 	# EV/CATI PAKETI: bir duvar/kapi kalkinca ustundeki/bagli catilar desteksiz
-	# kalabilir -> destek agini yeniden hesapla (kopuk catilar coker).
+	# kalabilir -> destek agini yeniden hesapla (kopuk catilar coker) + ic mekan.
 	if _roofs.size() > 0:
 		_recompute_roof_support()
+		if not _loading:
+			_recompute_indoor()
 
 # =====================================================================
 # EV/CATI PAKETI — Cati ust katmani (YAPI_SISTEMI turevi; Bolum "ev-cati")
@@ -3908,6 +3963,8 @@ func _set_roof(cell: Vector2i, item_id: String, rot: int = 0) -> void:
 	_roof_nodes[cell] = holder
 	if _roof_structures.hp_ratio(cell) < 0.5:
 		holder.rotation_degrees.z = 6.0
+	if not _loading:
+		_recompute_indoor()  # Asama 2: yeni cati ic mekan olusturmus olabilir
 
 ## Cati hucresinin tum kayitlarini temizle (sokme + cokme ortak yol).
 func _release_roof_cell(cell: Vector2i) -> void:
@@ -3942,6 +3999,7 @@ func _remove_roof(cell: Vector2i) -> void:
 	_spawn_floating_text(cell, "Geri alındı", Color(0.95, 0.9, 0.7))
 	_dirty = true
 	_recompute_roof_support()
+	_recompute_indoor()
 
 ## Cati cokmesi (destek gidince): malzemenin %25'i sacilir, iade YOK. Yapi
 ## yikim kuraliyla (13.4) tutarli.
@@ -3987,6 +4045,57 @@ func _recompute_roof_support() -> void:
 	for cell in _roofs.keys():
 		if not supported.has(cell):
 			_collapse_roof(cell)
+
+# --- EV/CATI Asama 2: IC MEKAN TESPITI (kapali + catili alan) ---------------
+
+## Bir hucre kapali+catili ic mekana ait mi? Global sorgu (yaratik/base sistemi
+## bunu okur). Veri _recompute_indoor() ile yapi degisiminde tazelenir.
+func is_indoor(cell: Vector2i) -> bool:
+	return _indoor_cells.has(cell)
+
+## Hucre ic mekan siniri (bariyer) mi? Duvar VE kapi (acik/kapali) cevreler.
+func _is_enclosure_barrier(cell: Vector2i) -> bool:
+	var beh := String(PLACE_MODELS.get(_placed.get(cell, ""), {}).get("behavior", ""))
+	return beh == "wall" or beh == "door"
+
+## Kapali alan algoritmasi (flood-fill): duvar/kapi ile cevrili (haritanin
+## kenarina sizmayan) VE tamami catili, en fazla INDOOR_MAX hucrelik bariyer-disi
+## bolgeler = IC MEKAN. Yalnizca yapi degisiminde cagrilir.
+const INDOOR_MAX := 64  # "haritayi catiyla kapla" istismarini keser
+func _recompute_indoor() -> void:
+	_indoor_cells.clear()
+	if _roofs.is_empty():
+		return
+	var visited: Dictionary = {}
+	for cell in _roofs:
+		# Bariyer hucreleri ic mekan tabani degildir; catili bariyer-disi
+		# hucreden bolge buyut.
+		if _is_enclosure_barrier(cell) or visited.has(cell):
+			continue
+		var region: Array = []
+		var touches_border := false
+		var all_roofed := true
+		var stack: Array = [cell]
+		visited[cell] = true
+		while not stack.is_empty():
+			var c: Vector2i = stack.pop_back()
+			region.append(c)
+			if c.x <= 0 or c.y <= 0 or c.x >= _map_w - 1 or c.y >= _map_h - 1:
+				touches_border = true
+			if not _roofs.has(c):
+				all_roofed = false
+			# Cok buyuduyse erken cik (istismar + perf)
+			if region.size() > INDOOR_MAX:
+				break
+			for n in _ROOF_DIRS:
+				var nc: Vector2i = c + n
+				if visited.has(nc) or _is_enclosure_barrier(nc):
+					continue
+				visited[nc] = true
+				stack.append(nc)
+		if not touches_border and all_roofed and region.size() <= INDOOR_MAX:
+			for c in region:
+				_indoor_cells[c] = true
 
 # --- Gorunurluk cozumu: oyuncu catili alana girince cati grubu seffaflasir ---
 
