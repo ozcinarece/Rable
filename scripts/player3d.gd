@@ -304,6 +304,10 @@ func _detect_animations() -> void:
 		_anim_run = _anim_walk
 	if _anim_walk == "":
 		_anim_walk = _anim_run  # bazi paketlerde Walk yok (orn. Asker)
+	# STIL: idle animasyonu olmayan modeller (orn. Meshy character_animated —
+	# Walking/Running var, idle yok) T-poza dusmesin diye idle=walk yedegi.
+	if _anim_idle == "":
+		_anim_idle = _anim_walk
 	for anim_name in [_anim_idle, _anim_walk, _anim_run]:
 		if anim_name != "" and _anim.has_animation(anim_name):
 			_anim.get_animation(anim_name).loop_mode = Animation.LOOP_LINEAR
