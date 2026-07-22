@@ -124,3 +124,61 @@ sadece menüye taşındı). Aşama başına bir commit; oyun her commit'te açı
 
 **Değişen dosyalar:** `scripts/ui_research.gd`, `scripts/hud.gd`,
 `scripts/ui_slot.gd`.
+
+## Aşama 6 — Doğrulama, önce/sonra, test senaryosu (commit 6)
+
+### ÖNCE → SONRA (özet)
+| Alan | ÖNCE (teşhis) | SONRA |
+|---|---|---|
+| İkon oranı | koca daire + minik ikon | ikon kabın ≥%65'i (slot/dock/kart/bant) |
+| Panel odağı | oyun panelin arkasında capcanlı | overlay_dim karartma + HUD gizlenir |
+| Kilitli slot | tek tek boş bej daireler | tek çip "+N slot (deri çanta ile)" |
+| Sağ butonlar | dağınık beyaz daireler | tek dikey dock: renkli daire + ikon + etiket |
+| Yeni Oyun | HUD'da (yanlış basılır) | Ayarlar menüsünde, iki adımlı onay |
+| Ana buton | anlamsız "+"/nişan | ink_dark daire + bağlam ikonu + "Kes/Kaz.." |
+| Envanter | dar sağ şerit | ortalanmış geniş panel, alttan kayar, 8 sütun |
+| Bilgi/detay | sıkışık çok satır | ORTAK bant: ikon+ad+tek satır/çip+pill |
+| Üretim | dev boş satırlar, satır başına Üret | 88px kart ızgarası + detay bandı + tek Üret |
+| Sekmeler | kırpık "Tü/Ma" | 56px renkli daire + ikon (tooltip) |
+| Araştırma | boş bej daireler, taşan maliyet | düğüm ikonu + maliyet çipleri (bantta) |
+| HUD barları | hantal krem kutu + "Ye" butonu | çıplak barlar + nabız; "Ye" kaldırıldı |
+| Hotbar | 1.12x, kilitli ikonlar | 1.15x + alt nokta; hep 5 slot |
+
+### TEST SENARYOSU (senin için)
+1. **Panel karartma:** Çanta/Üretim/Araştırma/Ayarlar aç → arka plan kararır,
+   HUD öğeleri kaybolur (Gün pill'i panel başlığıyla çakışmaz). Kapat → geri gelir.
+2. **Dock:** Sağ kenarda 3 renkli dolu daire + ikon + altında "Çanta/Üretim/
+   Araştırma". Boş krem daire yok.
+3. **Ayarlar:** Sağ üst "Ayarlar" → menü açılır; "Yeni Oyun"a bir bas → "Emin
+   misin?" → tekrar bas → sıfırlar. Kamera/Görünüm butonları menü açıkken görünür.
+4. **Ana/saldırı:** Ağaca yaklaş → ana buton "Kes" + balta ikonu. Silah kuşan →
+   72px "Saldır" belirir. "+"/nişan yok. Sağ altta başka şey yok ("Taşı" sol-altta).
+5. **Envanter:** Çanta → panel **alttan yukarı** kayar, ortalanmış, **8 sütun**.
+   Bir slota dokun → alt bant: ikon+ad+açıklama+**Ye/Kuşan/Yerleştir/At**. İlk
+   açılışta öğretici metin, sonra kaybolur.
+6. **Üretim:** Kartlar **88px ızgara**. Craftlanamayan soluk + kırmızı eksik-sayı
+   rozeti. Karta dokun → alt bant: **malzeme çipleri (3/5 yeşil-kırmızı)** +
+   istasyon durumu + tek **Üret**. Sol sekmeler renkli ikon (kırpık etiket yok).
+7. **Araştırma:** Düğümlerde **ikon** (kilitli soluk). Düğüme dokun → altta ikon +
+   açtıkları + **maliyet çipleri** + "Araştır".
+8. **HUD:** Sol altta kutu YOK; 3 çıplak bar. Hasar al → can barı nabız atar.
+   Yiyecek ye → açlık barı nabız. Kalıcı "Ye" butonu yok.
+9. **Hotbar:** Slot seç → 1.15x + **alt nokta**. Kilitli slot ikonu yok.
+
+### CI doğrulaması
+Her aşama `screenshot.yml` ile CI'da doğrulandı: import temiz (parse hatası yok),
+oyun tam adım çalıştı, mevcut öz-testler (PLACEUI/CHESTTEST/EATTEST/SAVELOAD/
+TOOLDUP/TIMETEST…) korunur — **UI katmanı oyun mantığını bozmadı**. Kareler:
+`3d_envanter.png`, `3d_uretim.png`, `3d_arastirma.png`, `3d_yasam.png`.
+
+### Bilinen sınırlar / TODO
+- **Envanter bottom-sheet** yatay ekran için ortalanmış geniş panele optimize;
+  dikey (portre) telefonda gerçek bottom-sheet oranı ince ayar isteyebilir.
+- **Kategori ikonları** temsilîdir (kategorinin ilk tarifinin ikonu); özel
+  kategori ikonları ileride eklenebilir.
+- **Araştırma düğüm maliyeti** düğüm içinde kısa durum ("Hazır/Malzeme");
+  tam ikon+sayı çipleri alt bantta (küçük kart içine sığdırmak yerine).
+- **"Taşı" (yapı geri-alma)** sol-alta taşındı; ileride Ayarlar/bağlam menüsüne
+  de alınabilir.
+- Gündüz/gece, kayıt, yaşam, base sistemleri **dokunulmadı** (yalnız UI).
+
