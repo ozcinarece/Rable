@@ -1869,9 +1869,10 @@ func _build_world() -> void:
 				"P":
 					_spawn_cell = cell
 				"T":
-					# AGAC SEYRELTME: 1 hucre = en fazla 1 agac; komsuda (8-yon)
-					# zaten agac varsa bu hucre zemin kalir (min 1 bos hucre)
-					if not _tree_neighbor(cell):
+					# AGAC OBEK: komsuda MAX_TREE_NEIGHBORS'a kadar agaca izin
+					# (orman havasi); daha fazlasi olursa hucre zemin kalir
+					# (yurunebilir bosluk). Bkz. _tree_neighbor_count.
+					if _tree_neighbor_count(cell) <= MAX_TREE_NEIGHBORS:
 						_objects[cell] = ch
 						_solid_cells[cell] = true
 				"#", "m":
@@ -2477,32 +2478,43 @@ func _rebuild_objects() -> void:
 const TREE_MODELS: Array[String] = ["tree_pineDefaultA", "tree_pineDefaultB",
 	"tree_pineRoundA", "tree_pineTallA", "tree_pineRoundC"]
 
-## STIL (Bolum 17): tek bir GLB ile tum agaclari degistirmek icin tam yol yaz
-## (orn. "res://assets/models/test/pine_tree.glb"). "" = yukaridaki Quaternius
-## cam paketi (varsayilan). Agac sistemi zaten MultiMesh + _cell_variance ile
-## Y-donus/olcek cesitliligi uygular; sadece MESH degisir, kesme/hucre kurali
-## AYNI kalir. pine_tree.glb decimate edildi (~2.679 ucgen) + dokulu (1
-## materyal, 4 doku) — artik ormanda kullanilabilir. "" yaparsan Quaternius
-## cam paketine doner. (bkz. RAPOR_STIL.md)
-const TREE_MODEL_OVERRIDE := "res://assets/models/test/pine_tree.glb"
+## STIL (Bolum 17): agac gorsellerini bir veya BIRDEN COK GLB ile degistir.
+## Liste bos degilse tum modeller havuza girer ve _build_trees hucreleri
+## hash ile havuz varyantlarina dagitir -> orman KARISIK gorunur. Bos liste
+## = Quaternius cam paketi (varsayilan). Sadece MESH degisir; kesme/hucre
+## kurali AYNI. Modeller dokulu + decimate (pinetree1 ~5.2k, pinetree2 ~4.4k
+## ucgen). (bkz. RAPOR_STIL.md)
+const TREE_MODEL_OVERRIDES: Array[String] = [
+	"res://assets/models/test/pinetree1.glb",
+	"res://assets/models/test/pinetree2.glb",
+]
 
 func _tree_pool() -> Array:
-	if TREE_MODEL_OVERRIDE != "":
-		return _model_pool(TREE_MODEL_OVERRIDE, TREE_HEIGHT)
 	var out: Array = []
+	if not TREE_MODEL_OVERRIDES.is_empty():
+		for m: String in TREE_MODEL_OVERRIDES:
+			out += _model_pool(m, TREE_HEIGHT)
+		return out
 	for m: String in TREE_MODELS:
 		out += _model_pool(m, TREE_HEIGHT)
 	return out
 
-## Hucrenin 8-komsulugunda zaten agac (T) var mi? (spawn seyreltme)
-func _tree_neighbor(cell: Vector2i) -> bool:
+## STIL: orman havasi icin obekli sikligi kontrol eder. Eskiden 8-komsuda
+## TEK agac varsa bile hucre bos kalirdi (satranc tahtasi maks yogunluk).
+## Artik en fazla MAX_TREE_NEIGHBORS komsuya izin var -> obekler olusur ama
+## bir hucre 4+ agacla sarilinca bos kalir (yurunebilir bosluklar korunur).
+## MapBalance forest-noise'u zaten obekleri belirledigi icin sonuc "bolum
+## bolum sik orman + acikliklar" olur.
+const MAX_TREE_NEIGHBORS := 2
+func _tree_neighbor_count(cell: Vector2i) -> int:
+	var c := 0
 	for dy in [-1, 0, 1]:
 		for dx in [-1, 0, 1]:
 			if dx == 0 and dy == 0:
 				continue
 			if _objects.get(cell + Vector2i(dx, dy), "") == "T":
-				return true
-	return false
+				c += 1
+	return c
 
 func _build_trees(cells: Array[Vector2i]) -> void:
 	var pool := _tree_pool()

@@ -29,11 +29,13 @@ const ROCK_CLUSTER_MAX: int = 6
 const ORE_HINT_CLUSTERS: int = 5          # kaç öbekte yüzey cevher ipucu
 
 # --- Ağaçlar (öbekli orman + seyrek tekil) ------------------------------
+# STIL: "bölüm bölüm sık orman" için orman öbekleri büyütüldü + sıklaştırıldı.
+# Açıklıklar (SPARSE düşük) korunur ki kontrast/orman hissi olsun.
 const FOREST_SCALE: float = 0.045
-const FOREST_THRESHOLD: float = 0.62      # bu üstü orman alanı (0..1; öbekli)
-const FOREST_DENSITY: float = 0.50        # orman içinde ağaç şansı
-const SPARSE_TREE_CHANCE: float = 0.015   # açıklıkta seyrek ağaç
-# (world3d ağaç seyreltme kuralı: 1 hücre max 1 ağaç + min 1 boş komşu)
+const FOREST_THRESHOLD: float = 0.60      # bu üstü orman alanı (düşük = daha geniş öbekler)
+const FOREST_DENSITY: float = 0.62        # orman içinde ağaç şansı (sık öbek)
+const SPARSE_TREE_CHANCE: float = 0.018   # açıklıkta seyrek ağaç
+# (world3d ağaç öbek kuralı: MAX_TREE_NEIGHBORS komşuya kadar; 4+ olursa boş)
 
 # --- Meyve çalısı -------------------------------------------------------
 const BUSH_CHANCE: float = 0.006          # çim hücrelerinde çalı şansı
