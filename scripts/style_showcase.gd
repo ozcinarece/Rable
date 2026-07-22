@@ -49,6 +49,20 @@ func _ready() -> void:
 	_build_camera()
 	_build_ui(models)
 	_apply_daynight()
+	# CI: RABLE_SHOWCASE_SHOT set ise gunduz+gece karesi al ve cik (showcase-shot.yml)
+	if OS.has_environment("RABLE_SHOWCASE_SHOT"):
+		_shot_sequence(OS.get_environment("RABLE_SHOWCASE_SHOT"))
+
+## CI ekran goruntusu: gunduz + gece karesi kaydeder, sonra cikar.
+func _shot_sequence(path: String) -> void:
+	await get_tree().create_timer(3.5).timeout  # sahne otursun (GLB import + isik)
+	get_viewport().get_texture().get_image().save_png(path)
+	print("VITRIN kare (gunduz): ", path)
+	_toggle_daynight()
+	await get_tree().create_timer(1.6).timeout
+	get_viewport().get_texture().get_image().save_png(path.replace(".png", "_gece.png"))
+	print("VITRIN kare (gece): ", path.replace(".png", "_gece.png"))
+	get_tree().quit()
 
 # --- Ortam (oyunla birebir) --------------------------------------------
 func _build_environment() -> void:
