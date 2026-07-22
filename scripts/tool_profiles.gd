@@ -125,6 +125,43 @@ const FIST := {
 	"swing_sfx": "swing_fist", "hit_sfx": "hit_thud", "break_sfx": "",
 }
 
+## ELE BAGLAMA (ATTACHMENT) OFSETLERI — kod DEGIL VERI.
+## Aletin ToolPivot uzerindeki DURAGAN (rest) yerlesimi. Sallama pozlari
+## (rest/wind/hit) pivot'u dondurur; bu ofsetler gorseli pivot icinde
+## konumlar/dondurur/olcekler, yani sallama bunlarin USTUNE biner.
+##   pos   : pivot'a gore yerel konum (m)
+##   rot   : yerel Euler donus (derece)
+##   scale : normalize boyut uzerine ek carpan
+##   size  : dunya boyu hedefi — gorselin en uzun ekseni (m)
+## ATTACH_DEFAULT mevcut gorunumu birebir korur (size 0.5, ofset yok).
+##
+## >>> YENI KARAKTER (Meshy/GLB) GELINCE: el hizalamasini KOD degil BURAYI
+## >>> (ATTACH / ATTACH_DEFAULT) duzenleyerek yap. player3d'ye dokunma. <<<
+const ATTACH_DEFAULT := {
+	"pos": Vector3.ZERO,
+	"rot": Vector3.ZERO,
+	"scale": 1.0,
+	"size": 0.5,
+}
+
+const ATTACH := {
+	# Uzun saplama silahi: daha uzun gorunsun.
+	"mizrak": {"size": 0.95},
+	# Yay elde yana degil ONE baksin (kabaca).
+	"yay": {"rot": Vector3(0, 90, 0), "size": 0.55},
+	# Kucuk el aletleri.
+	"sapan": {"size": 0.32},
+	"bicak": {"size": 0.34},
+}
+
+## Bir esyanin ele baglama ofseti (ATTACH_DEFAULT + varsa esya ozel alanlari).
+static func get_attachment(item_id: String) -> Dictionary:
+	var d := ATTACH_DEFAULT.duplicate()
+	var override: Dictionary = ATTACH.get(item_id, {})
+	for k in override:
+		d[k] = override[k]
+	return d
+
 ## Alet kademesi sure carpani (12.3): her kademe windup+recover'i %8 kirpar.
 ## Su an tek kademe var; ust kademeler geldiginde tier>0 devreye girer.
 static func tier_factor(tier: int) -> float:

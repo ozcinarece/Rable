@@ -347,13 +347,21 @@ func set_held_tool(model_path: String) -> void:
 			return  # gorseli olmayan esya (toprak, dolu kova vb.)
 		visual = _make_tool(kind, _tool_head_color(model_path))
 	_tool_pivot.add_child(visual)
-	# ~0.5 m dunya boyu (baglanti dunya olcegi ne olursa olsun); TUM
-	# alt mesh'leri kapsayan AABB ile olcekle (tek mesh'e bakma)
+	# Baglama ofseti VERIDEN gelir (ToolProfiles.ATTACH) — kod degil.
+	# Boyle Meshy/GLB karakteri gelince hizalama sadece veri duzenlemesiyle.
+	var att := ToolProfiles.get_attachment(model_path)
+	var target_size: float = float(att.get("size", 0.5))
+	# Hedef dunya boyu (baglanti dunya olcegi ne olursa olsun); TUM alt
+	# mesh'leri kapsayan AABB ile olcekle (tek mesh'e bakma).
 	var aabb := _scene_aabb(visual)
 	var size := aabb.get_longest_axis_size()
 	if size > 0.01:
-		var s := 0.5 / (size * _node_world_scale(_tool_attach))
+		var s := (target_size * float(att.get("scale", 1.0))) \
+				/ (size * _node_world_scale(_tool_attach))
 		visual.scale = Vector3(s, s, s)
+	# Duragan konum/donus ofseti (sallama pozu bunun ustune biner).
+	visual.position = att.get("pos", Vector3.ZERO)
+	visual.rotation_degrees = att.get("rot", Vector3.ZERO)
 
 ## Uc fazli alet sallamasi (12.3). Profil pozlarini Tween ile oynatir;
 ## strike aninda on_strike cagrilir (ETKI orada uygulanir, buton aninda

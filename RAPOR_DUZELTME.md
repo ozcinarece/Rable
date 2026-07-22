@@ -128,3 +128,21 @@ Equip akışı tek fonksiyonda (`set_held_tool`): temizle → yeni görsel ekle.
 **Regresyon testi (CI):** `TOOLDUP` — 20 kez hızlıca alet değiştir;
 `max_pivot<=1`, alet varken `1` görsel, eli boşaltınca `0` görsel.
 `player.debug_tool_counts()` sayaçları döndürür.
+
+## 2. ALET KONUMU — kod → veri (geleceğe hazırlık)
+Aletin pivot üzerindeki duragan **konum/rotasyon/ölçek + dünya boyu** ofseti
+artık koda gömülü değil; `scripts/tool_profiles.gd` içindeki **`ATTACH`**
+verisinde (alanlar: `pos`, `rot`, `scale`, `size`). `ATTACH_DEFAULT` mevcut
+görünümü birebir korur (size 0.5, ofset yok); yalnız birkaç alet kabaca
+hizalandı (mizrak/yay uzun, sapan/bıçak küçük). Sallama pozları (rest/wind/
+hit) pivot'u döndürür; bu ofsetler görseli pivot İÇİNDE yerleştirir, yani
+sallama animasyonu bunların üstüne biner. `player3d.set_held_tool` ofseti
+`ToolProfiles.get_attachment()` ile okur.
+
+> **YENİ KARAKTER GELİNCE (Meshy/GLB):** El hizalaması KOD değil,
+> `scripts/tool_profiles.gd` → **`ATTACH`** (gerekirse `ATTACH_DEFAULT`)
+> düzenlenerek yapılır. player3d.gd'ye dokunmak gerekmez.
+
+---
+*Alet görseli düzeltmesi tamam: 2 madde, 2 commit. CI ile doğrulanacak
+(`TOOLDUP` marker + eldeki alet kareleri).*
