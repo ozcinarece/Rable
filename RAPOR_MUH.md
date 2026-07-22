@@ -99,3 +99,78 @@ giren oyuncu hasar alır, yaratık kancası doğru hasarı döner.
 
 **CI:** `PUMPTEST: pompa_yukari=true` · `VALVETEST: kapali_durur=true
 acik_gecirir=true` — pompa yukarı akıtır; kapalı vana durdurur, açık geçirir.
+
+## Aşama 5 — Cila + entegrasyon + kayıt
+
+**Kararlar:**
+- **Akış görsel ipucu:** Transfer olan tikte hedef hücrede minik mavi su
+  parıltısı (`_spawn_particles`) — boruda akış olduğu görünür.
+- **Sulama entegrasyonu (11.7):** `has_adjacent_water` boruyla dolan havuzun
+  bitişik tarlayı otomatik sulamasını sağlar — mevcut sistem, test edildi.
+  `IRRIGTEST: dolu_havuz_komsu_sulanir=true`.
+- **Kayıt:** Merdiven/kazık/boru/pompa/vana hepsi yerleştirilmiş yapı →
+  `_structures` (id/rot/hp/**open**) `to_save_data`/`from_save_data` ile zaten
+  kaydedilir; su seviyeleri `_water_level` (depth/water) ile. Vana açık/kapalı
+  durumu kapı `open` alanını yeniden kullanır → **kayıt bedava**.
+  `SAVEMUH: vana_kapali=true merdiven=true kazik=true ok=true` (round-trip).
+- **UI:** Yeni yapılar üretim panelinde **Mühendislik** kategorisinde (turkuaz,
+  `CAT_COLOR_KEY.muhendislik→engineering`). UI_REVIZYON_1 kart dili ayrı dalda;
+  merge edilince yeni kart stilini otomatik alır.
+
+**CI:** `IRRIGTEST` + `SAVEMUH` geçer. Tüm önceki markerlar (LADDER/SPIKE/
+PIPE/PUMP/VALVE + mevcut BASE/EAT/TIME/SAVELOAD) korunur — **UI/oyun mantığı
+bozulmadı**.
+
+---
+
+## TEST SENARYOSU (senin için)
+
+### Merdiven (11.5)
+1. Tezgahta **merdiven** üret (4 odun + 1 ip).
+2. Kürekle bir hücreyi **3-4 seviye** kaz (derin çukur). İçine gir.
+3. Merdivensiz çıkmayı dene → **çıkamazsın**. (Sığ 1-2 çukurdan serbest çıkarsın.)
+4. Merdiveni eline al → çukura **Yerleştir** (döndür = kenar seç). Artık **çık.**
+5. Çekiçle merdivene vur → **söküp geri al.**
+
+### Çukur kazığı (11.9)
+6. **kazik** üret (3 taş + 2 çubuk). Kazılmış bir çukurun **tabanına** yerleştir.
+7. O hücreye gir → **küçük hasar** al (barın nabzı + "−8"). Çıkıp tekrar gir → yine.
+
+### Kale kapısı hattı (11.8) — göl → boru → pompa → vana → hendek
+8. Göl kenarında bir **hendek** kaz (derin, boş). Gölden hendeğe **boru** dizisi kur
+   (boru üret: 1 taş+1 kil → 2 boru). Borular otomatik bağlanır (düz/dirsek/T).
+9. Hat aşağı iniyorsa (göl yüksek) su **kendiliğinden** hendeğe akar (mavi parıltı).
+   Yukarı taşıman gerekiyorsa hatta **pompa** koy.
+10. Hatta **vana** koy → dokun: **"Vana kapalı"** → akış durur; tekrar dokun:
+    **"Vana açık"** → hendek dolar. (Gündüz kapat, gece aç = kale kapısı.)
+11. Dolan hendeğe **bitişik tarla** kendini **sulanmış** sayar (11.7).
+
+### Kaydet-yükle
+12. Oyunu kapat-aç (Devam Et) → merdivenler, kazıklar, borular, **vana durumları**
+    ve su seviyeleri korunur.
+
+## DENGE SAYILARI (`scripts/engineering_balance.gd`, elle oyna)
+| Sabit | Değer | Anlam |
+|---|---|---|
+| LADDER_DEEP_MIN | 3 | bu derinlik+ çukurdan merdiven şart |
+| SPIKE_FALL_DAMAGE | 8 | kazığa düşen hasar |
+| PIPE_TRANSFER_PER_SEC | 2.0 | boru su aktarım hızı |
+| PUMP_TRANSFER_PER_SEC | 2.0 | pompalı hat hızı |
+| NET_TICK_SECONDS | 0.5 | ağ transfer tik aralığı |
+| VALVE_DEFAULT_OPEN | false | yeni vana kapalı başlar |
+| PUMP_REQUIRES_FUEL | false | pompa yakıtsız (kömür TODO) |
+
+## Bilinen sorunlar / TODO
+- **Yaratık davranışı YOK** (B kısmı): merdiveni yaratıklar da kullanır
+  ("gece merdiveni çek"), kazık düşen/hapsolan yaratığa hasar (`spike_damage`),
+  su dolu hücrede tırmanma yok — hepsi **kanca hazır, kod yok**.
+- **metal_part / copper_ingot** malzemeleri henüz yok → boru/pompa/vana
+  maliyetleri **muhafazakâr** (taş/kil/bakır). Metal işleme gelince veri güncellenir.
+- **Pompa yakıtı** (kömür) `PUMP_REQUIRES_FUEL=false` ile kapalı — açılınca
+  yakıt tüketimi bağlanacak.
+- **Hendek boşaltma/tahliye** v2 — şimdilik yalnız doldurma yönü.
+- **Vana etkileşimi** tap-to-toggle (dokun→çevir); "ana buton bağlamı çevir"
+  aynı işlevi tap ile verir. Özel gıcırtı sesi mevcut ses kancasında (TODO).
+- **Boru dallanması:** vana bir bileşenin tamamını kapatır (tek hat için doğru;
+  çok dallı ağda dal-bazlı vana v2).
+

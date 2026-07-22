@@ -644,6 +644,32 @@ func _run_muhendislik_selftest() -> void:
 	print("PUMPTEST: pompa_yukari=%s ok=%s" % [str(pump_up), str(pump_up)])
 	print("VALVETEST: kapali_durur=%s acik_gecirir=%s ok=%s" % [
 		str(valve_closed), str(valve_open), str(valve_closed and valve_open)])
+	# 11.7 sulama: boruyla dolan havuz bitisik tarlayi sular (has_adjacent_water).
+	var wc := Vector2i(48, 48)
+	_depth[wc] = 2
+	_water_level[wc] = 2.0
+	_recompute_water()
+	var irrig := has_adjacent_water(Vector2i(49, 48))
+	_depth.erase(wc); _water_level.erase(wc); _recompute_water()
+	print("IRRIGTEST: dolu_havuz_komsu_sulanir=%s" % str(irrig))
+	# Kayit: muhendislik yapilari + vana durumu _structures ile round-trip.
+	var vc := Vector2i(45, 45)
+	_structures.place(vc, "vana", 0, 40); _structures.set_open(vc, false)
+	_structures.place(Vector2i(46, 45), "merdiven", 90, 40)
+	_structures.place(Vector2i(47, 45), "kazik", 0, 40)
+	var sd := _structures.to_save_data()
+	var sm2 = StructureManager.new()
+	sm2.from_save_data(sd)
+	var valve_ok: bool = String(sm2.get_inst(vc).get("id", "")) == "vana" \
+			and sm2.is_open(vc) == false
+	var lad_ok: bool = String(sm2.get_inst(Vector2i(46, 45)).get("id", "")) == "merdiven"
+	var spk_ok: bool = String(sm2.get_inst(Vector2i(47, 45)).get("id", "")) == "kazik"
+	_structures.remove(vc)
+	_structures.remove(Vector2i(46, 45))
+	_structures.remove(Vector2i(47, 45))
+	print("SAVEMUH: vana_kapali=%s merdiven=%s kazik=%s ok=%s" % [
+		str(valve_ok), str(lad_ok), str(spk_ok),
+		str(valve_ok and lad_ok and spk_ok)])
 
 ## gunduz/gece self-test: faz/gün-oranı + uyku kuralı (ilk 3 gece).
 func _run_time_selftest() -> void:
@@ -3110,6 +3136,9 @@ func _transfer_in_component(cells: Array, amount: float) -> void:
 				var taken := take_water(src_cell, amount)
 				if taken > 0.0:
 					add_water(tc, taken)
+					# Asama 5 cila: akis varken hedefte minik su parildamasi.
+					_spawn_particles(_cell_center(tc) + Vector3(0, 0.25, 0),
+							Color(0.45, 0.65, 0.92), 3)
 				return  # bilesen basina tik'te tek transfer
 
 ## 11.8 Vana ac/kapa: dokununca cevrilir. El carki 45° doner (gorsel ipucu)
