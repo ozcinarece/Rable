@@ -1,0 +1,4 @@
+# PERF SONUC (kalite=orta) — 2026-07-22T12:13:50
+# NOT: CI yazilim GL — mutlak FPS temsili degil; yapisal sayaclar.
+PERFBASE: frame_ms=588.21 peak_ms=599.92 draw=282 ucgen=4337816 nesne=326 isik=2 yaratik=0 nodes=1265 mem_mb=67.3 chunk_ms=10845.32
+PERFLIGHT: mesale_uretilen=10 aktif_isik=8 butce=8 butce_ok=true frame_ms=604.82 draw=282
