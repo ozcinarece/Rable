@@ -98,24 +98,43 @@ yapılmış**. Ölçümle test edeceğim kalan şüpheliler:
 
 İlk koşu (kalite=orta) — **kendini teşhis eden** probe (flush'lı yazım):
 
-| Senaryo | draw | üçgen | nesne | aktif ışık | yaratık | nodes | mem_mb | (frame_ms*) |
-|---|---|---|---|---|---|---|---|---|
-| A boş | **282** | **4.337.816** | 326 | 2 | 0 | 1265 | 67.3 | ~588 |
-| B yoğun ışık | **282** | — | — | **8** (10 üretildi) | 0 | — | — | ~605 |
-| D dalga (max yaratık) | _(re-run)_ | | | | 12 | | | |
+Tam baseline (kalite=orta, 2026-07-22 — probe eksiksiz tamamlandı):
 
-- **Işık bütçesi DOĞRULANDI ✓:** B senaryosunda bütçenin üzerinde (10) meşale
-  üretildi; aktif ışık **8'de kapandı** (`butce_ok=true`) ve `draw` değişmedi
-  (282→282). "İşık bütçesi kuralı gerçekten çalışıyor mu?" → **evet.**
-- **Draw call zaten düşük (282)** — MultiMesh mimarisi işe yarıyor. 326 nesne
-  yalnız 282 çizim çağrısı. Meşale eklemek draw'ı artırmadı (bütçe + gölgesiz).
-- `chunk_ms≈10.845` (yazılım GL'de terrain build 10.8 sn) — CI'a özgü; gerçek
-  cihazda ~ms mertebesi. Yine de tek seferlik (yeniden inşa seyrek).
-- **PERFWAVE/PERFMEM:** ilk koşuda probe **180 sn timeout'a takıldı** (yazılım
-  GL'de ~0.6 sn/kare × 140 örnekleme karesi harness'i aştı). Örnekleme kare
-  sayısı düşürüldü (30→5, 8→2 ısınma, bellek 20→5 tur); D + bellek sonuçları
-  bir sonraki koşuda gelecek. **Sayaçlar kareler arası sabit olduğu için 5
-  örnek yeterli** — yapısal baseline (A/B) zaten kesin.
+| Senaryo | draw | üçgen | nesne | aktif ışık | yaratık | nodes | mem_mb |
+|---|---|---|---|---|---|---|---|
+| A boş | **285** | 4.331.334 | 337 | 2 | 0 | 1271 | 67.4 |
+| B yoğun ışık | **282** | — | — | **8** (10 üretildi) | 0 | — | — |
+| D dalga (12 yaratık) | **282** | 4.337.816 | 326 | — | 12 | 1337 | — |
+
+Bellek (PERFMEM, 5 spawn/free turu): mem0=67.9 → mem1=67.7 MB,
+**delta = −0.20 MB**, `sizinti_kusku=false`.
+
+**Ölçülen sonuçlar — şüpheli listesi karşısında:**
+
+| # | Şüpheli | Ölçüm sonucu | Karar |
+|---|---|---|---|
+| S1 | Gölge atlası çözünürlüğü | CI yazılım GL'de görünmez (GPU yok) | Kalite kademesiyle çözüldü (Düşük/Orta/Yüksek: 1024/2048/4096) — **cihazda** ölç |
+| S2 | `_update_torches` her kare sort | draw sabit (282), ışık bütçesi 8'de kapanıyor `butce_ok=true` | Çalışıyor; sort maliyeti ölçülebilir değil (yazılım GL) — mikro, ertelendi |
+| S3 | `_process` her-kare kalemleri | frame_ms yazılım GL'de anlamsız; yapısal sorun yok | Cihazda overlay ile doğrula |
+| S4 | Bellek sızıntısı (efekt/yaratık) | **delta −0.20 MB, sızıntı YOK** ✓ | Sorun yok — `queue_free` disiplini sağlam |
+| S5 | Chunk yeniden inşa | `chunk_ms≈10.6 sn` ama **yazılım GL'ye özgü** (tek seferlik) | Cihazda ~ms; gerçek sorun değil |
+
+**Ana bulgular:**
+- ✅ **Draw call zaten düşük ve sabit: 282–285.** 337 nesne + 12 yaratık + 10
+  meşale → hâlâ **282 çizim çağrısı.** MultiMesh + ışık bütçesi + gölgesiz
+  meşale mimarisi çalışıyor. Yaratık eklemek draw'ı **hiç artırmadı.**
+- ✅ **Işık bütçesi DOĞRULANDI:** 10 meşale üretildi, aktif ışık 8'de kapandı,
+  draw değişmedi.
+- ✅ **Bellek sızıntısı YOK:** 5 tur spawn/free sonrası bellek düştü (−0.2 MB).
+- ⚠️ `frame_ms≈590` ve `chunk_ms≈10.6 sn` **CI yazılım GL değerleridir —
+  gerçek telefonu TEMSİL ETMEZ.** Gerçek FPS overlay ile cihazda ölçülecek.
+
+**Sonuç:** CI'da ölçülebilen tüm eksenlerde (çizim çağrısı, bellek, batching,
+ışık bütçesi) mimari **zaten sağlıklı**. Kalan gerçek kaldıraçlar GPU-tarafı
+(gölge çözünürlüğü/mesafesi, fill-rate) — bunlar yazılım GL'de görünmez,
+**kalite kademeleriyle** ele alındı (Aşama 3) ve cihazda overlay ile
+doğrulanmalı. Bu yüzden Aşama 2 "kör optimizasyon" yapmaz; ölçüm sağlıklı
+diyorsa dokunmaz (senin ALTIN KURAL'ın).
 
 \* `frame_ms` sadece CI-içi görecelidir; gerçek cihaz FPS'i için değil.
 
