@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cst1lv1tr1nshw0"]
+
+[ext_resource type="Script" path="res://scripts/style_showcase.gd" id="1_stil"]
+
+[node name="StyleShowcase" type="Node3D"]
+script = ExtResource("1_stil")

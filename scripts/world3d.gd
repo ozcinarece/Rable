@@ -76,7 +76,7 @@ const PLACE_MODELS := {
 	"arastirma_masasi": {"model": "res://assets/models/nature/quat_table.glb",
 			"h": 0.8, "solid": true, "long": 1.0,
 			"behavior": "station", "max_hp": 120},
-	"sandik": {"model": "res://assets/models/tools/chest.glb",
+	"sandik": {"model": "res://assets/models/test/storege_box.glb",
 			"h": 0.55, "solid": true, "behavior": "station", "max_hp": 60},
 	"ocak": {"model": "res://assets/models/tools/campfire-pit.glb",
 			"h": 0.9, "solid": true, "behavior": "hearth", "max_hp": 400},
@@ -284,7 +284,7 @@ var _loading: bool = false     # yukleme sirasinda autosave/kirlilik bastir
 var _cam_layer: CanvasLayer      # R1: Kamera/Gorunum debug UI'si (Ayarlar'dan acilir)
 var cam_distance: float = CAM_ZOOM_DEFAULT  # yakinlik carpani (uzak varsayilan)
 var cam_pitch: float = 52.0    # bakis acisi (derece)
-var character_path: String = "custom:f2c29b/4fa7d8/5b6b8c"  # varsayilan: yuvarlak
+var character_path: String = "custom:f2c29b/4fa7d8/5b6b8c"  # yuvarlak karakter (animasyonlu Meshy olcek fix bekliyor)
 var hat_id: String = "yok"
 var face_path: String = ""
 var hair_style: String = ""
@@ -361,11 +361,13 @@ func _setup_screenshot(save_path: String) -> void:
 		str(_spawn_cell), _ground_char.get(_spawn_cell, "?")])
 	print("CAMTEST: zoom_var=%.3f min=%.2f max=%.2f" % [
 		cam_distance, CAM_ZOOM_MIN, CAM_ZOOM_MAX])
-	# Vitrin: ornek gorunum, kamera OYUN VARSAYILANINDA
-	# (referansla olcek karsilastirmasi icin)
+	# NOT: animasyonlu Meshy karakteri (character_animated.glb) Armature
+	# olcegi 0.01 tasidigi icin skinned mesh minicik render ediliyor; olcek
+	# duzeltmesi ayri ele alinacak. Web yayini icin calisan yuvarlak karakter.
 	player.set_character("custom:f2c29b/4fa7d8/5b6b8c")
 	player.set_hair("kut", Color(0.35, 0.22, 0.12))
 	player.set_hat("yok")
+	player.set_held_tool("balta")  # yeni axe.glb elde gorunsun
 	await get_tree().create_timer(4.0).timeout
 	_snap(save_path)
 	# Ikinci kare: kusbakisi tum ada (teshis icin)
@@ -1869,9 +1871,10 @@ func _build_world() -> void:
 				"P":
 					_spawn_cell = cell
 				"T":
-					# AGAC SEYRELTME: 1 hucre = en fazla 1 agac; komsuda (8-yon)
-					# zaten agac varsa bu hucre zemin kalir (min 1 bos hucre)
-					if not _tree_neighbor(cell):
+					# AGAC OBEK: komsuda MAX_TREE_NEIGHBORS'a kadar agaca izin
+					# (orman havasi); daha fazlasi olursa hucre zemin kalir
+					# (yurunebilir bosluk). Bkz. _tree_neighbor_count.
+					if _tree_neighbor_count(cell) <= MAX_TREE_NEIGHBORS:
 						_objects[cell] = ch
 						_solid_cells[cell] = true
 				"#", "m":
@@ -2477,21 +2480,43 @@ func _rebuild_objects() -> void:
 const TREE_MODELS: Array[String] = ["tree_pineDefaultA", "tree_pineDefaultB",
 	"tree_pineRoundA", "tree_pineTallA", "tree_pineRoundC"]
 
+## STIL (Bolum 17): agac gorsellerini bir veya BIRDEN COK GLB ile degistir.
+## Liste bos degilse tum modeller havuza girer ve _build_trees hucreleri
+## hash ile havuz varyantlarina dagitir -> orman KARISIK gorunur. Bos liste
+## = Quaternius cam paketi (varsayilan). Sadece MESH degisir; kesme/hucre
+## kurali AYNI. Modeller dokulu + decimate (pinetree1 ~5.2k, pinetree2 ~4.4k
+## ucgen). (bkz. RAPOR_STIL.md)
+const TREE_MODEL_OVERRIDES: Array[String] = [
+	"res://assets/models/test/pinetree1.glb",
+	"res://assets/models/test/pinetree2.glb",
+]
+
 func _tree_pool() -> Array:
 	var out: Array = []
+	if not TREE_MODEL_OVERRIDES.is_empty():
+		for m: String in TREE_MODEL_OVERRIDES:
+			out += _model_pool(m, TREE_HEIGHT)
+		return out
 	for m: String in TREE_MODELS:
 		out += _model_pool(m, TREE_HEIGHT)
 	return out
 
-## Hucrenin 8-komsulugunda zaten agac (T) var mi? (spawn seyreltme)
-func _tree_neighbor(cell: Vector2i) -> bool:
+## STIL: orman havasi icin obekli sikligi kontrol eder. Eskiden 8-komsuda
+## TEK agac varsa bile hucre bos kalirdi (satranc tahtasi maks yogunluk).
+## Artik en fazla MAX_TREE_NEIGHBORS komsuya izin var -> obekler olusur ama
+## bir hucre 4+ agacla sarilinca bos kalir (yurunebilir bosluklar korunur).
+## MapBalance forest-noise'u zaten obekleri belirledigi icin sonuc "bolum
+## bolum sik orman + acikliklar" olur.
+const MAX_TREE_NEIGHBORS := 2
+func _tree_neighbor_count(cell: Vector2i) -> int:
+	var c := 0
 	for dy in [-1, 0, 1]:
 		for dx in [-1, 0, 1]:
 			if dx == 0 and dy == 0:
 				continue
 			if _objects.get(cell + Vector2i(dx, dy), "") == "T":
-				return true
-	return false
+				c += 1
+	return c
 
 func _build_trees(cells: Array[Vector2i]) -> void:
 	var pool := _tree_pool()
@@ -2619,11 +2644,19 @@ func _merged_node_mesh(node: Node, target_h: float) -> ArrayMesh:
 # Tek parcali modellerde havuz tek elemanlidir.
 var _pool_cache: Dictionary = {}
 
+## STIL: model bir kisa ad ("tree_pineDefaultA") ya da tam yol
+## ("res://.../pine_tree.glb") olabilir. Boylece test/ altindaki modeller de
+## dogaya kopyalanmadan baglanabilir.
+func _nature_path(model: String) -> String:
+	if model.begins_with("res://") or model.ends_with(".glb"):
+		return model
+	return NATURE_PATH % model
+
 func _model_pool(model: String, target_h: float) -> Array:
 	var key := model + ":" + str(target_h)
 	if _pool_cache.has(key):
 		return _pool_cache[key]
-	var scene: Node3D = load(NATURE_PATH % model).instantiate()
+	var scene: Node3D = load(_nature_path(model)).instantiate()
 	var parts: Array = []
 	for child in scene.get_children():
 		if _scene_aabb(child).size.y > 0.001:

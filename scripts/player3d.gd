@@ -45,6 +45,12 @@ const TOOL_GLB := {
 	"cekic": "tool-hammer", "kova": "bucket", "kova_dolu": "bucket",
 }
 
+## STIL: esya id -> TAM yol override (test/ altindaki yeni Meshy modelleri).
+## Doldurulmussa tools/ placeholder yerine bu kullanilir.
+const TOOL_GLB_OVERRIDE := {
+	"balta": "res://assets/models/test/axe.glb",
+}
+
 ## Alet eylemi sirasinda aletin baglandigi doner pivot (ToolPivot).
 ## _tool_attach el kemigine yapisir; pivot onun icinde donerek uc fazli
 ## sallanmayi olusturur. Model pivot'un cocugudur.
@@ -298,6 +304,10 @@ func _detect_animations() -> void:
 		_anim_run = _anim_walk
 	if _anim_walk == "":
 		_anim_walk = _anim_run  # bazi paketlerde Walk yok (orn. Asker)
+	# STIL: idle animasyonu olmayan modeller (orn. Meshy character_animated —
+	# Walking/Running var, idle yok) T-poza dusmesin diye idle=walk yedegi.
+	if _anim_idle == "":
+		_anim_idle = _anim_walk
 	for anim_name in [_anim_idle, _anim_walk, _anim_run]:
 		if anim_name != "" and _anim.has_animation(anim_name):
 			_anim.get_animation(anim_name).loop_mode = Animation.LOOP_LINEAR
@@ -323,8 +333,9 @@ func set_held_tool(model_path: String) -> void:
 	# yoksa PROSEDUREL low-poly placeholder (UI ikon placeholder kuralinin
 	# 3D karsiligi). Legacy anahtarlar (spear/knife/...) da desteklenir.
 	var visual: Node3D = null
-	var glb_base := String(TOOL_GLB.get(model_path, model_path))
-	var glb := "res://assets/models/tools/%s.glb" % glb_base
+	var glb := String(TOOL_GLB_OVERRIDE.get(model_path, ""))
+	if glb == "":
+		glb = "res://assets/models/tools/%s.glb" % String(TOOL_GLB.get(model_path, model_path))
 	if ResourceLoader.exists(glb):
 		visual = load(glb).instantiate()
 	else:
