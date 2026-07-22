@@ -435,8 +435,10 @@ func _build_dock() -> void:
 	dock.theme = theme
 	dock.anchor_left = 1.0
 	dock.anchor_right = 1.0
-	dock.anchor_top = 0.44   # dikey ortanin biraz altindan basla (basparmak)
-	dock.anchor_bottom = 0.44
+	# P0-1 (UX denetim): 0.44'ten asagi ~288px buyurken Arastirma, Saldiri
+	# butonunun ustune biniyordu -> cikpayi yukari al ki alt-sag kumeye degmesin.
+	dock.anchor_top = 0.30
+	dock.anchor_bottom = 0.30
 	dock.grow_horizontal = Control.GROW_DIRECTION_BEGIN
 	dock.grow_vertical = Control.GROW_DIRECTION_END
 	dock.offset_left = -84
