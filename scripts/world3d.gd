@@ -614,7 +614,7 @@ func _setup_screenshot(save_path: String) -> void:
 	_run_muhendislik_selftest()  # MUHENDISLIK: merdiven tirmanma kurali
 	_run_creature_selftest()     # YARATIK: varlik + take_hit + oz + melee
 	_run_save_load_selftest()
-	await _run_perf_selftest()   # PERF (Bolum 16): senaryo olcumleri (PERF* marker)
+	await _run_perf_selftest(save_path)  # PERF: senaryo olcumleri (PERF* + dosya)
 	get_tree().quit()
 
 ## YARATIK self-test (Asama 1): spawn -> take_hit hasar -> melee _apply_hitbox
@@ -924,15 +924,20 @@ func _first_diff(a: Variant, b: Variant, path: String) -> String:
 ## sayaclara (draw call, ucgen, aktif isik/nesne) + CPU script suresine
 ## (frame_ms=TIME_PROCESS) bakariz — optimizasyonun gercekten oynattigi
 ## degerler bunlar. RAPOR_PERF.md once/sonra tablolari bu marker'lardan gelir.
-func _run_perf_selftest() -> void:
+func _run_perf_selftest(save_path: String = "") -> void:
 	_clear_creatures()
 	_cam_locked = true
+	var report: Array = []  # dosyaya yazilacak satirlar (CI auto-commit alir)
+	report.append("# PERF SONUC (kalite=%s) — %s" % [_quality_tier,
+		Time.get_datetime_string_from_system()])
 	# --- Senaryo A: bos alanda (temel referans) ---
 	var a := await _perf_probe_sample()
-	print("PERFBASE: frame_ms=%.2f peak_ms=%.2f draw=%d ucgen=%d nesne=%d isik=%d yaratik=%d nodes=%d mem_mb=%.1f chunk_ms=%.2f" % [
+	var line_a := "PERFBASE: frame_ms=%.2f peak_ms=%.2f draw=%d ucgen=%d nesne=%d isik=%d yaratik=%d nodes=%d mem_mb=%.1f chunk_ms=%.2f" % [
 		a["frame_ms"], a["peak_ms"], int(a["draw"]), int(a["prim"]),
 		int(a["objects"]), int(a["lights"]), int(a["creatures"]),
-		int(a["nodes"]), a["mem_mb"], a["chunk_ms"]])
+		int(a["nodes"]), a["mem_mb"], a["chunk_ms"]]
+	print(line_a)
+	report.append(line_a)
 	# --- Senaryo B: yogun isik (mesale butcesi dogrulamasi) ---
 	var pc := _player_cell()
 	var stress := Node3D.new()
@@ -951,9 +956,11 @@ func _run_perf_selftest() -> void:
 		placed += 1
 	var b := await _perf_probe_sample()
 	var budget := _max_torches + 2  # gunes + ocak paylari
-	print("PERFLIGHT: mesale_uretilen=%d aktif_isik=%d butce=%d butce_ok=%s frame_ms=%.2f draw=%d" % [
+	var line_b := "PERFLIGHT: mesale_uretilen=%d aktif_isik=%d butce=%d butce_ok=%s frame_ms=%.2f draw=%d" % [
 		placed, int(b["lights"]), budget, str(int(b["lights"]) <= budget),
-		b["frame_ms"], int(b["draw"])])
+		b["frame_ms"], int(b["draw"])]
+	print(line_b)
+	report.append(line_b)
 	for oc: Vector2i in probe_cells:
 		_torch_lights.erase(oc)
 	stress.queue_free()
@@ -961,9 +968,11 @@ func _run_perf_selftest() -> void:
 	for i in PerfBalance.PROBE_WAVE_CREATURES:
 		spawn_creature(pc + Vector2i((i % 6) - 3, (i / 6) + 2), "normal")
 	var d := await _perf_probe_sample()
-	print("PERFWAVE: yaratik=%d frame_ms=%.2f peak_ms=%.2f draw=%d ucgen=%d nesne=%d nodes=%d" % [
+	var line_d := "PERFWAVE: yaratik=%d frame_ms=%.2f peak_ms=%.2f draw=%d ucgen=%d nesne=%d nodes=%d" % [
 		int(d["creatures"]), d["frame_ms"], d["peak_ms"], int(d["draw"]),
-		int(d["prim"]), int(d["objects"]), int(d["nodes"])])
+		int(d["prim"]), int(d["objects"]), int(d["nodes"])]
+	print(line_d)
+	report.append(line_d)
 	# --- Bellek: kisa tekrarli spawn/free dongusu (sizinti taramasi) ---
 	var mem0 := Performance.get_monitor(Performance.MEMORY_STATIC)
 	for cyc in 20:
@@ -975,10 +984,21 @@ func _run_perf_selftest() -> void:
 	for i in 6:
 		await get_tree().process_frame
 	var mem1 := Performance.get_monitor(Performance.MEMORY_STATIC)
-	print("PERFMEM: mem0_mb=%.2f mem1_mb=%.2f delta_mb=%.2f nodes=%d sizinti_kusku=%s" % [
+	var line_m := "PERFMEM: mem0_mb=%.2f mem1_mb=%.2f delta_mb=%.2f nodes=%d sizinti_kusku=%s" % [
 		mem0 / 1048576.0, mem1 / 1048576.0, (mem1 - mem0) / 1048576.0,
 		int(Performance.get_monitor(Performance.OBJECT_NODE_COUNT)),
-		str((mem1 - mem0) / 1048576.0 > 2.0)])
+		str((mem1 - mem0) / 1048576.0 > 2.0)]
+	print(line_m)
+	report.append(line_m)
+	# Sonuclari docs/screens altina yaz: CI auto-commit bunu da alir, boylece
+	# log okumadan `git pull` ile once/sonra sayilarina ulasiriz.
+	if save_path != "":
+		var dir := save_path.get_base_dir()
+		var f := FileAccess.open(dir + "/perf_result.txt", FileAccess.WRITE)
+		if f != null:
+			f.store_string("\n".join(report) + "\n")
+			f.close()
+			print("PERFFILE: yazildi=%s/perf_result.txt" % dir)
 
 ## Bir senaryoyu isinma + N kare boyunca ornekler; ortalama/tepe metrikler.
 func _perf_probe_sample() -> Dictionary:
