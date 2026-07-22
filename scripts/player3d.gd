@@ -51,6 +51,14 @@ const TOOL_GLB_OVERRIDE := {
 	"balta": "res://assets/models/test/axe.glb",
 }
 
+## STIL: esya id -> karakterin GOVDE saldiri animasyonu (character_animated).
+## Alete ozel: balta kilic kesigi, kazma cekic savurmasi. Karakter o animasyona
+## sahip degilse otomatik bulunan _anim_attack'e duser.
+const TOOL_ATTACK_ANIM := {
+	"balta": "Right_Hand_Sword_Slash",
+	"kazma": "Heavy_Hammer_Swing",
+}
+
 ## Alet eylemi sirasinda aletin baglandigi doner pivot (ToolPivot).
 ## _tool_attach el kemigine yapisir; pivot onun icinde donerek uc fazli
 ## sallanmayi olusturur. Model pivot'un cocugudur.
@@ -407,12 +415,17 @@ func play_swing(profile: Dictionary, on_strike: Callable,
 	# tek sefer oynar, sallanma boyunca. Hareket animasyonu bu sirada bastirilir
 	# (_physics_process _swinging'e bakar). Iskeletsiz/animasyonsuz karakterlerde
 	# _anim_attack bostur -> yalniz proseduel alet savurmasi calisir (eskisi gibi).
-	if _anim != null and _anim_attack != "" and _anim.has_animation(_anim_attack):
+	# Alete ozel animasyon (balta->slash, kazma->hammer); yoksa otomatik bulunan
+	var atk := String(TOOL_ATTACK_ANIM.get(_held_tool_path, ""))
+	if _anim == null or not _anim.has_animation(atk):
+		atk = _anim_attack
+	if _anim != null and atk != "" and _anim.has_animation(atk):
 		var total: float = windup + strike + recover
-		var alen: float = _anim.get_animation(_anim_attack).length
+		var alen: float = _anim.get_animation(atk).length
 		var spd: float = (alen / total) if total > 0.05 and alen > 0.05 else 1.0
-		_anim.play(_anim_attack, 0.05, spd)
-		_current_anim = _anim_attack
+		_anim.get_animation(atk).loop_mode = Animation.LOOP_NONE
+		_anim.play(atk, 0.05, spd)
+		_current_anim = atk
 	var rest: Vector3 = profile.get("rest", Vector3.ZERO)
 	var wind: Vector3 = profile.get("wind", Vector3.ZERO)
 	var hit: Vector3 = profile.get("hit", Vector3.ZERO)

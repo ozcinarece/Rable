@@ -252,6 +252,16 @@ var _ghost_valid: bool = false
 var _ghost_needs_tint: bool = true
 var _torch_lights: Dictionary = {}  # hucre -> OmniLight3D (13.5 mesale)
 const MAX_TORCHES := 8              # ayni anda aktif isik butcesi (mobil)
+# --- KALITE + FPS overlay (mobil perf) ---------------------------------
+const PerfBalance = preload("res://scripts/perf_balance.gd")
+const QUALITY_PATH := "user://quality.txt"  # secilen kademe kaydedilir
+var _quality_tier: String = PerfBalance.DEFAULT_TIER
+var _max_torches: int = MAX_TORCHES  # kalite ile degisir
+var _perf_layer: CanvasLayer
+var _perf_label: Label
+var _perf_on: bool = false
+var _perf_acc: float = 0.0
+var _perf_fps: Array = []
 var _target_ring: MeshInstance3D   # paylasilan hedef vurgu halkasi
 var _projectiles: Array = []       # ucan mermiler [{node, vel, ...}]
 var _aiming: bool = false          # menzilli silah nisan modu aktif mi
@@ -332,7 +342,12 @@ func _ready() -> void:
 	hud.chest_transfer_all_requested.connect(_on_chest_transfer_all)
 	hud.chest_dismantle_requested.connect(_on_chest_dismantle)
 	hud.chest_closed.connect(func(): _open_chest = Vector2i(-999, -999))
+	hud.perf_overlay_toggled.connect(_on_perf_overlay_toggled)
+	hud.quality_changed.connect(_on_quality_changed)
 	_build_camera_ui()
+	_build_perf_overlay()
+	_load_quality()
+	apply_quality(_quality_tier)
 	# kayit-sistemi: SaveManager bu sahneyi (dünya durumu) kaydeder/yükler.
 	SaveManager.world = self
 	# Açılışta kayıt varsa "Devam Et / Yeni Oyun" seçimi; yoksa taze dünya
@@ -1116,6 +1131,8 @@ func _scene_aabb(node: Node, xform: Transform3D = Transform3D.IDENTITY) -> AABB:
 var _cam_locked := false  # teshis kareleri icin takibi durdurur
 
 func _process(delta: float) -> void:
+	if _perf_on:
+		_update_perf_overlay(delta)
 	# Kamera: SADECE konum takip eder, aci sabit kalir
 	if not _cam_locked:
 		var target := player.position + _camera_offset()
@@ -4788,6 +4805,86 @@ func _add_torch_light(cell: Vector2i, holder: Node3D) -> void:
 	holder.add_child(light)
 	_torch_lights[cell] = light
 
+# --- KALITE KADEMESI + FPS OVERLAY (mobil perf) ------------------------
+
+## Grafik kalitesini uygular: gunes golgesi ac/kapa + menzil + atlas
+## cozunurlugu + mesale isik butcesi. Ayarlar'dan secilir; user://'ye kaydedilir.
+func apply_quality(tier: String) -> void:
+	if not PerfBalance.TIERS.has(tier):
+		tier = PerfBalance.DEFAULT_TIER
+	_quality_tier = tier
+	var t := PerfBalance.tier(tier)
+	_max_torches = int(t["max_torches"])
+	if _sun != null and is_instance_valid(_sun):
+		_sun.shadow_enabled = bool(t["dir_shadow"])
+		_sun.directional_shadow_max_distance = float(t["dir_shadow_dist"])
+	RenderingServer.directional_shadow_atlas_set_size(int(t["dir_shadow_size"]), true)
+
+func _on_quality_changed(tier: String) -> void:
+	apply_quality(tier)
+	_save_quality()
+
+func _save_quality() -> void:
+	var f := FileAccess.open(QUALITY_PATH, FileAccess.WRITE)
+	if f != null:
+		f.store_string(_quality_tier)
+		f.close()
+
+func _load_quality() -> void:
+	if not FileAccess.file_exists(QUALITY_PATH):
+		return
+	var f := FileAccess.open(QUALITY_PATH, FileAccess.READ)
+	if f != null:
+		var t := f.get_as_text().strip_edges()
+		f.close()
+		if PerfBalance.TIERS.has(t):
+			_quality_tier = t
+
+func _build_perf_overlay() -> void:
+	_perf_layer = CanvasLayer.new()
+	_perf_layer.layer = 3
+	_perf_layer.visible = false
+	add_child(_perf_layer)
+	var panel := PanelContainer.new()
+	panel.position = Vector2(10, 10)
+	var st := StyleBoxFlat.new()
+	st.bg_color = Color(0.06, 0.07, 0.10, 0.66)
+	st.set_corner_radius_all(8)
+	st.set_content_margin_all(8)
+	panel.add_theme_stylebox_override("panel", st)
+	_perf_layer.add_child(panel)
+	_perf_label = Label.new()
+	_perf_label.add_theme_font_size_override("font_size", 16)
+	_perf_label.add_theme_color_override("font_color", Color(0.85, 1.0, 0.85))
+	_perf_label.text = "FPS…"
+	panel.add_child(_perf_label)
+
+func _on_perf_overlay_toggled(on: bool) -> void:
+	_perf_on = on
+	if _perf_layer != null:
+		_perf_layer.visible = on
+	if on:
+		_perf_acc = 999.0
+		_perf_fps.clear()
+
+func _update_perf_overlay(delta: float) -> void:
+	_perf_fps.append(Performance.get_monitor(Performance.TIME_FPS))
+	if _perf_fps.size() > 30:
+		_perf_fps.pop_front()
+	_perf_acc += delta
+	if _perf_acc < 0.25:
+		return
+	_perf_acc = 0.0
+	var fps := 0.0
+	for v in _perf_fps:
+		fps += v
+	fps /= maxf(1.0, _perf_fps.size())
+	var frame_ms := Performance.get_monitor(Performance.TIME_PROCESS) * 1000.0
+	var draw := int(Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME))
+	_perf_label.text = "FPS %d\nframe %.1f ms\ndraw %d\nkalite: %s" % [
+		int(round(fps)), frame_ms, draw,
+		PerfBalance.tier_val(_quality_tier, "label", _quality_tier)]
+
 ## Isik butcesi + flicker (13.5): oyuncuya en yakin MAX_TORCHES yanar,
 ## fazlasi soner (yapi durur). Her kare hafif titresim.
 func _update_torches(delta: float) -> void:
@@ -4806,7 +4903,7 @@ func _update_torches(delta: float) -> void:
 	var t := Time.get_ticks_msec() / 1000.0
 	for i in cells.size():
 		var light: OmniLight3D = _torch_lights[cells[i]]
-		if i < MAX_TORCHES:
+		if i < _max_torches:
 			light.visible = true
 			# Flicker: enerjiyi hafifce oynat (hucreye gore faz)
 			var phase := float(cells[i].x * 7 + cells[i].y * 13)

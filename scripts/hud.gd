@@ -35,6 +35,10 @@ signal hold_requested(item_id: String)
 ## R1: Ayarlar menusu acildi/kapandi — World Kamera/Gorunum panelini gosterir
 signal settings_toggled(open: bool)
 
+## Mobil perf: FPS overlay ac/kapa + grafik kalite kademesi degisti
+signal perf_overlay_toggled(on: bool)
+signal quality_changed(tier: String)
+
 ## YASAM: yeme istegi (world3d ~1 sn tuketme eylemi olarak calistirir)
 signal eat_requested(food_id: String)
 
@@ -52,6 +56,7 @@ const Recipes = preload("res://scripts/recipes.gd")
 const UiSlotScript = preload("res://scripts/ui_slot.gd")
 const UIColors = preload("res://scripts/ui_colors.gd")
 const TimeBalance = preload("res://scripts/time_balance.gd")
+const PerfBalance = preload("res://scripts/perf_balance.gd")
 
 const ICON_FIST := preload("res://assets/ui/fist.png")
 const ICON_GATHER := preload("res://assets/ui/axe.png")
@@ -481,6 +486,13 @@ func _style_dock_button(btn: Button, color: Color) -> void:
 var _settings_panel: PanelContainer
 var _newgame_button: Button
 var _reset_confirm := false
+var _quality_buttons: Dictionary = {}  # tier_id -> Button (radyo gibi)
+
+## MOBIL PERF: kalite kademesi secildi — digerlerini birak, sinyali yay.
+func _on_quality_selected(tier_id: String) -> void:
+	for k: String in _quality_buttons:
+		_quality_buttons[k].button_pressed = (k == tier_id)
+	quality_changed.emit(tier_id)
 
 func _build_settings_menu() -> void:
 	reset_button.text = "Ayarlar"
@@ -507,6 +519,29 @@ func _build_settings_menu() -> void:
 	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	vb.add_child(hint)
+	# MOBIL PERF: grafik kalitesi (Düşük telefonu hızlandırır) + FPS göstergesi
+	var qhdr := Label.new()
+	qhdr.theme_type_variation = "SubtleLabel"
+	qhdr.text = "Grafik Kalitesi (takılıyorsa → Düşük)"
+	vb.add_child(qhdr)
+	var qrow := HBoxContainer.new()
+	qrow.add_theme_constant_override("separation", 8)
+	vb.add_child(qrow)
+	_quality_buttons.clear()
+	for tier_id: String in PerfBalance.TIER_ORDER:
+		var qb := Button.new()
+		qb.toggle_mode = true
+		qb.text = String(PerfBalance.tier_val(tier_id, "label", tier_id))
+		qb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		qb.button_pressed = (tier_id == PerfBalance.DEFAULT_TIER)
+		qb.pressed.connect(_on_quality_selected.bind(tier_id))
+		qrow.add_child(qb)
+		_quality_buttons[tier_id] = qb
+	var perf_check := CheckButton.new()
+	perf_check.text = "FPS göstergesi"
+	perf_check.toggled.connect(func(on: bool): perf_overlay_toggled.emit(on))
+	vb.add_child(perf_check)
+
 	_newgame_button = Button.new()
 	_newgame_button.theme_type_variation = "PrimaryButton"
 	_newgame_button.text = "Yeni Oyun (kaydı siler)"
