@@ -198,7 +198,9 @@ func _ready() -> void:
 			(child as Control).theme = main_theme
 	_setup_damage_flash()
 	_setup_night_fx()
+	_setup_backdrop()   # R0: panel acikken oyun ekrani karartilir + HUD gizlenir
 	_build_slots()
+	_build_lock_chip()  # R0: kilitli slotlar tek kompakt cip olur
 	_build_category_buttons()
 	_rebuild_cards()
 	_refresh()
@@ -256,6 +258,7 @@ func _on_inventory_toggled(pressed: bool) -> void:
 		_inv_tween.tween_callback(func():
 			inventory_root.visible = false
 			inventory_root.position.x -= width)
+	_update_backdrop()
 
 # Uretim paneli yumusak scale ile acilir (0.96 -> 1.0, UI_DESIGN 4.5)
 var _craft_tween: Tween
@@ -280,6 +283,7 @@ func _on_craft_toggled(pressed: bool) -> void:
 	else:
 		_craft_tween.tween_property(craft_root, "modulate:a", 0.0, 0.15)
 		_craft_tween.tween_callback(func(): craft_root.visible = false)
+	_update_backdrop()
 
 func _on_research_toggled(pressed: bool) -> void:
 	if pressed:
@@ -290,6 +294,85 @@ func _on_research_toggled(pressed: bool) -> void:
 		research_root.open()
 	else:
 		research_root.close()
+	_update_backdrop()
+
+# --- R0: Panel overlay_dim + HUD gizleme --------------------------------
+# Panel acikken oyun ekrani karartilir (odak) ve HUD oyun ogeleri gizlenir
+# (Gun pill'inin panel basligiyla cakismasi da boyle cozulur). overlay,
+# aktif panelin ALTINA, diger her seyin USTUNE alinir.
+var _overlay: ColorRect
+
+func _setup_backdrop() -> void:
+	_overlay = ColorRect.new()
+	_overlay.name = "PanelOverlay"
+	_overlay.color = UIColors.OVERLAY_DIM
+	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_overlay.mouse_filter = Control.MOUSE_FILTER_STOP  # arka plana dokunmayi engelle
+	_overlay.visible = false
+	add_child(_overlay)
+
+# Panel acik mi? (toggle butonlari + sandik durumu)
+func _any_panel_open() -> bool:
+	return inventory_button.button_pressed or craft_button.button_pressed \
+			or research_button.button_pressed or chest_panel.visible
+
+func _update_backdrop() -> void:
+	if _overlay == null:
+		return
+	var open := _any_panel_open()
+	_overlay.visible = open
+	if open:
+		move_child(_overlay, get_child_count() - 1)
+		# Yalnizca GERCEKTEN acik olan tek paneli overlay'in ustune al.
+		var top: Control = null
+		if chest_panel.visible:
+			top = chest_panel
+		elif inventory_button.button_pressed:
+			top = inventory_root
+		elif craft_button.button_pressed:
+			top = craft_root
+		elif research_button.button_pressed:
+			top = research_root
+		if top != null:
+			move_child(top, get_child_count() - 1)
+	# Oyun HUD ogeleri panel acikken gizlenir, kapaninca geri gelir.
+	for node in _hud_game_nodes():
+		if node != null:
+			node.visible = not open
+	if not open:
+		attack_button.visible = _ctx_weapon  # kosullu geri gelir
+
+# Panel acikken gizlenecek "oyun eylemi" HUD ogeleri (attack ayri yonetilir).
+func _hud_game_nodes() -> Array:
+	return [inventory_button, craft_button, research_button, reset_button,
+			hotbar_strip, action_button, move_button, day_pill,
+			get_node_or_null("StatsPanel")]
+
+# --- R0: Kilit cipi (izgara sonunda tek kompakt cip) --------------------
+var _lock_chip: PanelContainer
+var _lock_chip_label: Label
+
+func _build_lock_chip() -> void:
+	var vbox := inventory_grid.get_parent()
+	_lock_chip = PanelContainer.new()
+	_lock_chip.theme_type_variation = "InnerPanel"
+	_lock_chip.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	_lock_chip.visible = false
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	_lock_chip.add_child(row)
+	var lock_icon := TextureRect.new()
+	lock_icon.texture = load("res://assets/ui/lock.png")
+	lock_icon.custom_minimum_size = Vector2(18, 18)
+	lock_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	lock_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	lock_icon.modulate = Color(1, 1, 1, 0.7)
+	row.add_child(lock_icon)
+	_lock_chip_label = Label.new()
+	_lock_chip_label.theme_type_variation = "SubtleLabel"
+	row.add_child(_lock_chip_label)
+	vbox.add_child(_lock_chip)
+	vbox.move_child(_lock_chip, inventory_grid.get_index() + 1)
 
 # --- Slotlarin kurulumu -------------------------------------------------
 
@@ -370,13 +453,21 @@ func _refresh() -> void:
 	var capacity := Inventory.get_slot_count()
 	for i in _inv_slots.size():
 		var slot: UiSlotScript = _inv_slots[i]
+		# R0: kilitli slotlar tek tek CIZILMEZ; izgaradan gizlenir, kilit
+		# bilgisi izgara sonundaki tek cipte yasar.
+		slot.visible = i < capacity
+		slot.set_locked(false)
 		var content = Inventory.slots[i]
 		if content == null:
 			slot.set_content("", 0)
-			slot.set_locked(i >= capacity)
 		else:
-			slot.set_locked(false)
 			slot.set_content(content["id"], content["count"])
+	# Kilit cipi: "+N slot (deri canta ile)" — yalnizca kilitli varsa.
+	if _lock_chip != null:
+		var locked_count: int = _inv_slots.size() - capacity
+		_lock_chip.visible = locked_count > 0
+		if locked_count > 0:
+			_lock_chip_label.text = "+%d slot (deri çanta ile)" % locked_count
 	capacity_label.text = "%d/%d" % [Inventory.get_used_slots(), capacity]
 	_refresh_hotbar(_mini_hotbar_slots)
 	_update_detail()
@@ -1129,9 +1220,11 @@ func show_chest(contents: Dictionary, message: String = "") -> void:
 		_add_chest_note("(boş)")
 
 	chest_dismantle_button.disabled = not contents.is_empty()
+	_update_backdrop()
 
 func close_chest() -> void:
 	chest_panel.visible = false
+	_update_backdrop()
 
 func _add_chest_section_title(text: String) -> void:
 	var label := Label.new()

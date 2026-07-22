@@ -14,6 +14,9 @@ const LOCK_TEX := preload("res://assets/ui/lock.png")
 const Items = preload("res://scripts/items.gd")
 const UIColors = preload("res://scripts/ui_colors.gd")
 
+# R0: 64px slotta ikon kenar payi (kucuk = daha dolu ikon, >=%65 kural).
+const ICON_INSET := 10.0
+
 var kind: String = "inv"
 var index: int = 0
 var item_id: String = ""
@@ -42,12 +45,15 @@ func _ready() -> void:
 	add_theme_stylebox_override("disabled", StyleBoxEmpty.new())
 	add_theme_stylebox_override("focus", StyleBoxEmpty.new())
 
+	# R0 IKON DOLULUK: ikon kabin (slot) en az %65'ini doldurur.
+	# 64px slotta ~10px kenar payi -> ikon ~44px (%69). "Koca daire
+	# icinde minik ikon" YASAK.
 	_icon_rect = TextureRect.new()
 	_icon_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_icon_rect.offset_left = 14
-	_icon_rect.offset_top = 14
-	_icon_rect.offset_right = -14
-	_icon_rect.offset_bottom = -14
+	_icon_rect.offset_left = ICON_INSET
+	_icon_rect.offset_top = ICON_INSET
+	_icon_rect.offset_right = -ICON_INSET
+	_icon_rect.offset_bottom = -ICON_INSET
 	_icon_rect.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	_icon_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_icon_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
