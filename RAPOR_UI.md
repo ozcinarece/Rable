@@ -55,3 +55,25 @@ sadece menüye taşındı). Aşama başına bir commit; oyun her commit'te açı
   kompakt pill (işlev korundu). Sağ altta yalnızca ana+saldırı kaldı.
 
 **Değişen dosyalar:** `scripts/hud.gd`, `scripts/world3d.gd` (yalnız UI gating).
+
+## Aşama 3 — R3 envanter + ORTAK bilgi şeridi bileşeni (commit 3)
+
+**Teşhis → çözüm:**
+- **Yerleşim:** Dar sağ şerit **iptal**. Envanter artık **ortalanmış geniş
+  panel** (yatay ekran, %80 genişlik: anchor 0.1–0.9) ve **alttan yukarı
+  kayar** (bottom-sheet; dikey slide 0.25sn). `HUD.tscn` InventoryRoot
+  anchorları + `_on_inventory_toggled` dikey kaymaya çevrildi.
+- **Slotlar:** Izgara **4 → 8 sütun** (16 slot tek bakışta, 2 satır). Slot
+  64px + %69 ikon (Aşama 1).
+- **ORTAK bilgi şeridi (TEK bileşen):** `scripts/ui_info_strip.gd`
+  (`UiInfoStrip`) — solda büyük ikon dairesi, ortada ad + **tek satır**
+  açıklama (uzun metin `OVERRUN_TRIM_ELLIPSIS` ile "…"), sağda eylem
+  pill'leri. **R4/R5'te yeniden kullanılacak.** Envanterde eski dikey bilgi
+  kutusu gizlendi, bant panelin altına yaslandı (spacer). Pill'ler:
+  **Ye / Kuşan(Bırak) / Yerleştir / At** — hepsi mevcut sinyallere bağlı
+  (yeme mantığı değişmedi).
+- **Öğretici metin:** "Bir eşyaya dokun…" yalnız **ilk açılışta**; sonra
+  kısa "Bir eşya seç." (`_inv_first`), kalıcı yer kaplamaz.
+
+**Değişen/eklenen dosyalar:** `scripts/ui_info_strip.gd` (yeni),
+`scripts/hud.gd`, `scenes/HUD.tscn`.

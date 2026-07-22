@@ -205,6 +205,7 @@ func _ready() -> void:
 	_setup_backdrop()   # R0: panel acikken oyun ekrani karartilir + HUD gizlenir
 	_build_slots()
 	_build_lock_chip()  # R0: kilitli slotlar tek kompakt cip olur
+	_build_info_strip() # R3: envanter ORTAK alt bilgi bandi (yeniden kullanilir)
 	_build_dock()           # R1: sag kenar dikey dock (canta/uretim/arastirma)
 	_build_settings_menu()  # R1: Ayarlar menusu (Yeni Oyun + Kamera/Gorunum)
 	_style_action_buttons() # R2: ana/saldiri butonlari + baglam etiketi
@@ -242,29 +243,34 @@ func _process(_delta: float) -> void:
 # Envanter paneli sagdan kayarak girer/cikar (0.25sn ease-out)
 var _inv_tween: Tween
 
+# R3: envanter ALTTAN yukari kayan panel (bottom-sheet); yatayda ortalanmis
+# genis panel (sag serit iptal). Kayma dikey (asagidan yukari).
 func _on_inventory_toggled(pressed: bool) -> void:
 	if pressed:
 		craft_button.button_pressed = false
 		research_button.button_pressed = false
+		reset_button.button_pressed = false
 		close_chest()
 		chest_closed.emit()
 		_refresh()
+	else:
+		_inv_first = false  # ilk acilis bitti -> ogretici metin bir daha yok
 	if _inv_tween != null:
 		_inv_tween.kill()
 	_inv_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
-	var width := inventory_root.size.x + 24.0
+	var rise := get_viewport().get_visible_rect().size.y  # ekran disina in/cik
 	if pressed:
 		inventory_root.visible = true
-		inventory_root.position.x += width  # disaridan basla
-		_inv_tween.tween_property(inventory_root, "position:x",
-				inventory_root.position.x - width, 0.25)
+		inventory_root.position.y += rise  # ekranin altindan basla
+		_inv_tween.tween_property(inventory_root, "position:y",
+				inventory_root.position.y - rise, 0.25)
 	else:
 		_picked_slot = null
-		_inv_tween.tween_property(inventory_root, "position:x",
-				inventory_root.position.x + width, 0.22)
+		_inv_tween.tween_property(inventory_root, "position:y",
+				inventory_root.position.y + rise, 0.22)
 		_inv_tween.tween_callback(func():
 			inventory_root.visible = false
-			inventory_root.position.x -= width)
+			inventory_root.position.y -= rise)
 	_update_backdrop()
 
 # Uretim paneli yumusak scale ile acilir (0.96 -> 1.0, UI_DESIGN 4.5)
@@ -381,6 +387,25 @@ func _build_lock_chip() -> void:
 	row.add_child(_lock_chip_label)
 	vbox.add_child(_lock_chip)
 	vbox.move_child(_lock_chip, inventory_grid.get_index() + 1)
+
+# --- R3: Envanter ORTAK alt bilgi bandi (yeniden kullanilabilir bilesen) -
+const UiInfoStrip = preload("res://scripts/ui_info_strip.gd")
+var _info: UiInfoStrip       # ORTAK alt bilgi bandi bileseni
+var _inv_first := true       # "Bir esyaya dokun..." yalniz ilk acilista
+
+func _build_info_strip() -> void:
+	var old_info: Control = $InventoryRoot/InventoryPanel/VBox/InfoStrip
+	old_info.visible = false  # eski dikey bilgi kutusu -> yeni bant ile degisir
+	var inv_vbox := old_info.get_parent()
+	var at := old_info.get_index()
+	# Izgara ile band arasi bosluk -> band panelin ALTINA yaslanir
+	var spacer := Control.new()
+	spacer.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	inv_vbox.add_child(spacer)
+	inv_vbox.move_child(spacer, at)
+	_info = UiInfoStrip.new()
+	inv_vbox.add_child(_info)
+	inv_vbox.move_child(_info, at + 1)
 
 # --- R1: Sag kenar dikey DOCK (canta / uretim / arastirma) --------------
 # Dagitik beyaz daireler yerine TEK dikey dock: kategori renkli DOLGULU
@@ -705,26 +730,38 @@ func _refresh_hotbar(slot_list: Array) -> void:
 		slot.pivot_offset = slot.size / 2.0
 		slot.scale = Vector2.ONE * (1.12 if is_sel else 1.0)
 
+# R3: secili esyayi ORTAK bilgi bandinda goster (ikon+ad+tek satir+pill'ler).
 func _update_detail() -> void:
-	if _selected_item == "" or Inventory.get_count(_selected_item) <= 0:
-		item_name_label.text = ""
-		item_desc_label.text = "Bir eşyaya dokun: bilgisi burada görünür. " + \
-				"Seçtikten sonra başka bir slota dokunarak taşıyabilirsin."
-		panel_eat_button.visible = false
-		hold_button.visible = false
-		drop_button.visible = false
-		if place_button != null:
-			place_button.visible = false
+	if _info == null:
 		return
-	item_name_label.text = "%s ×%d" % [Items.display_name(_selected_item),
+	if _selected_item == "" or Inventory.get_count(_selected_item) <= 0:
+		# Ogretici metin yalniz ilk acilista (sonra kisa yonlendirme).
+		_info.set_placeholder("Bir eşyaya dokun: bilgisi burada görünür." \
+				if _inv_first else "Bir eşya seç.")
+		return
+	var icon_tex: Texture2D = null
+	var ipath := String(Items.ITEMS.get(_selected_item, {}).get("icon", ""))
+	if ipath != "" and ResourceLoader.exists(ipath):
+		icon_tex = load(ipath)
+	var title := "%s ×%d" % [Items.display_name(_selected_item),
 			Inventory.get_count(_selected_item)]
-	item_desc_label.text = Items.description(_selected_item)
-	panel_eat_button.visible = PlayerStats.is_edible(_selected_item)
-	hold_button.visible = true
-	drop_button.visible = true
-	if place_button != null:
-		place_button.visible = Items.PLACEABLE.has(_selected_item)
-	hold_button.text = "Bırak" if _held_item == _selected_item else "Eline Al"
+	_info.show_item(icon_tex, title, Items.description(_selected_item),
+			UIColors.item_color(_selected_item))
+	# Eylem pill'leri: Ye (yenebilir) / Kuşan-Bırak / Yerleştir / At
+	var pills: Array = []
+	if PlayerStats.is_edible(_selected_item):
+		pills.append({"text": "Ye", "primary": true, "on": _on_eat_pressed})
+	pills.append({"text": "Bırak" if _held_item == _selected_item else "Kuşan",
+			"primary": true, "on": _on_hold_pressed})
+	if Items.PLACEABLE.has(_selected_item):
+		pills.append({"text": "Yerleştir", "primary": true, "on": _on_place_pill})
+	pills.append({"text": "At", "on": _on_drop_pressed})
+	_info.set_pills(pills)
+
+func _on_place_pill() -> void:
+	if _selected_item != "":
+		inventory_button.button_pressed = false  # paneli kapat
+		place_requested.emit(_selected_item)
 
 func _on_hold_pressed() -> void:
 	if _selected_item == "":
