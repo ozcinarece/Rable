@@ -971,13 +971,13 @@ func _run_perf_selftest(save_path: String = "") -> void:
 		int(d["prim"]), int(d["objects"]), int(d["nodes"])])
 	# --- Bellek: kisa tekrarli spawn/free dongusu (sizinti taramasi) ---
 	var mem0 := Performance.get_monitor(Performance.MEMORY_STATIC)
-	for cyc in 20:
+	for cyc in PerfBalance.PROBE_MEM_CYCLES:
 		_clear_creatures()
 		for i in 8:
 			spawn_creature(pc + Vector2i((i % 4) - 2, (i / 4) + 2), "normal")
 		await get_tree().process_frame
 	_clear_creatures()
-	for i in 6:
+	for i in 3:
 		await get_tree().process_frame
 	var mem1 := Performance.get_monitor(Performance.MEMORY_STATIC)
 	_perf_log("PERFMEM: mem0_mb=%.2f mem1_mb=%.2f delta_mb=%.2f nodes=%d sizinti_kusku=%s" % [

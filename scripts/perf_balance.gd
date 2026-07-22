@@ -14,10 +14,15 @@ const OVERLAY_REFRESH_SEC := 0.25
 const FPS_WINDOW := 30
 
 # --- CI perf-probe -----------------------------------------------------
+## NOT: CI yazilim GL'de kare ~0.6 sn surer; sayaclar (draw/ucgen/nesne)
+## kareler arasi sabittir, az ornek yeter. Cok kare = timeout riski (harness
+## zaten ~140 sn; workflow 180 sn'de kesiyor). Bu yuzden dusuk tutulur.
 ## Her senaryoda sayac toplamadan once kac kare isinma birak.
-const PROBE_WARMUP_FRAMES := 8
+const PROBE_WARMUP_FRAMES := 2
 ## Her senaryoda kac kare ornekle (ortalama + tepe icin).
-const PROBE_SAMPLE_FRAMES := 30
+const PROBE_SAMPLE_FRAMES := 5
+## Bellek sizinti taramasi: spawn/free dongusu tur sayisi.
+const PROBE_MEM_CYCLES := 5
 ## Yogun base senaryosu icin uretilecek yapi sayisi.
 const PROBE_DENSE_STRUCTURES := 32
 ## Yogun base senaryosu icin mesale sayisi.

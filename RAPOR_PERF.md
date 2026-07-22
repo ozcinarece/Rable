@@ -88,17 +88,36 @@ yapılmış**. Ölçümle test edeceğim kalan şüpheliler:
 | S4 | Bellek: efekt/floating-text birikimi | `queue_free` edilmeyen düğüm? | PERFMEM ile ölç |
 | S5 | Chunk yeniden inşa | Kazı/yapı sonrası tüm chunk mı? | `chunk_ms` + tek-chunk kuralı |
 
-### 1b. ÖLÇÜLEN BASELINE (CI probe — `performans` @ ilk instrumentasyon)
+### 1b. ÖLÇÜLEN BASELINE (CI probe — `performans`)
 
-> Doldurulacak: ilk CI koşusundan `PERFBASE/PERFLIGHT/PERFWAVE/PERFMEM`.
+> **Metodoloji uyarısı (tekrar):** CI **yazılım GL** (llvmpipe). `frame_ms`
+> burada ~590 ms çıkıyor çünkü GPU yok — bu **gerçek telefon değil**, sadece
+> CI ortamının hızı. Anlamlı olan **renderer-bağımsız yapısal sayaçlar**:
+> `draw`, `üçgen`, `nesne`, `aktif ışık`, `nodes`. Gerçek FPS'i telefonda
+> overlay ile ölçeceğiz (§0, §5).
 
-| Senaryo | frame_ms (ort) | peak_ms | draw | üçgen | aktif ışık | yaratık | nodes | mem_mb |
+İlk koşu (kalite=orta) — **kendini teşhis eden** probe (flush'lı yazım):
+
+| Senaryo | draw | üçgen | nesne | aktif ışık | yaratık | nodes | mem_mb | (frame_ms*) |
 |---|---|---|---|---|---|---|---|---|
-| A boş | _(bekliyor)_ | | | | | 0 | | |
-| B yoğun ışık | _(bekliyor)_ | | | | | 0 | | |
-| D dalga (max yaratık) | _(bekliyor)_ | | | | | | | |
+| A boş | **282** | **4.337.816** | 326 | 2 | 0 | 1265 | 67.3 | ~588 |
+| B yoğun ışık | **282** | — | — | **8** (10 üretildi) | 0 | — | — | ~605 |
+| D dalga (max yaratık) | _(re-run)_ | | | | 12 | | | |
 
-Bellek (PERFMEM): _(bekliyor)_ · Işık bütçesi doğrulaması: _(bekliyor)_
+- **Işık bütçesi DOĞRULANDI ✓:** B senaryosunda bütçenin üzerinde (10) meşale
+  üretildi; aktif ışık **8'de kapandı** (`butce_ok=true`) ve `draw` değişmedi
+  (282→282). "İşık bütçesi kuralı gerçekten çalışıyor mu?" → **evet.**
+- **Draw call zaten düşük (282)** — MultiMesh mimarisi işe yarıyor. 326 nesne
+  yalnız 282 çizim çağrısı. Meşale eklemek draw'ı artırmadı (bütçe + gölgesiz).
+- `chunk_ms≈10.845` (yazılım GL'de terrain build 10.8 sn) — CI'a özgü; gerçek
+  cihazda ~ms mertebesi. Yine de tek seferlik (yeniden inşa seyrek).
+- **PERFWAVE/PERFMEM:** ilk koşuda probe **180 sn timeout'a takıldı** (yazılım
+  GL'de ~0.6 sn/kare × 140 örnekleme karesi harness'i aştı). Örnekleme kare
+  sayısı düşürüldü (30→5, 8→2 ısınma, bellek 20→5 tur); D + bellek sonuçları
+  bir sonraki koşuda gelecek. **Sayaçlar kareler arası sabit olduğu için 5
+  örnek yeterli** — yapısal baseline (A/B) zaten kesin.
+
+\* `frame_ms` sadece CI-içi görecelidir; gerçek cihaz FPS'i için değil.
 
 ---
 
