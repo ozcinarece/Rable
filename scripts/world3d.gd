@@ -25,6 +25,7 @@ const StructureManager = preload("res://scripts/structure_manager.gd")
 const EngBalance = preload("res://scripts/engineering_balance.gd")
 const CreatureScript = preload("res://scripts/creature.gd")
 const CreatureBalance = preload("res://scripts/creature_balance.gd")
+const SurvivalBalance = preload("res://scripts/survival_balance.gd")  # ev dogus bonusu
 const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const ChestStore = preload("res://scripts/inventory.gd")  # 14.1 sandik deposu
@@ -252,6 +253,11 @@ var _roof_fade_anchor := Vector2i(-9999, -9999)  # fade'i tetikleyen son oyuncu 
 # EV/CATI Asama 2: IC MEKAN. Duvar/kapi ile cevrili + catili hucre grubu.
 # Yalnizca yapi degisiminde flood-fill ile hesaplanir (her kare degil).
 var _indoor_cells: Dictionary = {}  # hucre -> true (is_indoor sorgusu)
+# EV/CATI Asama 3: ic mekanin anlami (ev hissi).
+var _home_celebrated := false       # "Bir evin var artik" pill'i tek sefer
+var _player_indoor := false         # oyuncu su an ic mekanda mi (ambiyans)
+var _indoor_ambiance: ColorRect     # sicak/los ic mekan tonu (fade)
+var _home_badges: Dictionary = {}   # hucre -> Label3D ("Ev"/"guvende" rozeti)
 var _chests: Dictionary = {}       # sandik hucresi -> Inventory ornegi (14.1 depo)
 var _move_mode: bool = false       # Tasi butonu: yapiyi geri alma modu
 var _open_chest := Vector2i(-999, -999)
@@ -368,6 +374,7 @@ func _ready() -> void:
 	hud.quality_changed.connect(_on_quality_changed)
 	_build_camera_ui()
 	_build_perf_overlay()
+	_build_indoor_ambiance()  # EV/CATI Asama 3: ic mekan sicak tonu
 	_load_quality()
 	apply_quality(_quality_tier)
 	# kayit-sistemi: SaveManager bu sahneyi (dünya durumu) kaydeder/yükler.
@@ -663,6 +670,14 @@ func _run_ev_cati_selftest() -> void:
 	var sealed := is_indoor(c)
 	var cost_in := CreatureBalance.traverse_cost(1, is_indoor(c))
 	var cost_out := CreatureBalance.traverse_cost(1, false)
+	# Asama 3: yatak ic mekandayken dogus bonusu verilir
+	var saved_bed := _home_bed
+	_home_bed = c
+	var bonus_in := home_spawn_bonus()
+	_home_bed = Vector2i(999, 999)  # disarida
+	var bonus_out := home_spawn_bonus()
+	_home_bed = saved_bed
+	var bonus_ok := bonus_in == SurvivalBalance.HOME_INDOOR_RESPAWN_BONUS and bonus_out == 0.0
 	# Bir duvari ac -> muhur bozulur (ic mekan biter), catilar zincirle ayakta
 	_release_structure_cell(walls[0])
 	var opened := is_indoor(c)
@@ -672,10 +687,10 @@ func _run_ev_cati_selftest() -> void:
 		_release_structure_cell(walls[i])
 	var roofs_all := _roofs.size()
 	var cost_ok := cost_in == cost_out + CreatureBalance.INDOOR_COST_PENALTY
-	print("EVCATITEST: muhurlu=%s acildi=%s zincir=%d hepsi_coktu=%s maliyet(%d/%d)_ok=%s ok=%s" % [
+	print("EVCATITEST: muhurlu=%s acildi=%s zincir=%d hepsi_coktu=%s maliyet(%d/%d)_ok=%s bonus_ok=%s ok=%s" % [
 		str(sealed), str(opened), roofs_chain, str(roofs_all == 0),
-		cost_in, cost_out, str(cost_ok),
-		str(sealed == true and opened == false and roofs_all == 0 and cost_ok)])
+		cost_in, cost_out, str(cost_ok), str(bonus_ok),
+		str(sealed == true and opened == false and roofs_all == 0 and cost_ok and bonus_ok)])
 	# Temizlik
 	for cc in ([c] + walls):
 		if _roofs.has(cc):
@@ -1213,6 +1228,8 @@ func _process(delta: float) -> void:
 	# degisince yeniden hesaplanir — kare basi flood yok)
 	if not _roofs.is_empty():
 		_update_roof_fade()
+	# Asama 3: ic mekan sicak ambiyansi (ucuz sozluk sorgusu; degisimde tween)
+	_update_indoor_ambiance()
 	if not _projectiles.is_empty():
 		_tick_projectiles(delta)
 	if _aiming:
@@ -3585,6 +3602,10 @@ func _set_placed(cell: Vector2i, item_id: String, rot: int = 0) -> void:
 	# tazele (yukleme sirasinda toplu, sonda bir kez).
 	if not _loading and _roofs.size() > 0 and (behavior == "wall" or behavior == "door"):
 		_recompute_indoor()
+	# Asama 3: ic mekana yatak/sandik konunca rozet aninda gorunsun (enclosure
+	# degismedigi icin _recompute_indoor tetiklenmez)
+	elif not _loading and (item_id == "yatak" or item_id == "sandik"):
+		_refresh_home_badges()
 
 ## Bir yapinin olcekli 3D gorselini (holder+bundle) origin'de kurar; konum/
 ## donme cagirana kalir. Hem yerlestirme hem hayalet onizleme kullanir.
@@ -3985,6 +4006,13 @@ func _clear_roofs() -> void:
 	_roof_structures.clear()
 	_faded_roof_cells.clear()
 	_roof_fade_anchor = Vector2i(-9999, -9999)
+	# Asama 3: ev durumu (rozetler placed_nodes ile birlikte free edilir)
+	_indoor_cells.clear()
+	_home_badges.clear()
+	_home_celebrated = false
+	_player_indoor = false
+	if _indoor_ambiance != null:
+		_indoor_ambiance.color.a = 0.0
 
 ## Cati sokme (Tasi modu / geri al): %100 iade.
 func _remove_roof(cell: Vector2i) -> void:
@@ -4096,6 +4124,78 @@ func _recompute_indoor() -> void:
 		if not touches_border and all_roofed and region.size() <= INDOOR_MAX:
 			for c in region:
 				_indoor_cells[c] = true
+	# Asama 3: ilk kez ic mekan olustuysa tek seferlik kutlama + rozetleri tazele
+	if not _indoor_cells.is_empty() and not _home_celebrated and not _loading:
+		_home_celebrated = true
+		if hud != null and hud.has_method("flash_home_pill"):
+			hud.flash_home_pill("Bir evin var artık")
+	_refresh_home_badges()
+
+# --- EV/CATI Asama 3: ic mekanin anlami (ev hissi) --------------------------
+
+## Doguşta ev bonusu: aktif yatak (dogus noktasi) ic mekandaysa ekstra can+tokluk.
+## player_stats._die() bunu cagirir (RESPAWN sonrasi eklenir).
+func home_spawn_bonus() -> float:
+	if _home_bed != Vector2i(-999, -999) and is_indoor(_home_bed):
+		return SurvivalBalance.HOME_INDOOR_RESPAWN_BONUS
+	return 0.0
+
+## Ic mekan ambiyansi: oyuncu icerideyken hafif sicak/los ton (0.3sn fade).
+## Gece mesale/Ocak isigiyla birlesince "yuva" hissi. CanvasLayer 1 = dunyanin
+## ustunde, HUD'un (layer 3) altinda; girdiyi engellemez.
+func _build_indoor_ambiance() -> void:
+	var canvas := CanvasLayer.new()
+	canvas.layer = 1
+	add_child(canvas)
+	_indoor_ambiance = ColorRect.new()
+	_indoor_ambiance.color = Color(0.85, 0.55, 0.25, 0.0)  # sicak amber, baslangicta seffaf
+	_indoor_ambiance.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_indoor_ambiance.mouse_filter = Control.MOUSE_FILTER_IGNORE  # tiklamayi ASLA engelleme
+	canvas.add_child(_indoor_ambiance)
+
+## Oyuncunun ic/dis durumu degisince ambiyansi yumusakca ac/kapa (kare basi ucuz
+## sozluk sorgusu; degisim aninda tek tween).
+func _update_indoor_ambiance() -> void:
+	var now := is_indoor(_player_cell())
+	if now == _player_indoor:
+		return
+	_player_indoor = now
+	if _indoor_ambiance != null:
+		var tw := create_tween()
+		tw.tween_property(_indoor_ambiance, "color:a", (0.16 if now else 0.0), 0.3)
+
+## Ic mekandaki yatak/sandik uzerinde kozmetik rozet ("Ev" / "guvende").
+## Yapi degisiminde (_recompute_indoor sonu) tazelenir.
+func _refresh_home_badges() -> void:
+	# Once artik gecersiz olanlari temizle
+	for cell in _home_badges.keys():
+		var still := _placed.has(cell) and is_indoor(cell) \
+				and (_placed[cell] == "yatak" or _placed[cell] == "sandik")
+		if not still:
+			if is_instance_valid(_home_badges[cell]):
+				_home_badges[cell].queue_free()
+			_home_badges.erase(cell)
+	# Ic mekandaki yatak/sandiklara rozet ekle
+	for cell in _placed:
+		var id: String = _placed[cell]
+		if (id != "yatak" and id != "sandik") or not is_indoor(cell):
+			continue
+		if _home_badges.has(cell):
+			continue
+		var node: Node3D = _placed_nodes.get(cell, null)
+		if node == null:
+			continue
+		var badge := Label3D.new()
+		badge.text = "Ev" if id == "yatak" else "güvende"
+		badge.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		badge.no_depth_test = true
+		badge.font_size = 28
+		badge.outline_size = 6
+		badge.pixel_size = 0.004
+		badge.modulate = Color(1.0, 0.9, 0.65)
+		badge.position = Vector3(0, 1.1, 0)
+		node.add_child(badge)
+		_home_badges[cell] = badge
 
 # --- Gorunurluk cozumu: oyuncu catili alana girince cati grubu seffaflasir ---
 
