@@ -22,6 +22,9 @@ const WaterSim = preload("res://scripts/water_sim.gd")
 const ToolProfiles = preload("res://scripts/tool_profiles.gd")
 const HittableDummy = preload("res://scripts/hittable_dummy.gd")
 const StructureManager = preload("res://scripts/structure_manager.gd")
+const EngBalance = preload("res://scripts/engineering_balance.gd")
+const CreatureScript = preload("res://scripts/creature.gd")
+const CreatureBalance = preload("res://scripts/creature_balance.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const ChestStore = preload("res://scripts/inventory.gd")  # 14.1 sandik deposu
@@ -103,6 +106,27 @@ const PLACE_MODELS := {
 	"mesale": {"model": "res://assets/models/tools/campfire-stand.glb",
 			"h": 0.7, "solid": false,
 			"behavior": "torch", "max_hp": 30},
+	# MUHENDISLIK 11.5: merdiven — kazilmis cukura (pit_only) konur, kenara
+	# yaslanir (rotatable = hangi kenar). Cukurdan cikis saglar (can_step).
+	"merdiven": {"model": "ladder", "h": 1.0, "solid": false,
+			"behavior": "ladder", "max_hp": 40,
+			"rotatable": true, "in_pit": true, "pit_only": true},
+	# MUHENDISLIK 11.9: cukur kazigi — kazilmis hucre TABANINA (in_pit +
+	# pit_only). Dusen oyuncuya kucuk hasar; yaratik hapsi/hasari take_hit
+	# kancalariyla hazir (davranis kodu YOK).
+	"kazik": {"model": "spikes", "h": 0.5, "solid": false,
+			"behavior": "spikes", "max_hp": 40,
+			"in_pit": true, "pit_only": true},
+	# MUHENDISLIK 11.8: boru — zemine ya da cukura konur; komsu borularla
+	# otomatik baglanir (gorsel maskeden turer). Su aktarim grafi.
+	"boru": {"model": "pipe", "h": 0.3, "solid": false,
+			"behavior": "pipe", "max_hp": 40, "in_pit": true},
+	# 11.8 pompa: hatta yukari akis saglar (yukseklik kuralini asar).
+	"pompa": {"model": "pump", "h": 0.6, "solid": false,
+			"behavior": "pump", "max_hp": 60, "in_pit": true},
+	# 11.8 vana: hatta ac/kapa; kapaliyken transfer durur.
+	"vana": {"model": "valve", "h": 0.5, "solid": false,
+			"behavior": "valve", "max_hp": 40, "in_pit": true},
 }
 
 const REGROW_SECONDS := 60.0
@@ -217,6 +241,7 @@ var _platform_cells: Dictionary = {}     # 14.4 platform hucresi -> true (yuksek
 var _ground_items: Array = []      # yere birakilanlar [{cell,id,count,node}]
 # ALET SISTEMI (Bolum 12)
 var _dummies: Dictionary = {}      # test kuklalari: hucre -> {node, hp, ...}
+var _creatures: Array = []         # BÖLÜM 15: aktif yaratik ornekleri (creature.gd)
 # YAPI YERLESTIRME MODU (13.2)
 var _place_mode: bool = false
 var _place_item: String = ""
@@ -570,8 +595,122 @@ func _setup_screenshot(save_path: String) -> void:
 	await _run_base_selftest(save_path)  # BASE (Bolum 14): sandik/yatak/ocak/platform
 	await _run_survival_selftest(save_path)  # YASAM: can/aclik/yeme/pisirme/olum
 	_run_time_selftest()  # gunduz/gece: faz + uyku kurali
+	_run_muhendislik_selftest()  # MUHENDISLIK: merdiven tirmanma kurali
+	_run_creature_selftest()     # YARATIK: varlik + take_hit + oz + melee
 	_run_save_load_selftest()
 	get_tree().quit()
+
+## YARATIK self-test (Asama 1): spawn -> take_hit hasar -> melee _apply_hitbox
+## yaratiga ulasir -> oldur -> oz duser. Tum silahlar ayni take_hit'i kullanir.
+func _run_creature_selftest() -> void:
+	_clear_creatures()
+	var cc := Vector2i(52, 52)
+	var cr = spawn_creature(cc, "normal")
+	var hp0: int = cr.hp
+	cr.take_hit(3, Vector3.FORWARD)
+	var dmg_ok: bool = cr.hp == hp0 - 3
+	# Melee _apply_hitbox yaratiga ulasiyor mu? (oyuncuyu yaratiga baktir)
+	var pc := _player_cell()
+	player.facing = Vector2(0, 1)
+	cr.position = _cell_center(pc + Vector2i(0, 1))
+	_held_item = "kilic"
+	var before2: int = cr.hp
+	_apply_hitbox(pc + Vector2i(0, 1))
+	var melee_ok: bool = cr.hp < before2
+	# Oldur -> oz duser
+	var kill_cell: Vector2i = cr.cell()
+	cr.take_hit(cr.hp, Vector3.FORWARD)
+	var dead_ok: bool = not cr.is_alive()
+	var essence_ok: bool = _ground_item_at(kill_cell) != -1
+	# Temizle (dusen oz item + yaratiklar; SAVELOAD'a temiz birak)
+	var gi := _ground_item_at(kill_cell)
+	if gi != -1:
+		var gn = _ground_items[gi].get("node")
+		if gn != null and is_instance_valid(gn):
+			gn.queue_free()
+		_ground_items.remove_at(gi)
+	_clear_creatures()
+	_held_item = ""
+	print("CREATURETEST: hasar=%s melee=%s oldu=%s oz_dustu=%s ok=%s" % [
+		str(dmg_ok), str(melee_ok), str(dead_ok), str(essence_ok),
+		str(dmg_ok and melee_ok and dead_ok and essence_ok)])
+
+## MUHENDISLIK self-test — Asama 1 merdiven (11.5): derin cukurdan (depth>=3)
+## merdivensiz cikilamaz; sig cukur (1-2) serbest; merdiven konunca cikilir.
+func _run_muhendislik_selftest() -> void:
+	var deep := Vector2i(40, 40)
+	var shallow := Vector2i(41, 40)
+	var out := Vector2i(40, 41)
+	_depth[deep] = 3
+	_depth[shallow] = 1
+	# depth 3 cukurdan cikis (out depth 0) merdivensiz KAPALI
+	var no_ladder := can_step(deep, out)
+	# sig cukur (depth 1) -> serbest
+	var shallow_free := can_step(shallow, out)
+	# merdiveni cukura koy -> cikis ACIK
+	_placed[deep] = "merdiven"
+	var with_ladder := can_step(deep, out)
+	_placed.erase(deep)
+	_depth.erase(deep); _depth.erase(shallow)
+	print("LADDERTEST: derin_merdivensiz=%s sig_serbest=%s merdivenli=%s ok=%s" % [
+		str(no_ladder), str(shallow_free), str(with_ladder),
+		str(no_ladder == false and shallow_free == true and with_ladder == true)])
+	# 11.9 kazik: kazikli cukura giren oyuncu bir kez hasar alir + hook.
+	var spit := Vector2i(43, 40)
+	_depth[spit] = 2
+	_placed[spit] = "kazik"
+	var hook_dmg := spike_damage(spit)
+	Health.value = 100.0
+	var saved_pos: Vector3 = player.position
+	player.position = _cell_center(spit)
+	_last_spike_cell = Vector2i(-999, -999)
+	_tick_spike_hit()
+	var after := Health.value
+	player.position = saved_pos
+	_placed.erase(spit); _depth.erase(spit)
+	Health.value = 100.0; Health.changed.emit()
+	print("SPIKETEST: hook_hasar=%d can100->%.0f hook_ok=%s hasar_ok=%s" % [
+		hook_dmg, after, str(hook_dmg == EngBalance.SPIKE_FALL_DAMAGE),
+		str(after < 100.0)])
+	# 11.8 boru: DOWN transfer akar; UP (yukari) pompasiz akmaz (yukseklik).
+	var down_ok := _pipe_scenario(1, 3)          # kaynak yuksek -> hedef alcak
+	var up_blocked := not _pipe_scenario(3, 1)   # kaynak alcak -> hedef yuksek
+	print("PIPETEST: down_akar=%s up_engel=%s ok=%s" % [
+		str(down_ok), str(up_blocked), str(down_ok and up_blocked)])
+	# 11.8 pompa: yukari akitir (yukseklik kuralini asar).
+	var pump_up := _pipe_scenario(3, 1, true)
+	# 11.8 vana: kapali durdurur, acik gecirir (down hatta).
+	var valve_closed := not _pipe_scenario(1, 3, false, 0)
+	var valve_open := _pipe_scenario(1, 3, false, 1)
+	print("PUMPTEST: pompa_yukari=%s ok=%s" % [str(pump_up), str(pump_up)])
+	print("VALVETEST: kapali_durur=%s acik_gecirir=%s ok=%s" % [
+		str(valve_closed), str(valve_open), str(valve_closed and valve_open)])
+	# 11.7 sulama: boruyla dolan havuz bitisik tarlayi sular (has_adjacent_water).
+	var wc := Vector2i(48, 48)
+	_depth[wc] = 2
+	_water_level[wc] = 2.0
+	_recompute_water()
+	var irrig := has_adjacent_water(Vector2i(49, 48))
+	_depth.erase(wc); _water_level.erase(wc); _recompute_water()
+	print("IRRIGTEST: dolu_havuz_komsu_sulanir=%s" % str(irrig))
+	# Kayit: muhendislik yapilari + vana durumu _structures ile round-trip.
+	var vc := Vector2i(45, 45)
+	_structures.place(vc, "vana", 0, 40); _structures.set_open(vc, false)
+	_structures.place(Vector2i(46, 45), "merdiven", 90, 40)
+	_structures.place(Vector2i(47, 45), "kazik", 0, 40)
+	var sd := _structures.to_save_data()
+	var sm2 = StructureManager.new()
+	sm2.from_save_data(sd)
+	var valve_ok: bool = String(sm2.get_inst(vc).get("id", "")) == "vana" \
+			and sm2.is_open(vc) == false
+	var lad_ok: bool = String(sm2.get_inst(Vector2i(46, 45)).get("id", "")) == "merdiven"
+	var spk_ok: bool = String(sm2.get_inst(Vector2i(47, 45)).get("id", "")) == "kazik"
+	_structures.remove(vc)
+	_structures.remove(Vector2i(46, 45))
+	_structures.remove(Vector2i(47, 45))
+	print("SAVEMUH: vana_kapali=%s merdiven=%s kazik=%s ok=%s" % [
+		str(valve_ok), str(lad_ok), str(spk_ok),
+		str(valve_ok and lad_ok and spk_ok)])
 
 ## gunduz/gece self-test: faz/gün-oranı + uyku kuralı (ilk 3 gece).
 func _run_time_selftest() -> void:
@@ -1001,6 +1140,8 @@ func _process(delta: float) -> void:
 	_update_daylight()  # gunduz/gece: güneş/gökyüzü/ambient eğrisi (yumuşak)
 	# YASAM: kosma/alet eforu -> aclik daha hizli azalir (PlayerStats okur)
 	PlayerStats.exerting = player.is_exerting()
+	_tick_spike_hit()  # 11.9: kazikli cukura giren oyuncuya bir kez hasar
+	_tick_water_network(delta)  # 11.8: boru agi mantiksal su transferi
 	if not _ground_items.is_empty():
 		_tick_ground_items(delta)  # #1: suzulme + donme
 	_station_timer += delta
@@ -1031,6 +1172,52 @@ func is_walkable(cell: Vector2i) -> bool:
 	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
 		return false
 	return not _solid_cells.has(cell)
+
+## 11.5 MERDIVEN KURALI: from->to adimina izin var mi? Derin cukurdan
+## (depth >= LADDER_DEEP_MIN) daha sig bir hucreye CIKMAK ancak merdiven
+## erisimi varsa mumkun (1-2 serbest). player3d._try_move buraya danisir.
+func can_step(from: Vector2i, to: Vector2i) -> bool:
+	var df := int(_depth.get(from, 0))
+	var dt := int(_depth.get(to, 0))
+	if df >= EngBalance.LADDER_DEEP_MIN and dt < df:
+		return _has_ladder_access(from)
+	return true
+
+func _is_ladder(cell: Vector2i) -> bool:
+	return _placed.get(cell, "") == "merdiven"
+
+## Merdiven bu hucrede mi (veya izinliyse 4-komsusunda mi)?
+func _has_ladder_access(cell: Vector2i) -> bool:
+	if _is_ladder(cell):
+		return true
+	if EngBalance.LADDER_ADJACENT_OK:
+		for n: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0),
+				Vector2i(0, 1), Vector2i(0, -1)]:
+			if _is_ladder(cell + n):
+				return true
+	return false
+
+# --- 11.9 Cukur kazigi --------------------------------------------------
+func _is_spikes(cell: Vector2i) -> bool:
+	return _placed.get(cell, "") == "kazik"
+
+## Yaratik kancasi (B kismi): bu hucredeki kazigin verdigi hasar. Yaratik
+## sistemi dusen/hapsolan yaratiga bunu uygulayacak — davranis kodu YOK.
+func spike_damage(cell: Vector2i) -> int:
+	return EngBalance.SPIKE_FALL_DAMAGE if _is_spikes(cell) else 0
+
+## Oyuncu kazikli hucreye girince BIR KEZ hasar; cikinca sifirlanir.
+var _last_spike_cell := Vector2i(-999, -999)
+func _tick_spike_hit() -> void:
+	var pc := _player_cell()
+	if _is_spikes(pc):
+		if pc != _last_spike_cell:
+			_last_spike_cell = pc
+			Health.damage(float(EngBalance.SPIKE_FALL_DAMAGE))
+			_spawn_floating_text(pc, "-%d" % EngBalance.SPIKE_FALL_DAMAGE,
+					Color(1, 0.5, 0.4))
+	else:
+		_last_spike_cell = Vector2i(-999, -999)
 
 # --- Kamera -------------------------------------------------------------
 
@@ -1324,6 +1511,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			Research.debug_print_state()
 		elif event.keycode == KEY_F10:
 			Research.debug_research("stone_tools")
+		# BÖLÜM 15 debug: K = onunde bir yaratik spawn et (elle test)
+		elif event.keycode == KEY_K:
+			var fo := Vector2i(player.facing.round())
+			if fo == Vector2i.ZERO:
+				fo = Vector2i(0, 1)
+			spawn_creature(_player_cell() + fo * 2, "normal")
 		# YAPI YERLESTIRME klavye testi (13.2): R dondur, Esc iptal
 		elif _place_mode and event.keycode == KEY_R:
 			_place_rotate()
@@ -2689,6 +2882,9 @@ func _on_world_tapped(screen_pos: Vector2) -> void:
 		"yatak":
 			_use_bed(cell)
 			return
+		"vana":
+			_toggle_valve(cell)
+			return
 	# Yere birakilmis esya varsa topla
 	if _try_pickup_ground(cell):
 		return
@@ -2897,6 +3093,155 @@ func take_water(cell: Vector2i, amount: float) -> float:
 	_dirty = true
 	return taken
 
+# --- Boru agi (11.8): mantiksal su transferi -------------------------------
+# Su FIZIKSEL akmaz; bagli+aktif hatta NET_TICK_SECONDS'ta bir kaynaktan
+# hedefe hacim tasinir (mevcut add_water/take_water kapilari). Yukseklik
+# kurali: kaynak yuksekligi >= hedef; yukari tasima POMPA ister (Asama 4).
+var _net_timer := 0.0
+
+func _tick_water_network(delta: float) -> void:
+	if not _has_any_pipe():
+		return
+	_net_timer += delta
+	if _net_timer < EngBalance.NET_TICK_SECONDS:
+		return
+	var amount := EngBalance.PIPE_TRANSFER_PER_SEC * _net_timer
+	_net_timer = 0.0
+	for comp in _pipe_components():
+		_transfer_in_component(comp, amount)
+
+func _has_any_pipe() -> bool:
+	for c in _placed:
+		if _is_pipe_like(c):
+			return true
+	return false
+
+## Bagli boru/pompa/vana hucrelerinin flood-fill bilesenleri.
+func _pipe_components() -> Array:
+	var seen: Dictionary = {}
+	var comps: Array = []
+	for c: Vector2i in _placed.keys():
+		if not _is_pipe_like(c) or seen.has(c):
+			continue
+		var stack: Array = [c]
+		seen[c] = true
+		var cells: Array = []
+		while not stack.is_empty():
+			var x: Vector2i = stack.pop_back()
+			cells.append(x)
+			for n in _PIPE_DIRS:
+				var nc: Vector2i = x + n
+				if _is_pipe_like(nc) and not seen.has(nc):
+					seen[nc] = true
+					stack.append(nc)
+		comps.append(cells)
+	return comps
+
+## Hucre "yuksekligi": su ancak asagi/ayni seviyeye akar (buyuk = yuksek).
+func _cell_elevation(cell: Vector2i) -> float:
+	if is_water_source(cell):
+		return float(GROUND_DEFS["~"]["top"])
+	return -float(int(_depth.get(cell, 0))) * DigRules.DEPTH_STEP
+
+## Bir bilesende TEK transfer: en yuksek kaynaktan uygun (daha alcak/esit)
+## hedefe. Bilesende POMPA varsa yukseklik kurali asilir (yukari akar); KAPALI
+## VANA varsa hattan transfer durur.
+func _transfer_in_component(cells: Array, amount: float) -> void:
+	# 11.8 vana: bilesende kapali vana varsa transfer durur.
+	for c: Vector2i in cells:
+		if _placed.get(c, "") == "vana" and not _structures.is_open(c):
+			return
+	# 11.8 pompa: bilesende pompa varsa yukari akis serbest.
+	var has_pump := false
+	for c: Vector2i in cells:
+		if _placed.get(c, "") == "pompa":
+			has_pump = true
+			break
+	# En yuksek kaynagi bul (gol veya dolu havuz, bir boruya komsu).
+	var src_cell := Vector2i(-999, -999)
+	var src_elev := -999.0
+	var src_pool := -3
+	for pc: Vector2i in cells:
+		for n in _PIPE_DIRS:
+			var wc: Vector2i = pc + n
+			if is_water_source(wc) or float(_water_level.get(wc, 0.0)) > 0.01:
+				var e := _cell_elevation(wc)
+				if e > src_elev:
+					src_elev = e
+					src_cell = wc
+					src_pool = pool_at(wc)
+	if src_cell.x == -999:
+		return
+	# Hedef: bilesene komsu, bos kapasiteli KAZILMIS havuz (kaynaktan farkli).
+	for pc: Vector2i in cells:
+		for n in _PIPE_DIRS:
+			var tc: Vector2i = pc + n
+			if int(_depth.get(tc, 0)) < 1:
+				continue
+			var tpool := pool_at(tc)
+			if tpool < 0 or tpool == src_pool:
+				continue
+			if float(_pools[tpool]["volume"]) >= float(_pools[tpool]["capacity"]) - 0.001:
+				continue
+			if src_elev >= _cell_elevation(tc) or has_pump:
+				var taken := take_water(src_cell, amount)
+				if taken > 0.0:
+					add_water(tc, taken)
+					# Asama 5 cila: akis varken hedefte minik su parildamasi.
+					_spawn_particles(_cell_center(tc) + Vector3(0, 0.25, 0),
+							Color(0.45, 0.65, 0.92), 3)
+				return  # bilesen basina tik'te tek transfer
+
+## 11.8 Vana ac/kapa: dokununca cevrilir. El carki 45° doner (gorsel ipucu)
+## + gicirti ses KANCASI (mevcut ses; ozel gicirti TODO). Kapali = transfer dur.
+func _toggle_valve(cell: Vector2i) -> void:
+	if _placed.get(cell, "") != "vana":
+		return
+	var now := not _structures.is_open(cell)
+	_structures.set_open(cell, now)
+	_refresh_pipe_visual(cell)
+	_play_sfx("place")  # gicirti ses kancasi (ozel ses ileride)
+	_spawn_floating_text(cell, "Vana açık" if now else "Vana kapalı",
+			Color(0.85, 0.95, 0.7))
+	_dirty = true
+
+func _pool_volume_at(cell: Vector2i) -> float:
+	var pi := pool_at(cell)
+	return float(_pools[pi]["volume"]) if pi >= 0 else 0.0
+
+## CI: kaynak(src_depth) havuzu doldur, hedef(tgt_depth) havuza boruyla bagla,
+## bir transfer tik'i calistir; hedef su kazandi mi? (temizler)
+func _pipe_scenario(src_depth: int, tgt_depth: int, with_pump: bool = false,
+		valve_state: int = -1) -> bool:
+	var a := Vector2i(30, 30)
+	var b := Vector2i(30, 34)
+	var mid := Vector2i(30, 32)
+	var pipes := [Vector2i(30, 31), mid, Vector2i(30, 33)]
+	_depth[a] = src_depth
+	_depth[b] = tgt_depth
+	for p: Vector2i in pipes:
+		_placed[p] = "boru"
+	if with_pump:
+		_placed[mid] = "pompa"
+	if valve_state >= 0:
+		_placed[mid] = "vana"
+		_structures.place(mid, "vana", 0, 40)
+		_structures.set_open(mid, valve_state == 1)
+	_water_level[a] = float(src_depth)
+	_recompute_water()
+	var before := _pool_volume_at(b)
+	for comp in _pipe_components():
+		_transfer_in_component(comp, 5.0)
+	var after := _pool_volume_at(b)
+	_depth.erase(a); _depth.erase(b)
+	for p: Vector2i in pipes:
+		_placed.erase(p)
+	_placed.erase(mid)
+	_structures.remove(mid)
+	_water_level.erase(a); _water_level.erase(b)
+	_recompute_water()
+	return after > before + 0.01
+
 # --- Su gorseli (11.2): havuz basina TEK duz yuzey --------------------------
 # Golun sakin su shader'iyla AYNI dil (COLOR.r = yerel derinlik: sig/derin
 # rengi + kiyi kopugu bedavaya gelir). Havuzlar kucuk oldugundan yuzey her
@@ -3071,6 +3416,11 @@ func _set_placed(cell: Vector2i, item_id: String, rot: int = 0) -> void:
 		_platform_cells[cell] = true     # 14.4 uzerine cikilir (yukseklik)
 	elif behavior == "bed" and not _loading:
 		set_spawn(cell)                  # 14.2 son yatak = aktif dogus noktasi
+	elif behavior in ["pipe", "pump", "valve"]:
+		# 11.8: komsu borularla otomatik baglan (kendi + komsu gorselleri).
+		# Vana varsayilan durumu place()'te open=false (= VALVE_DEFAULT_OPEN);
+		# kayittan gelen durum korunur (_structures.has ile place atlanir).
+		_refresh_pipe_neighborhood(cell)
 
 ## Bir yapinin olcekli 3D gorselini (holder+bundle) origin'de kurar; konum/
 ## donme cagirana kalir. Hem yerlestirme hem hayalet onizleme kullanir.
@@ -3080,6 +3430,16 @@ func _build_structure_visual(item_id: String) -> Node3D:
 	# ground_height ile eslesir; oyuncu deck ustunde durur.
 	if item_id == "platform":
 		return _build_platform_visual()
+	if item_id == "merdiven":
+		return _build_ladder_visual()
+	if item_id == "kazik":
+		return _build_spikes_visual()
+	if item_id == "boru":
+		return _build_pipe_visual(15)  # hayalet: tam hac (gercek maske yerlesince)
+	if item_id == "pompa":
+		return _build_pump_visual(15)
+	if item_id == "vana":
+		return _build_valve_visual(15, false)
 	var holder := Node3D.new()
 	var bundle := Node3D.new()
 	holder.add_child(bundle)
@@ -3133,6 +3493,153 @@ func _build_platform_visual() -> Node3D:
 		holder.add_child(step)
 	return holder
 
+## 11.5 Merdiven: cukur tabanindan yukselen iki ray + basamaklar (prosedurel).
+## +z kenara yaslanir; holder rotasyonu hangi kenar oldugunu secer.
+func _build_ladder_visual() -> Node3D:
+	var holder := Node3D.new()
+	var wood := Color(0.60, 0.42, 0.24)
+	var woodd := Color(0.45, 0.31, 0.18)
+	var top := 1.3
+	var zedge := 0.36
+	for sx in [-1, 1]:
+		var rail := MeshInstance3D.new()
+		var rm := BoxMesh.new(); rm.size = Vector3(0.08, top, 0.08)
+		rail.mesh = rm
+		rail.position = Vector3(sx * 0.18, top * 0.5, zedge)
+		rail.material_override = _flat_mat(wood)
+		holder.add_child(rail)
+	var y := 0.16
+	while y < top:
+		var rung := MeshInstance3D.new()
+		var gm := BoxMesh.new(); gm.size = Vector3(0.44, 0.06, 0.06)
+		rung.mesh = gm
+		rung.position = Vector3(0, y, zedge)
+		rung.material_override = _flat_mat(woodd)
+		holder.add_child(rung)
+		y += 0.22
+	return holder
+
+## 11.9 Cukur kazigi: cukur tabanindan yukselen sivri koniler (prosedurel).
+func _build_spikes_visual() -> Node3D:
+	var holder := Node3D.new()
+	var steel := Color(0.55, 0.57, 0.62)
+	var h: float = EngBalance.SPIKE_VISUAL_HEIGHT
+	for sx in [-0.25, 0.05, 0.28]:
+		for sz in [-0.22, 0.18]:
+			var spike := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = 0.0
+			cm.bottom_radius = 0.08
+			cm.height = h
+			cm.radial_segments = 5
+			spike.mesh = cm
+			spike.position = Vector3(sx, h * 0.5, sz)
+			spike.material_override = _flat_mat(steel)
+			holder.add_child(spike)
+	return holder
+
+## 11.8 Boru gorseli: merkez kup + acik yonlere kollar (maskeden turer;
+## duz/dirsek/T/hac otomatik cikar). bit: 1=+x 2=-x 4=+z 8=-z.
+const _PIPE_DIRS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+const _PIPE_BITS := [1, 2, 4, 8]
+
+func _build_pipe_visual(mask: int) -> Node3D:
+	var holder := Node3D.new()
+	var col := Color(0.47, 0.59, 0.69)
+	var y := 0.17
+	var hub := MeshInstance3D.new()
+	var hm := BoxMesh.new(); hm.size = Vector3(0.22, 0.22, 0.22)
+	hub.mesh = hm; hub.position = Vector3(0, y, 0)
+	hub.material_override = _flat_mat(col)
+	holder.add_child(hub)
+	var arms := [
+		[1, Vector3(0.31, y, 0), Vector3(0.4, 0.15, 0.15)],
+		[2, Vector3(-0.31, y, 0), Vector3(0.4, 0.15, 0.15)],
+		[4, Vector3(0, y, 0.31), Vector3(0.15, 0.15, 0.4)],
+		[8, Vector3(0, y, -0.31), Vector3(0.15, 0.15, 0.4)]]
+	for a in arms:
+		if mask & int(a[0]):
+			var arm := MeshInstance3D.new()
+			var am := BoxMesh.new(); am.size = a[2]
+			arm.mesh = am; arm.position = a[1]
+			arm.material_override = _flat_mat(col)
+			holder.add_child(arm)
+	return holder
+
+## Boru agi elemani mi? (boru/pompa/vana — hepsi hatta baglanir)
+func _is_pipe_like(cell: Vector2i) -> bool:
+	return _placed.get(cell, "") in ["boru", "pompa", "vana"]
+
+func _pipe_mask(cell: Vector2i) -> int:
+	var m := 0
+	for i in 4:
+		if _is_pipe_like(cell + _PIPE_DIRS[i]):
+			m |= _PIPE_BITS[i]
+	return m
+
+## Boru/pompa/vana gorselini komsuluk maskesine gore YENIDEN kurar.
+func _refresh_pipe_visual(cell: Vector2i) -> void:
+	if not _is_pipe_like(cell):
+		return
+	var old: Node3D = _placed_nodes.get(cell, null)
+	if old != null and is_instance_valid(old):
+		old.queue_free()
+	var id: String = _placed[cell]
+	var node: Node3D
+	if id == "pompa":
+		node = _build_pump_visual(_pipe_mask(cell))
+	elif id == "vana":
+		node = _build_valve_visual(_pipe_mask(cell), _structures.is_open(cell))
+	else:
+		node = _build_pipe_visual(_pipe_mask(cell))
+	node.position = _cell_center(cell)
+	add_child(node)
+	_placed_nodes[cell] = node
+
+func _refresh_pipe_neighborhood(cell: Vector2i) -> void:
+	_refresh_pipe_visual(cell)
+	for n in _PIPE_DIRS:
+		_refresh_pipe_visual(cell + n)
+
+## 11.8 Pompa gorseli: boru maskesi + turkuaz govde + kol.
+func _build_pump_visual(mask: int) -> Node3D:
+	var holder := _build_pipe_visual(mask)
+	var teal := Color(0.35, 0.72, 0.72)
+	var body := MeshInstance3D.new()
+	var bm := BoxMesh.new(); bm.size = Vector3(0.3, 0.4, 0.3)
+	body.mesh = bm; body.position = Vector3(0, 0.44, 0)
+	body.material_override = _flat_mat(teal)
+	holder.add_child(body)
+	var lever := MeshInstance3D.new()
+	var lm := BoxMesh.new(); lm.size = Vector3(0.36, 0.06, 0.06)
+	lever.mesh = lm; lever.position = Vector3(0, 0.66, 0)
+	lever.material_override = _flat_mat(Color(0.28, 0.5, 0.5))
+	holder.add_child(lever)
+	return holder
+
+## 11.8 Vana gorseli: boru maskesi + kirmizi el carki (acikken 45° cevrik).
+func _build_valve_visual(mask: int, open: bool) -> Node3D:
+	var holder := _build_pipe_visual(mask)
+	var red := Color(0.82, 0.35, 0.30)
+	var stem := MeshInstance3D.new()
+	var stm := BoxMesh.new(); stm.size = Vector3(0.06, 0.22, 0.06)
+	stem.mesh = stm; stem.position = Vector3(0, 0.28, 0)
+	stem.material_override = _flat_mat(Color(0.5, 0.5, 0.55))
+	holder.add_child(stem)
+	var wheel := Node3D.new()
+	wheel.name = "ValveWheel"
+	wheel.position = Vector3(0, 0.4, 0)
+	for i in 4:
+		var seg := MeshInstance3D.new()
+		var sm := BoxMesh.new(); sm.size = Vector3(0.3, 0.05, 0.05)
+		seg.mesh = sm
+		seg.rotation.y = TAU * float(i) / 4.0
+		seg.material_override = _flat_mat(red)
+		wheel.add_child(seg)
+	wheel.rotation.y = deg_to_rad(45.0) if open else 0.0
+	holder.add_child(wheel)
+	return holder
+
 func _flat_mat(c: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.albedo_color = c
@@ -3172,6 +3679,9 @@ func _release_structure_cell(cell: Vector2i) -> void:
 	if _placed_nodes.has(cell):
 		_placed_nodes[cell].queue_free()
 		_placed_nodes.erase(cell)
+	# 11.8: boru agindan cikan hucre -> komsu boru gorsellerini tazele.
+	for n in _PIPE_DIRS:
+		_refresh_pipe_visual(cell + n)
 
 # --- YAPI YERLESTIRME MODU (YAPI_SISTEMI.md 13.2 + 13.3) -------------------
 const _PLACE_OK := Color(0.42, 0.80, 0.42)
@@ -3250,6 +3760,9 @@ func _place_valid(cell: Vector2i) -> Dictionary:
 	# Kazilmis cukur (depth>=1): trap disi gecersiz; tumsek (depth<0) gecerli
 	if int(_depth.get(cell, 0)) >= 1 and not bool(def.get("in_pit", false)):
 		return {"valid": false, "reason": "çukur"}
+	# 11.5/11.9: pit_only yapilar (merdiven/kazik) YALNIZ kazilmis cukura konur
+	if bool(def.get("pit_only", false)) and int(_depth.get(cell, 0)) < 1:
+		return {"valid": false, "reason": "çukur gerek"}
 	# Zemin turu: cim/toprak/kum uzerine (su/tepe degil)
 	if not (_ground_char.get(cell, "") in [".", "d", "s"]):
 		return {"valid": false, "reason": "zemin"}
@@ -3968,8 +4481,21 @@ func _tick_projectiles(delta: float) -> void:
 		# Ekseni etrafinda hafif donme + ucus yonune bakis
 		node.rotate_object_local(Vector3(0, 1, 0), 12.0 * delta)
 		pr["life"] = float(pr["life"]) - delta
-		# Kukla carpismasi (xz yakinlik + yukseklik araligi)
+		# BÖLÜM 15: yaratik carpismasi (menzilli silahlar da yaratigi vurur)
 		var hit_dummy := false
+		for cr in _creatures:
+			if not is_instance_valid(cr) or not cr.is_alive():
+				continue
+			if Vector2(new_pos.x - cr.position.x, new_pos.z - cr.position.z).length() < 0.5 \
+					and new_pos.y > 0.1 and new_pos.y < 1.4:
+				cr.take_hit(int(pr["damage"]), vel.normalized())
+				_spawn_particles(new_pos, Color(0.95, 0.9, 0.7), 5)
+				hit_dummy = true
+				break
+		if hit_dummy:
+			_land_projectile(pr)
+			continue
+		# Kukla carpismasi (xz yakinlik + yukseklik araligi)
 		for c: Vector2i in _dummies:
 			var dc := _cell_center(c)
 			if Vector2(new_pos.x - dc.x, new_pos.z - dc.z).length() < 0.5 \
@@ -4017,6 +4543,15 @@ func _apply_hitbox(cell: Vector2i) -> void:
 	for r in range(1, reach + 1):
 		scan.append(pc + fo * r)
 	for c: Vector2i in scan:
+		# BÖLÜM 15: yaratik (kukla ile AYNI take_hit) — oncelikli hedef.
+		var cr := _creature_near(c)
+		if cr != null:
+			cr.take_hit(dmg, kdir)
+			_spawn_particles(_cell_center(c) + Vector3(0, 0.5, 0),
+					Color(0.95, 0.9, 0.7), 5)
+			_hit_stop(0.5, 0.05)
+			_play_sfx(String(prof.get("hit_sfx", "")))
+			return
 		var d = _dummies.get(c, null)
 		if d != null and is_instance_valid(d) and d.is_alive():
 			d.take_hit(dmg, kdir)
@@ -4031,6 +4566,45 @@ func _apply_hitbox(cell: Vector2i) -> void:
 			_hit_stop(0.5, 0.05)
 			_play_sfx(String(prof.get("hit_sfx", "")))
 			return
+
+# --- BÖLÜM 15: YARATIK VARLIĞI (Asama 1) ---------------------------------
+## Bir yaratik olusturur (konum + tip + gece can carpani). died -> oz duser.
+## Doner: creature node (debug/test). AI/dalga dis sistemde (Asama 2-3).
+func spawn_creature(cell: Vector2i, ctype: String = "normal",
+		hp_mult: float = 1.0) -> Node3D:
+	var cr = CreatureScript.new()
+	cr.setup(ctype, hp_mult)
+	cr.position = _cell_center(cell)
+	cr.died.connect(_on_creature_died)
+	add_child(cr)
+	_creatures.append(cr)
+	_spawn_particles(cr.position + Vector3(0, 0.4, 0), CreatureBalance.EYE_COLOR, 6)
+	return cr
+
+## Yaratik oldu (15.1): oz dunya item'i duser + dagilma efekti.
+func _on_creature_died(cell: Vector2i, essence_item: String, essence_count: int) -> void:
+	_spawn_particles(_cell_center(cell) + Vector3(0, 0.5, 0),
+			CreatureBalance.BODY_COLOR, 8)
+	if essence_count > 0:
+		_add_ground_item(cell, essence_item, essence_count)
+	_creatures = _creatures.filter(func(c): return is_instance_valid(c) and c.is_alive())
+
+## Vurus hedefi: verilen hucre merkezine YAKIN canli yaratik (yoksa null).
+func _creature_near(cell: Vector2i) -> Node3D:
+	var center := _cell_center(cell)
+	for cr in _creatures:
+		if not is_instance_valid(cr) or not cr.is_alive():
+			continue
+		if Vector2(cr.position.x - center.x, cr.position.z - center.z).length() < 0.75:
+			return cr
+	return null
+
+## Tum yaratiklari temizle (reset/reload/safak temizligi ortak yol).
+func _clear_creatures() -> void:
+	for cr in _creatures:
+		if is_instance_valid(cr):
+			cr.queue_free()
+	_creatures.clear()
 
 # --- YAPI DURUMLARI: take_hit / hasar / yikim / tamir (13.4) ---------------
 ## Yapiya hasar uygula (yaratiklar geldiginde ayni fonksiyonu cagiracak).

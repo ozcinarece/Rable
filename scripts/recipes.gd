@@ -15,6 +15,7 @@ const CATEGORIES: Dictionary = {
 	"yapi": "Yapılar",
 	"tarim": "Tarım",
 	"pisirme": "Pişirme",
+	"muhendislik": "Mühendislik",
 }
 
 const CRAFT_RECIPES: Dictionary = {
@@ -91,6 +92,27 @@ const CRAFT_RECIPES: Dictionary = {
 			"station": "tezgah", "category": "yapi", "time": 4.0},
 	"kamp_evi": {"output": {"kamp_evi": 1}, "cost": {"kalas": 6, "ip": 2, "yaprak": 4},
 			"station": "", "category": "yapi", "time": 6.0},
+	# --- Muhendislik (Bolum 11.5/11.8/11.9) ---
+	# Merdiven (11.5): kazilmis cukura konur; derin cukurdan cikis saglar.
+	"merdiven": {"output": {"merdiven": 1}, "cost": {"odun": 4, "ip": 1},
+			"station": "tezgah", "category": "muhendislik", "time": 3.0},
+	# Cukur kazigi (11.9): cukur tabanina konur; dusen hasar alir.
+	"kazik": {"output": {"kazik": 1}, "cost": {"tas": 3, "cubuk": 2},
+			"station": "tezgah", "category": "muhendislik", "time": 3.0},
+	# Boru (11.8): su aktarimi. GAME_DESIGN 8'de 1 metal_part; metal isleme
+	# gelene kadar MUHAFAZAKAR malzeme (tas+kil), cok sayida gerektigi icin ucuz.
+	"boru": {"output": {"boru": 2}, "cost": {"tas": 1, "kil": 1},
+			"station": "tezgah", "category": "muhendislik", "time": 1.5},
+	# Pompa (11.8): suyu yukari tasir. GAME_DESIGN 8: 3 metal_part + copper_ingot;
+	# muhafazakar: bakir (cevheri) + tas + kalas.
+	"pompa": {"output": {"pompa": 1}, "cost": {"bakir": 3, "tas": 4, "kalas": 2},
+			"station": "tezgah", "category": "muhendislik", "time": 5.0},
+	# Vana (11.8): akisi ac/kapa. GAME_DESIGN 8: 1 metal_part -> muhafazakar.
+	"vana": {"output": {"vana": 1}, "cost": {"bakir": 1, "tas": 2},
+			"station": "tezgah", "category": "muhendislik", "time": 3.0},
+	# Metal kova (GAME_DESIGN 8): su tasima; ileride sicak sivi. 2 metal_part.
+	"metal_kova": {"output": {"metal_kova": 1}, "cost": {"bakir": 2, "ip": 1},
+			"station": "tezgah", "category": "muhendislik", "time": 4.0},
 	# --- Tarim ---
 	"tohum": {"output": {"tohum": 2}, "cost": {"meyve": 1},
 			"station": "", "category": "tarim", "time": 1.0},

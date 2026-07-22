@@ -743,11 +743,15 @@ func _wants_run() -> bool:
 # Eksenleri ayri dener: duvara surtununce diger eksende kaymaya devam
 func _try_move(offset: Vector3) -> void:
 	var pos := position
+	# 11.5 merdiven kurali: derin cukurdan cikis merdiven ister (can_step).
+	var cur := Vector2i(floori(pos.x), floori(pos.z))
 	var next_x := pos + Vector3(offset.x, 0, 0)
-	if _pos_walkable(next_x):
+	var cx := Vector2i(floori(next_x.x), floori(next_x.z))
+	if _pos_walkable(next_x) and world.can_step(cur, cx):
 		pos = next_x
 	var next_z := pos + Vector3(0, 0, offset.z)
-	if _pos_walkable(next_z):
+	var cz := Vector2i(floori(next_z.x), floori(next_z.z))
+	if _pos_walkable(next_z) and world.can_step(cur, cz):
 		pos = next_z
 	# Araziyi takip et: tepecikte yuksel, kumsalda alcal
 	pos.y = world.ground_height(pos.x, pos.z)
