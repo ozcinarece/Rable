@@ -203,15 +203,11 @@ theme_override_font_sizes/font_size = 20
 
 [node name="InventoryRoot" type="Control" parent="."]
 visible = false
-anchor_left = 1.0
-anchor_top = 0.0
-anchor_right = 1.0
-anchor_bottom = 1.0
-offset_left = -392.0
-offset_top = 56.0
-offset_right = -16.0
-offset_bottom = -96.0
-grow_horizontal = 0
+anchor_left = 0.1
+anchor_top = 0.12
+anchor_right = 0.9
+anchor_bottom = 0.98
+grow_horizontal = 2
 grow_vertical = 2
 mouse_filter = 2
 
@@ -235,7 +231,7 @@ custom_minimum_size = Vector2(48, 40)
 icon_alignment = 1
 
 [node name="Slots" type="GridContainer" parent="InventoryRoot/InventoryPanel/VBox"]
-columns = 4
+columns = 8
 size_flags_horizontal = 4
 theme_override_constants/h_separation = 12
 theme_override_constants/v_separation = 12
@@ -343,9 +339,10 @@ size_flags_vertical = 3
 [node name="Scroll" type="ScrollContainer" parent="CraftRoot/CraftPanel/HBox/RightBox/Body"]
 horizontal_scroll_mode = 0
 
-[node name="Cards" type="VBoxContainer" parent="CraftRoot/CraftPanel/HBox/RightBox/Body/Scroll"]
+[node name="Cards" type="HFlowContainer" parent="CraftRoot/CraftPanel/HBox/RightBox/Body/Scroll"]
 size_flags_horizontal = 3
-theme_override_constants/separation = 10
+theme_override_constants/h_separation = 10
+theme_override_constants/v_separation = 10
 
 [node name="QueueRow" type="HBoxContainer" parent="CraftRoot/CraftPanel/HBox/RightBox"]
 visible = false
