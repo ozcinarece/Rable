@@ -119,6 +119,12 @@ const PLACE_MODELS := {
 	# otomatik baglanir (gorsel maskeden turer). Su aktarim grafi.
 	"boru": {"model": "pipe", "h": 0.3, "solid": false,
 			"behavior": "pipe", "max_hp": 40, "in_pit": true},
+	# 11.8 pompa: hatta yukari akis saglar (yukseklik kuralini asar).
+	"pompa": {"model": "pump", "h": 0.6, "solid": false,
+			"behavior": "pump", "max_hp": 60, "in_pit": true},
+	# 11.8 vana: hatta ac/kapa; kapaliyken transfer durur.
+	"vana": {"model": "valve", "h": 0.5, "solid": false,
+			"behavior": "valve", "max_hp": 40, "in_pit": true},
 }
 
 const REGROW_SECONDS := 60.0
@@ -630,6 +636,14 @@ func _run_muhendislik_selftest() -> void:
 	var up_blocked := not _pipe_scenario(3, 1)   # kaynak alcak -> hedef yuksek
 	print("PIPETEST: down_akar=%s up_engel=%s ok=%s" % [
 		str(down_ok), str(up_blocked), str(down_ok and up_blocked)])
+	# 11.8 pompa: yukari akitir (yukseklik kuralini asar).
+	var pump_up := _pipe_scenario(3, 1, true)
+	# 11.8 vana: kapali durdurur, acik gecirir (down hatta).
+	var valve_closed := not _pipe_scenario(1, 3, false, 0)
+	var valve_open := _pipe_scenario(1, 3, false, 1)
+	print("PUMPTEST: pompa_yukari=%s ok=%s" % [str(pump_up), str(pump_up)])
+	print("VALVETEST: kapali_durur=%s acik_gecirir=%s ok=%s" % [
+		str(valve_closed), str(valve_open), str(valve_closed and valve_open)])
 
 ## gunduz/gece self-test: faz/gün-oranı + uyku kuralı (ilk 3 gece).
 func _run_time_selftest() -> void:
@@ -2791,6 +2805,9 @@ func _on_world_tapped(screen_pos: Vector2) -> void:
 		"yatak":
 			_use_bed(cell)
 			return
+		"vana":
+			_toggle_valve(cell)
+			return
 	# Yere birakilmis esya varsa topla
 	if _try_pickup_ground(cell):
 		return
@@ -3050,8 +3067,19 @@ func _cell_elevation(cell: Vector2i) -> float:
 	return -float(int(_depth.get(cell, 0))) * DigRules.DEPTH_STEP
 
 ## Bir bilesende TEK transfer: en yuksek kaynaktan uygun (daha alcak/esit)
-## hedefe. has_pump=true ise yukseklik kurali asilir (Asama 4 pompasi).
-func _transfer_in_component(cells: Array, amount: float, has_pump: bool = false) -> void:
+## hedefe. Bilesende POMPA varsa yukseklik kurali asilir (yukari akar); KAPALI
+## VANA varsa hattan transfer durur.
+func _transfer_in_component(cells: Array, amount: float) -> void:
+	# 11.8 vana: bilesende kapali vana varsa transfer durur.
+	for c: Vector2i in cells:
+		if _placed.get(c, "") == "vana" and not _structures.is_open(c):
+			return
+	# 11.8 pompa: bilesende pompa varsa yukari akis serbest.
+	var has_pump := false
+	for c: Vector2i in cells:
+		if _placed.get(c, "") == "pompa":
+			has_pump = true
+			break
 	# En yuksek kaynagi bul (gol veya dolu havuz, bir boruya komsu).
 	var src_cell := Vector2i(-999, -999)
 	var src_elev := -999.0
@@ -3084,29 +3112,52 @@ func _transfer_in_component(cells: Array, amount: float, has_pump: bool = false)
 					add_water(tc, taken)
 				return  # bilesen basina tik'te tek transfer
 
+## 11.8 Vana ac/kapa: dokununca cevrilir. El carki 45° doner (gorsel ipucu)
+## + gicirti ses KANCASI (mevcut ses; ozel gicirti TODO). Kapali = transfer dur.
+func _toggle_valve(cell: Vector2i) -> void:
+	if _placed.get(cell, "") != "vana":
+		return
+	var now := not _structures.is_open(cell)
+	_structures.set_open(cell, now)
+	_refresh_pipe_visual(cell)
+	_play_sfx("place")  # gicirti ses kancasi (ozel ses ileride)
+	_spawn_floating_text(cell, "Vana açık" if now else "Vana kapalı",
+			Color(0.85, 0.95, 0.7))
+	_dirty = true
+
 func _pool_volume_at(cell: Vector2i) -> float:
 	var pi := pool_at(cell)
 	return float(_pools[pi]["volume"]) if pi >= 0 else 0.0
 
 ## CI: kaynak(src_depth) havuzu doldur, hedef(tgt_depth) havuza boruyla bagla,
 ## bir transfer tik'i calistir; hedef su kazandi mi? (temizler)
-func _pipe_scenario(src_depth: int, tgt_depth: int, pump: bool = false) -> bool:
+func _pipe_scenario(src_depth: int, tgt_depth: int, with_pump: bool = false,
+		valve_state: int = -1) -> bool:
 	var a := Vector2i(30, 30)
 	var b := Vector2i(30, 34)
-	var pipes := [Vector2i(30, 31), Vector2i(30, 32), Vector2i(30, 33)]
+	var mid := Vector2i(30, 32)
+	var pipes := [Vector2i(30, 31), mid, Vector2i(30, 33)]
 	_depth[a] = src_depth
 	_depth[b] = tgt_depth
 	for p: Vector2i in pipes:
 		_placed[p] = "boru"
+	if with_pump:
+		_placed[mid] = "pompa"
+	if valve_state >= 0:
+		_placed[mid] = "vana"
+		_structures.place(mid, "vana", 0, 40)
+		_structures.set_open(mid, valve_state == 1)
 	_water_level[a] = float(src_depth)
 	_recompute_water()
 	var before := _pool_volume_at(b)
 	for comp in _pipe_components():
-		_transfer_in_component(comp, 5.0, pump)
+		_transfer_in_component(comp, 5.0)
 	var after := _pool_volume_at(b)
 	_depth.erase(a); _depth.erase(b)
 	for p: Vector2i in pipes:
 		_placed.erase(p)
+	_placed.erase(mid)
+	_structures.remove(mid)
 	_water_level.erase(a); _water_level.erase(b)
 	_recompute_water()
 	return after > before + 0.01
@@ -3285,8 +3336,10 @@ func _set_placed(cell: Vector2i, item_id: String, rot: int = 0) -> void:
 		_platform_cells[cell] = true     # 14.4 uzerine cikilir (yukseklik)
 	elif behavior == "bed" and not _loading:
 		set_spawn(cell)                  # 14.2 son yatak = aktif dogus noktasi
-	elif behavior == "pipe":
+	elif behavior in ["pipe", "pump", "valve"]:
 		# 11.8: komsu borularla otomatik baglan (kendi + komsu gorselleri).
+		# Vana varsayilan durumu place()'te open=false (= VALVE_DEFAULT_OPEN);
+		# kayittan gelen durum korunur (_structures.has ile place atlanir).
 		_refresh_pipe_neighborhood(cell)
 
 ## Bir yapinin olcekli 3D gorselini (holder+bundle) origin'de kurar; konum/
@@ -3303,6 +3356,10 @@ func _build_structure_visual(item_id: String) -> Node3D:
 		return _build_spikes_visual()
 	if item_id == "boru":
 		return _build_pipe_visual(15)  # hayalet: tam hac (gercek maske yerlesince)
+	if item_id == "pompa":
+		return _build_pump_visual(15)
+	if item_id == "vana":
+		return _build_valve_visual(15, false)
 	var holder := Node3D.new()
 	var bundle := Node3D.new()
 	holder.add_child(bundle)
@@ -3447,8 +3504,14 @@ func _refresh_pipe_visual(cell: Vector2i) -> void:
 	var old: Node3D = _placed_nodes.get(cell, null)
 	if old != null and is_instance_valid(old):
 		old.queue_free()
-	# Asama 4'te pompa/vana kendi gorselini alacak; simdilik hepsi boru maskesi.
-	var node: Node3D = _build_pipe_visual(_pipe_mask(cell))
+	var id: String = _placed[cell]
+	var node: Node3D
+	if id == "pompa":
+		node = _build_pump_visual(_pipe_mask(cell))
+	elif id == "vana":
+		node = _build_valve_visual(_pipe_mask(cell), _structures.is_open(cell))
+	else:
+		node = _build_pipe_visual(_pipe_mask(cell))
 	node.position = _cell_center(cell)
 	add_child(node)
 	_placed_nodes[cell] = node
@@ -3457,6 +3520,45 @@ func _refresh_pipe_neighborhood(cell: Vector2i) -> void:
 	_refresh_pipe_visual(cell)
 	for n in _PIPE_DIRS:
 		_refresh_pipe_visual(cell + n)
+
+## 11.8 Pompa gorseli: boru maskesi + turkuaz govde + kol.
+func _build_pump_visual(mask: int) -> Node3D:
+	var holder := _build_pipe_visual(mask)
+	var teal := Color(0.35, 0.72, 0.72)
+	var body := MeshInstance3D.new()
+	var bm := BoxMesh.new(); bm.size = Vector3(0.3, 0.4, 0.3)
+	body.mesh = bm; body.position = Vector3(0, 0.44, 0)
+	body.material_override = _flat_mat(teal)
+	holder.add_child(body)
+	var lever := MeshInstance3D.new()
+	var lm := BoxMesh.new(); lm.size = Vector3(0.36, 0.06, 0.06)
+	lever.mesh = lm; lever.position = Vector3(0, 0.66, 0)
+	lever.material_override = _flat_mat(Color(0.28, 0.5, 0.5))
+	holder.add_child(lever)
+	return holder
+
+## 11.8 Vana gorseli: boru maskesi + kirmizi el carki (acikken 45° cevrik).
+func _build_valve_visual(mask: int, open: bool) -> Node3D:
+	var holder := _build_pipe_visual(mask)
+	var red := Color(0.82, 0.35, 0.30)
+	var stem := MeshInstance3D.new()
+	var stm := BoxMesh.new(); stm.size = Vector3(0.06, 0.22, 0.06)
+	stem.mesh = stm; stem.position = Vector3(0, 0.28, 0)
+	stem.material_override = _flat_mat(Color(0.5, 0.5, 0.55))
+	holder.add_child(stem)
+	var wheel := Node3D.new()
+	wheel.name = "ValveWheel"
+	wheel.position = Vector3(0, 0.4, 0)
+	for i in 4:
+		var seg := MeshInstance3D.new()
+		var sm := BoxMesh.new(); sm.size = Vector3(0.3, 0.05, 0.05)
+		seg.mesh = sm
+		seg.rotation.y = TAU * float(i) / 4.0
+		seg.material_override = _flat_mat(red)
+		wheel.add_child(seg)
+	wheel.rotation.y = deg_to_rad(45.0) if open else 0.0
+	holder.add_child(wheel)
+	return holder
 
 func _flat_mat(c: Color) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()

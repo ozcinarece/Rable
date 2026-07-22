@@ -60,6 +60,9 @@ const ITEMS: Dictionary = {
 	"merdiven": {"name": "Merdiven", "icon": "res://assets/items/merdiven.png"},
 	"kazik": {"name": "Çukur Kazığı", "icon": "res://assets/items/kazik.png"},
 	"boru": {"name": "Boru", "icon": "res://assets/items/boru.png"},
+	"pompa": {"name": "Pompa", "icon": "res://assets/items/pompa.png"},
+	"vana": {"name": "Vana", "icon": "res://assets/items/vana.png"},
+	"metal_kova": {"name": "Metal Kova", "icon": "res://assets/items/metal_kova.png"},
 }
 
 ## Elde tutulunca yere yerlestirilebilen yapilar: esya -> harita karakteri.
@@ -84,6 +87,8 @@ const PLACEABLE: Dictionary = {
 	"merdiven": "M",
 	"kazik": "X",
 	"boru": "I",
+	"pompa": "U",
+	"vana": "V",
 }
 
 ## Ele alinabilen esyalar - artik her esya ele alinabilir; bu liste
@@ -141,6 +146,9 @@ const DESCRIPTIONS: Dictionary = {
 	"merdiven": "Eline al: kazilmis cukura koy. Derin cukurdan (3-4) ancak merdivenle cikilir.",
 	"kazik": "Eline al: kazilmis cukurun tabanina koy. Dusen hasar alir.",
 	"boru": "Eline al ve yere/cukura koy: komsu borularla baglanir, su tasir (asagi/ayni seviye).",
+	"pompa": "Boru hattina koy: suyu YUKARI tasir (yukseklik kuralini asar).",
+	"vana": "Boru hattina koy: dokununca AC/KAPA. Kapaliyken o hattan su akmaz.",
+	"metal_kova": "Metal kova: su tasir (ileride sicak sivi da).",
 }
 
 static func description(item_id: String) -> String:

@@ -103,6 +103,16 @@ const CRAFT_RECIPES: Dictionary = {
 	# gelene kadar MUHAFAZAKAR malzeme (tas+kil), cok sayida gerektigi icin ucuz.
 	"boru": {"output": {"boru": 2}, "cost": {"tas": 1, "kil": 1},
 			"station": "tezgah", "category": "muhendislik", "time": 1.5},
+	# Pompa (11.8): suyu yukari tasir. GAME_DESIGN 8: 3 metal_part + copper_ingot;
+	# muhafazakar: bakir (cevheri) + tas + kalas.
+	"pompa": {"output": {"pompa": 1}, "cost": {"bakir": 3, "tas": 4, "kalas": 2},
+			"station": "tezgah", "category": "muhendislik", "time": 5.0},
+	# Vana (11.8): akisi ac/kapa. GAME_DESIGN 8: 1 metal_part -> muhafazakar.
+	"vana": {"output": {"vana": 1}, "cost": {"bakir": 1, "tas": 2},
+			"station": "tezgah", "category": "muhendislik", "time": 3.0},
+	# Metal kova (GAME_DESIGN 8): su tasima; ileride sicak sivi. 2 metal_part.
+	"metal_kova": {"output": {"metal_kova": 1}, "cost": {"bakir": 2, "ip": 1},
+			"station": "tezgah", "category": "muhendislik", "time": 4.0},
 	# --- Tarim ---
 	"tohum": {"output": {"tohum": 2}, "cost": {"meyve": 1},
 			"station": "", "category": "tarim", "time": 1.0},

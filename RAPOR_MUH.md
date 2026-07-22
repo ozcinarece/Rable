@@ -72,3 +72,30 @@ giren oyuncu hasar alır, yaratık kancası doğru hasarı döner.
 
 **CI:** `PIPETEST: down_akar=true up_engel=true ok=true` — kaynak yüksekse
 (down) su akar; kaynak alçaksa (up) pompasız akmaz.
+
+## Aşama 4 — Pompa ve vana (11.8)
+
+**Kararlar:**
+- **Tarif:** `pompa` = 3 bakır + 4 taş + 2 kalas; `vana` = 1 bakır + 2 taş;
+  `metal_kova` = 2 bakır + 1 ip (hepsi tezgah, Mühendislik). GAME_DESIGN 8'de
+  `metal_part`/`copper_ingot`; metal işleme gelene kadar **muhafazakâr** bakır ikame.
+- **Pompa:** boru hattına konur (`_is_pipe_like` ağa dahil). Bileşende pompa
+  varsa `_transfer_in_component` **yükseklik kuralını aşar** (yukarı akar).
+  Yakıtsız çalışır; yakıt (kömür) fikri `PUMP_REQUIRES_FUEL=false` bayrağıyla
+  **kapalı TODO**. Görsel: turkuaz gövde + kol.
+- **Vana:** hatta konur; **dokununca AÇIK/KAPALI** (`_toggle_valve`, tap
+  etkileşimi). Kapalıysa bileşenin transferi **durur**. El çarkı 45° döner
+  (görsel ipucu) + gıcırtı **ses kancası** (mevcut ses; özel gıcırtı TODO).
+  Durum `_structures.is_open` (kapı `open` alanı yeniden kullanıldı → kayıt bedava).
+- **metal_kova:** craftlanabilir item; su fonksiyonu = kova eşdeğeri (sıcak sıvı
+  ısı sistemiyle geleceğe **TODO** — cig_et gibi muhafazakâr bırakıldı).
+- **Otomatik görsel:** pompa/vana da `_pipe_mask` ile komşu borulara bağlanır
+  (`_refresh_pipe_visual` dallandı).
+- **KALE KAPISI SENARYOSU:** göl/kaynak → boru → pompa → vana → hendek hattı;
+  vana aç → hendek dolar, kapat → durur (doldurma yönü; tahliye v2).
+
+**Denge:** `PUMP_TRANSFER_PER_SEC=2.0`, `VALVE_DEFAULT_OPEN=false`,
+`PUMP_REQUIRES_FUEL=false`.
+
+**CI:** `PUMPTEST: pompa_yukari=true` · `VALVETEST: kapali_durur=true
+acik_gecirir=true` — pompa yukarı akıtır; kapalı vana durdurur, açık geçirir.
