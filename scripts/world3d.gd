@@ -109,6 +109,12 @@ const PLACE_MODELS := {
 	"merdiven": {"model": "ladder", "h": 1.0, "solid": false,
 			"behavior": "ladder", "max_hp": 40,
 			"rotatable": true, "in_pit": true, "pit_only": true},
+	# MUHENDISLIK 11.9: cukur kazigi — kazilmis hucre TABANINA (in_pit +
+	# pit_only). Dusen oyuncuya kucuk hasar; yaratik hapsi/hasari take_hit
+	# kancalariyla hazir (davranis kodu YOK).
+	"kazik": {"model": "spikes", "h": 0.5, "solid": false,
+			"behavior": "spikes", "max_hp": 40,
+			"in_pit": true, "pit_only": true},
 }
 
 const REGROW_SECONDS := 60.0
@@ -598,6 +604,23 @@ func _run_muhendislik_selftest() -> void:
 	print("LADDERTEST: derin_merdivensiz=%s sig_serbest=%s merdivenli=%s ok=%s" % [
 		str(no_ladder), str(shallow_free), str(with_ladder),
 		str(no_ladder == false and shallow_free == true and with_ladder == true)])
+	# 11.9 kazik: kazikli cukura giren oyuncu bir kez hasar alir + hook.
+	var spit := Vector2i(43, 40)
+	_depth[spit] = 2
+	_placed[spit] = "kazik"
+	var hook_dmg := spike_damage(spit)
+	Health.value = 100.0
+	var saved_pos: Vector3 = player.position
+	player.position = _cell_center(spit)
+	_last_spike_cell = Vector2i(-999, -999)
+	_tick_spike_hit()
+	var after := Health.value
+	player.position = saved_pos
+	_placed.erase(spit); _depth.erase(spit)
+	Health.value = 100.0; Health.changed.emit()
+	print("SPIKETEST: hook_hasar=%d can100->%.0f hook_ok=%s hasar_ok=%s" % [
+		hook_dmg, after, str(hook_dmg == EngBalance.SPIKE_FALL_DAMAGE),
+		str(after < 100.0)])
 
 ## gunduz/gece self-test: faz/gün-oranı + uyku kuralı (ilk 3 gece).
 func _run_time_selftest() -> void:
@@ -1027,6 +1050,7 @@ func _process(delta: float) -> void:
 	_update_daylight()  # gunduz/gece: güneş/gökyüzü/ambient eğrisi (yumuşak)
 	# YASAM: kosma/alet eforu -> aclik daha hizli azalir (PlayerStats okur)
 	PlayerStats.exerting = player.is_exerting()
+	_tick_spike_hit()  # 11.9: kazikli cukura giren oyuncuya bir kez hasar
 	if not _ground_items.is_empty():
 		_tick_ground_items(delta)  # #1: suzulme + donme
 	_station_timer += delta
@@ -1081,6 +1105,28 @@ func _has_ladder_access(cell: Vector2i) -> bool:
 			if _is_ladder(cell + n):
 				return true
 	return false
+
+# --- 11.9 Cukur kazigi --------------------------------------------------
+func _is_spikes(cell: Vector2i) -> bool:
+	return _placed.get(cell, "") == "kazik"
+
+## Yaratik kancasi (B kismi): bu hucredeki kazigin verdigi hasar. Yaratik
+## sistemi dusen/hapsolan yaratiga bunu uygulayacak — davranis kodu YOK.
+func spike_damage(cell: Vector2i) -> int:
+	return EngBalance.SPIKE_FALL_DAMAGE if _is_spikes(cell) else 0
+
+## Oyuncu kazikli hucreye girince BIR KEZ hasar; cikinca sifirlanir.
+var _last_spike_cell := Vector2i(-999, -999)
+func _tick_spike_hit() -> void:
+	var pc := _player_cell()
+	if _is_spikes(pc):
+		if pc != _last_spike_cell:
+			_last_spike_cell = pc
+			Health.damage(float(EngBalance.SPIKE_FALL_DAMAGE))
+			_spawn_floating_text(pc, "-%d" % EngBalance.SPIKE_FALL_DAMAGE,
+					Color(1, 0.5, 0.4))
+	else:
+		_last_spike_cell = Vector2i(-999, -999)
 
 # --- Kamera -------------------------------------------------------------
 
@@ -3128,6 +3174,8 @@ func _build_structure_visual(item_id: String) -> Node3D:
 		return _build_platform_visual()
 	if item_id == "merdiven":
 		return _build_ladder_visual()
+	if item_id == "kazik":
+		return _build_spikes_visual()
 	var holder := Node3D.new()
 	var bundle := Node3D.new()
 	holder.add_child(bundle)
@@ -3205,6 +3253,25 @@ func _build_ladder_visual() -> Node3D:
 		rung.material_override = _flat_mat(woodd)
 		holder.add_child(rung)
 		y += 0.22
+	return holder
+
+## 11.9 Cukur kazigi: cukur tabanindan yukselen sivri koniler (prosedurel).
+func _build_spikes_visual() -> Node3D:
+	var holder := Node3D.new()
+	var steel := Color(0.55, 0.57, 0.62)
+	var h: float = EngBalance.SPIKE_VISUAL_HEIGHT
+	for sx in [-0.25, 0.05, 0.28]:
+		for sz in [-0.22, 0.18]:
+			var spike := MeshInstance3D.new()
+			var cm := CylinderMesh.new()
+			cm.top_radius = 0.0
+			cm.bottom_radius = 0.08
+			cm.height = h
+			cm.radial_segments = 5
+			spike.mesh = cm
+			spike.position = Vector3(sx, h * 0.5, sz)
+			spike.material_override = _flat_mat(steel)
+			holder.add_child(spike)
 	return holder
 
 func _flat_mat(c: Color) -> StandardMaterial3D:

@@ -30,3 +30,22 @@ davranışı KOD YOK — yalnız kancalar). Denge sayıları
 
 **CI:** `LADDERTEST: derin_merdivensiz=false sig_serbest=true merdivenli=true
 ok=true` — derin çukurdan merdivensiz çıkılamaz, sığ serbest, merdiven konunca açılır.
+
+## Aşama 2 — Çukur kazığı (11.9)
+
+**Kararlar:**
+- **Tarif:** `kazik` = 3 taş + 2 çubuk, tezgah, Mühendislik kategorisi.
+- **Yerleştirme:** `PLACE_MODELS.kazik` → `in_pit:true` + `pit_only:true`
+  (kazılmış hücrenin **tabanına**; 13.3 istisnası). `solid:false`.
+- **Görsel:** prosedürel sivri koniler (`_build_spikes_visual`), çukur
+  tabanından yükselir (`SPIKE_VISUAL_HEIGHT`).
+- **İşlev:** Oyuncu kazıklı hücreye girince **bir kez** küçük hasar
+  (`_tick_spike_hit`, `Health.damage`); hücreden çıkınca sıfırlanır
+  (tekrar girince yeniden). Değer `SPIKE_FALL_DAMAGE`.
+- **Yaratık kancası (B kısmı):** `spike_damage(cell)` → düşen/hapsolan
+  yaratığa uygulanacak hasarı verir. **Davranış kodu YOK** — kanca hazır.
+
+**Denge:** `SPIKE_FALL_DAMAGE=8`, `SPIKE_VISUAL_HEIGHT=0.5`.
+
+**CI:** `SPIKETEST: hook_hasar=8 ... hook_ok=true hasar_ok=true` — kazığa
+giren oyuncu hasar alır, yaratık kancası doğru hasarı döner.

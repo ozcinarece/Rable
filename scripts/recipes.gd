@@ -96,6 +96,9 @@ const CRAFT_RECIPES: Dictionary = {
 	# Merdiven (11.5): kazilmis cukura konur; derin cukurdan cikis saglar.
 	"merdiven": {"output": {"merdiven": 1}, "cost": {"odun": 4, "ip": 1},
 			"station": "tezgah", "category": "muhendislik", "time": 3.0},
+	# Cukur kazigi (11.9): cukur tabanina konur; dusen hasar alir.
+	"kazik": {"output": {"kazik": 1}, "cost": {"tas": 3, "cubuk": 2},
+			"station": "tezgah", "category": "muhendislik", "time": 3.0},
 	# --- Tarim ---
 	"tohum": {"output": {"tohum": 2}, "cost": {"meyve": 1},
 			"station": "", "category": "tarim", "time": 1.0},
