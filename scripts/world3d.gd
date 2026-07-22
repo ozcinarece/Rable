@@ -569,7 +569,26 @@ func _setup_screenshot(save_path: String) -> void:
 	await _run_survival_selftest(save_path)  # YASAM: can/aclik/yeme/pisirme/olum
 	_run_time_selftest()  # gunduz/gece: faz + uyku kurali
 	_run_save_load_selftest()
+	_run_tooldup_selftest()  # alet gorseli cogalmasi regresyonu
 	get_tree().quit()
+
+## Alet cogalmasi regresyon testi: hotbar'dan 20 kez hizlica alet degistir;
+## ToolPivot sayisi HER ZAMAN <=1 kalmali. Sonra alet varken 1 gorsel,
+## eli bosaltinca 0 gorsel olmali.
+func _run_tooldup_selftest() -> void:
+	var tools := ["balta", "kazma", "kurek", "bicak", "cekic",
+			"sopa", "mizrak", "kilic", "sapan", "yay"]
+	var max_pivots := 0
+	for i in 20:
+		player.set_held_tool(tools[i % tools.size()])
+		var c: Vector2i = player.debug_tool_counts()
+		max_pivots = maxi(max_pivots, c.x)
+	var after_tool: Vector2i = player.debug_tool_counts()
+	player.set_held_tool("")
+	var after_empty: Vector2i = player.debug_tool_counts()
+	var ok := max_pivots <= 1 and after_tool.y == 1 and after_empty.y == 0
+	print("TOOLDUP: max_pivot=%d alet_gorsel=%d bos_gorsel=%d ok=%s" % [
+		max_pivots, after_tool.y, after_empty.y, str(ok)])
 
 ## gunduz/gece self-test: faz/gün-oranı + uyku kuralı (ilk 3 gece).
 func _run_time_selftest() -> void:

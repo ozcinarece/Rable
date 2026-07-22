@@ -117,6 +117,14 @@ func set_character(model_path: String) -> void:
 	if _model_root != null:
 		_model_root.queue_free()
 		_model_root = null
+	# Eski ayna dugumleri (_tool_attach/_head_attach) GLB yolunda _visual'in
+	# DOGRUDAN cocugudur; model_root ile SILINMEZLER. Serbest birakilmazsa her
+	# karakter degisiminde eski pivot+alet/sapka gorseli agacta kalir ve
+	# gorseller birikir. (Custom karakterde ayna, custom'un = model_root'un
+	# cocugudur; o zaten yukarida free edildi, tekrar dokunma.)
+	for mirror in [_tool_attach, _head_attach]:
+		if mirror != null and is_instance_valid(mirror) and mirror.get_parent() == _visual:
+			mirror.queue_free()
 	_tool_attach = null
 	_head_attach = null
 	_tool_src = null
@@ -310,7 +318,13 @@ func set_held_tool(model_path: String) -> void:
 	_tool_pivot = null
 	if _tool_attach == null:
 		return
+	# INVARYANT: ToolPivot'ta ayni anda EN FAZLA 1 alet gorseli bulunur.
+	# queue_free() ERTELEMELI oldugu icin, hizli ardisik equip'lerde eski
+	# pivot ayni kare boyunca agacta kalir ve gorseller birikirdi. Bu yuzden
+	# once remove_child ile ANINDA agactan cikar (get_children/render aninda
+	# gorunmez), sonra bellekten geri al.
 	for child in _tool_attach.get_children():
+		_tool_attach.remove_child(child)
 		child.queue_free()
 	# ToolPivot: fazlar bunu dondurur; model onun cocugu. Bos elde bile
 	# olusturulur ki yumruk sallamasi (fist) animasyonu oynayabilsin.
@@ -393,6 +407,18 @@ func play_swing(profile: Dictionary, on_strike: Callable,
 
 func is_swinging() -> bool:
 	return _swinging
+
+## CI/teshis (alet cogalmasi regresyon testi): x = _tool_attach altindaki
+## pivot sayisi (invaryant: <=1), y = aktif pivot icindeki gorsel sayisi
+## (alet varken 1, eli bosken 0).
+func debug_tool_counts() -> Vector2i:
+	if _tool_attach == null or not is_instance_valid(_tool_attach):
+		return Vector2i(0, 0)
+	var pivots := _tool_attach.get_child_count()
+	var visuals := 0
+	if _tool_pivot != null and is_instance_valid(_tool_pivot):
+		visuals = _tool_pivot.get_child_count()
+	return Vector2i(pivots, visuals)
 
 # --- Aksesuarlar (sapka + yuz) ------------------------------------------
 

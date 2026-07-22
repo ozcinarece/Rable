@@ -97,3 +97,34 @@ HUD envanter ızgarası mobilde **4×4** (`columns = 4`); slotlar
 
 ---
 *Otonom mod tamam: 4 madde, 4 ayrı commit. CI ile doğrulanacak.*
+
+---
+
+# EK DÜZELTME — Alet Görseli Bug'ı (branch `alet-gorsel-fix`, 2 commit)
+
+## 1. ALET ÇOĞALMASI (öncelikli) — kök neden ve düzeltme
+**Belirti:** Kuşanılan alet değiştikçe eldeki alet görselleri birikiyordu.
+
+**İki ayrı kök neden bulundu (ikisi de düzeltildi):**
+- **(a) Ertelemeli `queue_free()`** — `set_held_tool` eski pivot'u
+  `queue_free()` ile siliyordu; ama bu ANINDA değil kare sonunda çalışır.
+  Hotbar'dan hızlıca alet değiştirilince (aynı kare / arka arkaya kareler)
+  eski pivot bir süre ağaçta kalıyordu. **Düzeltme:** önce
+  `_tool_attach.remove_child(child)` ile ANINDA ağaçtan çıkar, sonra
+  `queue_free()`. Böylece `get_children()`/render anında hep temiz.
+- **(b) Ayna düğümü sızıntısı** — GLB karakter yolunda `_tool_attach` ve
+  `_head_attach`, `_model_root`'un değil `_visual`'in doğrudan çocuğudur.
+  `set_character` yalnız `_model_root`'u `queue_free()` edip aynaları
+  `null`'a çekiyordu → eski pivot+alet/şapka görselleri `_visual` altında
+  KALICI birikiyordu. **Düzeltme:** karakter değişiminde `_visual`'e bağlı
+  eski aynalar da `queue_free()` edilir (custom karakterde ayna model_root
+  altında olduğu için o dalda tekrar dokunulmaz — çift-free yok).
+
+**İnvaryant:** ToolPivot'ta aynı anda **en fazla 1** alet görseli bulunur.
+Equip akışı tek fonksiyonda (`set_held_tool`): temizle → yeni görsel ekle.
+`hud.hold_requested` sinyali dünya kurulumunda **tek sefer** bağlanır
+(world3d.gd:296) — doğrulandı, çift bağlanma yok.
+
+**Regresyon testi (CI):** `TOOLDUP` — 20 kez hızlıca alet değiştir;
+`max_pivot<=1`, alet varken `1` görsel, eli boşaltınca `0` görsel.
+`player.debug_tool_counts()` sayaçları döndürür.
