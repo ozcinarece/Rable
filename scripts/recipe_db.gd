@@ -131,6 +131,11 @@ const RECIPES: Dictionary = {
 			"materials": {"steel": 2, "metal_part": 1}, "station": "anvil"},
 	"torch": {"result": "torch", "count": 2,
 			"materials": {"stick": 1, "coal": 1}, "station": ""},
+	# Cati (Ev/Cati paketi): "Cati Ustaligi" (roof_mastery) dugumu acar
+	"wood_roof": {"result": "wood_roof", "count": 1,
+			"materials": {"wood": 4}, "station": "workbench"},
+	"brick_roof": {"result": "brick_roof", "count": 1,
+			"materials": {"brick": 3}, "station": "workbench"},
 	# --- Tarim (GDD tarifleri) ---------------------------------------------------
 	"hoe": {"result": "hoe", "count": 1,
 			"materials": {"stick": 2, "stone": 2, "rope": 1}, "station": "workbench"},

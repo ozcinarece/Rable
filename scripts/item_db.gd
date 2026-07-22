@@ -102,6 +102,9 @@ const ITEMS: Dictionary = {
 	"window": {"name": "Pencere", "max_stack": 16, "category": "structure"},
 	"steel_door": {"name": "Çelik Kapı", "max_stack": 16, "category": "structure"},
 	"torch": {"name": "Meşale", "max_stack": 32, "category": "structure"},
+	# Cati (Ev/Cati paketi): duvar ustune/catiya bitisik yerlesir (overhead katman)
+	"wood_roof": {"name": "Ahşap Çatı", "max_stack": 16, "category": "structure"},
+	"brick_roof": {"name": "Tuğla Çatı", "max_stack": 16, "category": "structure"},
 	# --- Tarim --------------------------------------------------------------------
 	"hoe": {"name": "Çapa", "max_stack": 1, "category": "farming"},
 	"watering_pot": {"name": "Sulama Kabı", "max_stack": 1, "category": "farming"},
@@ -135,6 +138,8 @@ const LEGACY_MAP: Dictionary = {
 	"tas_duvar": "stone_wall",
 	"kapi": "wood_door",
 	"tuzak": "spikes",
+	"ahsap_cati": "wood_roof",
+	"tugla_cati": "brick_roof",
 }
 
 static func has_item(id: String) -> bool:

@@ -41,6 +41,11 @@ const NODES: Dictionary = {
 	"basic_traps": {"branch": "insaat", "prereq": "basic_building",
 			"cost": {"wood": 6, "rope": 2},
 			"unlocks": ["spikes", "pit_trap", "trip_alarm"], "hidden": false},
+	# Ev/Cati paketi: catili ev insasi. K2 tugla catisi brick_making ile birlikte
+	# anlam kazanir (saglam varyant tugla ister).
+	"roof_mastery": {"branch": "insaat", "prereq": "basic_building",
+			"cost": {"wood": 10, "clay": 2},
+			"unlocks": ["wood_roof", "brick_roof"], "hidden": false},
 	"workbench_node": {"branch": "istasyonlar", "prereq": "research_basics",
 			"cost": {"wood": 6}, "unlocks": ["workbench"], "hidden": false},
 	"furnace_node": {"branch": "istasyonlar", "prereq": "workbench_node",

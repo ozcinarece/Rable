@@ -48,6 +48,9 @@ const ITEMS: Dictionary = {
 	"zemin": {"name": "Zemin", "icon": "res://assets/tiles/zemin.png"},
 	"kapi": {"name": "Kapı", "icon": "res://assets/tiles/kapi.png"},
 	"mesale": {"name": "Meşale", "icon": "res://assets/items/mesale.png"},
+	# Cati (Ev/Cati paketi): duvar ustune/catiya bitisik yerlesir (ust katman)
+	"ahsap_cati": {"name": "Ahşap Çatı", "icon": "res://assets/tiles/zemin.png"},
+	"tugla_cati": {"name": "Tuğla Çatı", "icon": "res://assets/tiles/stone_wall.png"},
 	"yatak": {"name": "Yatak", "icon": "res://assets/tiles/yatak.png"},
 	"tuzak": {"name": "Tuzak", "icon": "res://assets/tiles/tuzak.png"},
 	# BASE (Bolum 14)

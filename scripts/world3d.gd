@@ -106,6 +106,17 @@ const PLACE_MODELS := {
 	"mesale": {"model": "res://assets/models/tools/campfire-stand.glb",
 			"h": 0.7, "solid": false,
 			"behavior": "torch", "max_hp": 30},
+	# EV/CATI PAKETI: cati parcalari UST KATMAN'da yasar (duvar+cati ayni hucrede
+	# olabildigi icin _placed yerine _roofs sozlugunde tutulur). Yerlestirme
+	# duvar-ustu/catiya-bitisik kurali _roof_place_valid'te. Prosedurel egimli
+	# form; assets/models/structures/<id>.glb varsa onu yukler. solid=false
+	# (oyuncu altindan gecer). rotatable: catinin mahya (ridge) yonu.
+	"ahsap_cati": {"model": "roof", "h": 0.5, "solid": false,
+			"behavior": "roof", "max_hp": 60, "rotatable": true,
+			"glb": "res://assets/models/structures/wood_roof.glb"},
+	"tugla_cati": {"model": "roof", "h": 0.5, "solid": false,
+			"behavior": "roof", "max_hp": 120, "rotatable": true,
+			"glb": "res://assets/models/structures/brick_roof.glb"},
 	# MUHENDISLIK 11.5: merdiven — kazilmis cukura (pit_only) konur, kenara
 	# yaslanir (rotatable = hangi kenar). Cukurdan cikis saglar (can_step).
 	"merdiven": {"model": "ladder", "h": 1.0, "solid": false,
@@ -230,6 +241,14 @@ var _placed_nodes: Dictionary = {} # hucre -> yapi gorseli (Node3D)
 # YAPI SISTEMI (Bolum 13): yapi ornekleri meta (yon/hp/durum). _placed id'yi,
 # bu ise per-instance veriyi tutar (sidecar; mevcut sistem korunur).
 var _structures = StructureManager.new()
+# EV/CATI PAKETI: catilar UST KATMAN (bir hucrede hem duvar hem cati olabilir).
+# Bu yuzden _placed/_structures'tan AYRI tutulur; hp/durum/kayit icin kendi
+# StructureManager ornegini kullanir (ayni mantik, ayri anahtar uzayi).
+var _roofs: Dictionary = {}         # hucre -> cati id ("ahsap_cati"/"tugla_cati")
+var _roof_nodes: Dictionary = {}    # hucre -> cati gorseli (Node3D, duvar ustu Y)
+var _roof_structures = StructureManager.new()  # cati per-instance hp/durum/yon
+var _faded_roof_cells: Dictionary = {}  # su an seffaflastirilan cati hucreleri
+var _roof_fade_anchor := Vector2i(-9999, -9999)  # fade'i tetikleyen son oyuncu hucresi
 var _chests: Dictionary = {}       # sandik hucresi -> Inventory ornegi (14.1 depo)
 var _move_mode: bool = false       # Tasi butonu: yapiyi geri alma modu
 var _open_chest := Vector2i(-999, -999)
@@ -1141,6 +1160,10 @@ func _process(delta: float) -> void:
 		_update_ghost()  # 13.2: hayalet onizleme onde takip eder
 	else:
 		_update_targeting()  # 12.1/12.2: baglam ikonu + hedef vurgusu
+	# EV/CATI: oyuncu catili alana girince cati grubu seffaflasir (hucre
+	# degisince yeniden hesaplanir — kare basi flood yok)
+	if not _roofs.is_empty():
+		_update_roof_fade()
 	if not _projectiles.is_empty():
 		_tick_projectiles(delta)
 	if _aiming:
@@ -1369,6 +1392,7 @@ func from_save_data(data: Dictionary) -> bool:
 		cell.queue_free()
 	_placed.clear()
 	_placed_nodes.clear()
+	_clear_roofs()           # EV/CATI: cati ust katmanini da temizle
 	_clear_chests()          # 14.1 depo dugumlerini serbest birak
 	_platform_cells.clear()  # 14.4 _set_placed yeniden dolduracak
 	_hearth_cell = Vector2i(-999, -999)
@@ -2914,7 +2938,10 @@ func _on_world_tapped(screen_pos: Vector2) -> void:
 		Thirst.drink()
 		_spawn_floating_text(cell, "Su içtin!", Color(0.6, 0.85, 1.0))
 		return
-	# Tasima modu: yerlestirilmis yapiyi geri al
+	# Tasima modu: yerlestirilmis yapiyi geri al (once ust katman = cati)
+	if _move_mode and _roofs.has(cell):
+		_remove_roof(cell)
+		return
 	if _move_mode and _placed.has(cell):
 		_remove_placed(cell)
 		return
@@ -3413,6 +3440,10 @@ func _try_pour(cell: Vector2i) -> bool:
 # --- Yapi yerlestirme (B3) ------------------------------------------------
 
 func _try_place(cell: Vector2i) -> bool:
+	# EV/CATI: cati kendi (duvar-ustu/bitisik) kuralini kullanir; zemin/dolu
+	# kontrollerini atlar.
+	if _is_roof_item(_held_item):
+		return _try_place_roof(cell)
 	if _placed.has(cell) or _objects.has(cell) or cell == _player_cell():
 		return false
 	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
@@ -3427,7 +3458,40 @@ func _try_place(cell: Vector2i) -> bool:
 	_dirty = true
 	return true
 
+## EV/CATI: elde cati tutup dokununca — gecerliyse ust katmana kur.
+func _try_place_roof(cell: Vector2i) -> bool:
+	var v := _roof_place_valid(cell)
+	if not bool(v["valid"]):
+		_spawn_floating_text(cell, String(v["reason"]), Color(1, 0.6, 0.6))
+		return false
+	if not Inventory.remove_item(_held_item, 1):
+		return false
+	var rid: String = _held_item
+	_set_roof(cell, rid)
+	_place_pop_roof(cell)
+	_spawn_particles(_cell_center(cell) + Vector3(0, _ROOF_Y, 0),
+			Color(0.72, 0.66, 0.52), 6)
+	_spawn_floating_text(cell, Items.display_name(rid) + " kuruldu",
+			Color(0.8, 1.0, 0.8))
+	_update_roof_fade()  # yeni cati oyuncunun ustundeyse aninda seffaflasir
+	_dirty = true
+	return true
+
+## Cati yerlesme pop animasyonu.
+func _place_pop_roof(cell: Vector2i) -> void:
+	var node: Node3D = _roof_nodes.get(cell, null)
+	if node == null:
+		return
+	node.scale = Vector3(0.7, 0.7, 0.7)
+	var tw := create_tween()
+	tw.tween_property(node, "scale", Vector3.ONE, 0.22) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+
 func _set_placed(cell: Vector2i, item_id: String, rot: int = 0) -> void:
+	# EV/CATI: cati ust katmana gider, _placed'e degil (duvarla ayni hucre olabilir)
+	if _is_roof_item(item_id):
+		_set_roof(cell, item_id, rot)
+		return
 	_placed[cell] = item_id
 	var def: Dictionary = PLACE_MODELS[item_id]
 	if def["solid"]:
@@ -3473,6 +3537,9 @@ func _set_placed(cell: Vector2i, item_id: String, rot: int = 0) -> void:
 ## donme cagirana kalir. Hem yerlestirme hem hayalet onizleme kullanir.
 func _build_structure_visual(item_id: String) -> Node3D:
 	var def: Dictionary = PLACE_MODELS[item_id]
+	# EV/CATI: cati (prosedurel egimli form ya da GLB override)
+	if String(def.get("behavior", "")) == "roof":
+		return _build_roof_visual(item_id)
 	# 14.4 platform: GLB yok, prosedurel (deck 1.5 birim + ayaklar + basamak).
 	# ground_height ile eslesir; oyuncu deck ustunde durur.
 	if item_id == "platform":
@@ -3729,6 +3796,253 @@ func _release_structure_cell(cell: Vector2i) -> void:
 	# 11.8: boru agindan cikan hucre -> komsu boru gorsellerini tazele.
 	for n in _PIPE_DIRS:
 		_refresh_pipe_visual(cell + n)
+	# EV/CATI PAKETI: bir duvar/kapi kalkinca ustundeki/bagli catilar desteksiz
+	# kalabilir -> destek agini yeniden hesapla (kopuk catilar coker).
+	if _roofs.size() > 0:
+		_recompute_roof_support()
+
+# =====================================================================
+# EV/CATI PAKETI — Cati ust katmani (YAPI_SISTEMI turevi; Bolum "ev-cati")
+# =====================================================================
+## Catilar duvarlarin USTUNDE ayri bir katmanda yasar. Ayni hucrede hem duvar
+## hem cati bulunabilir; bu yuzden _roofs/_roof_nodes/_roof_structures, mevcut
+## _placed sistemine DOKUNMADAN paralel calisir. solid degiller (altindan
+## gecilir). Yerlestirme kurali: cati ya bir DUVAR/KAPI ustune ya da baska bir
+## catiya BITISIK konur; hicbir duvara bagli olmayan cati desteksizdir.
+const _ROOF_Y := 1.18          # cati gorselinin duvar ustu yerlesim yuksekligi
+const _ROOF_FADE := 0.82       # oyuncu iceri girince cati seffafligi (0=opak,1=gorunmez)
+const _ROOF_DIRS := [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]
+
+func _is_roof_item(item_id: String) -> bool:
+	return PLACE_MODELS.get(item_id, {}).get("behavior", "") == "roof"
+
+## Hucrenin ALTINDA cati destegi olacak kati bir yapi (duvar/kapi) var mi?
+func _cell_has_wall_support(cell: Vector2i) -> bool:
+	var beh := String(PLACE_MODELS.get(_placed.get(cell, ""), {}).get("behavior", ""))
+	return beh == "wall" or beh == "door"
+
+## Cati yerlestirme gecerliligi: {valid, reason}. Duvar-ustu VEYA catiya-bitisik.
+func _roof_place_valid(cell: Vector2i) -> Dictionary:
+	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
+		return {"valid": false, "reason": "sınır"}
+	if _roofs.has(cell):
+		return {"valid": false, "reason": "dolu"}
+	if _cell_has_wall_support(cell):
+		return {"valid": true, "reason": ""}
+	for n in _ROOF_DIRS:
+		if _roofs.has(cell + n):
+			return {"valid": true, "reason": ""}
+	return {"valid": false, "reason": "desteksiz"}
+
+## Cati gorseli: assets/models/structures/<id>.glb varsa onu, yoksa prosedurel
+## egimli (gable) form. Ridge yonu holder rotasyonuyla secilir.
+func _build_roof_visual(item_id: String) -> Node3D:
+	var def: Dictionary = PLACE_MODELS[item_id]
+	var glb := String(def.get("glb", ""))
+	if glb != "" and ResourceLoader.exists(glb):
+		var holder := Node3D.new()
+		var bundle := Node3D.new()
+		holder.add_child(bundle)
+		bundle.add_child(load(glb).instantiate())
+		var aabb := _scene_aabb(bundle)
+		var longest: float = aabb.get_longest_axis_size()
+		if longest > 0.01:
+			var s: float = 0.98 / longest
+			bundle.scale = Vector3.ONE * s
+			bundle.position = Vector3(-aabb.get_center().x * s,
+					-aabb.position.y * s, -aabb.get_center().z * s)
+		return holder
+	return _build_procedural_roof(item_id)
+
+## Prosedurel egimli cati (iki egik panel = gable + mahya kirisi). Duz kutu
+## degil; tepeden bakinca "ev" silueti okunur. Renk id'ye gore (ahsap/tugla).
+func _build_procedural_roof(item_id: String) -> Node3D:
+	var holder := Node3D.new()
+	var warm := Color(0.55, 0.36, 0.22)      # ahsap sicak kahve
+	var edge := Color(0.40, 0.26, 0.16)
+	if item_id == "tugla_cati":
+		warm = Color(0.70, 0.34, 0.28)       # kiremit kirmizisi
+		edge = Color(0.52, 0.24, 0.20)
+	var half := 0.52                         # yarim genislik (hafif sacak)
+	var tilt := deg_to_rad(34.0)
+	var plen := half / cos(tilt) + 0.04      # panel uzunlugu (sacak dahil)
+	var ridge_h := half * tan(tilt)          # mahya yuksekligi
+	# Iki egik panel (±X'e egilir, mahya Z ekseni boyunca)
+	for sx in [-1, 1]:
+		var panel := MeshInstance3D.new()
+		var pm := BoxMesh.new()
+		pm.size = Vector3(plen, 0.05, 1.0)
+		panel.mesh = pm
+		panel.rotation.z = -sx * tilt
+		panel.position = Vector3(sx * half * 0.5, ridge_h * 0.5, 0)
+		panel.material_override = _flat_mat(warm if sx > 0 else warm.darkened(0.06))
+		holder.add_child(panel)
+	# Mahya kirisi (silueti netlestirir)
+	var ridge := MeshInstance3D.new()
+	var rm := BoxMesh.new(); rm.size = Vector3(0.09, 0.09, 1.02)
+	ridge.mesh = rm
+	ridge.position = Vector3(0, ridge_h, 0)
+	ridge.material_override = _flat_mat(edge)
+	holder.add_child(ridge)
+	# Iki alin ucgeni yerine ince alin tahtasi (ucuz, silueti kapatir)
+	for sz in [-1, 1]:
+		var gable := MeshInstance3D.new()
+		var gm := BoxMesh.new(); gm.size = Vector3(1.04, 0.05, 0.06)
+		gable.mesh = gm
+		gable.rotation.z = 0.0
+		gable.position = Vector3(0, ridge_h * 0.5, sz * 0.5)
+		gable.material_override = _flat_mat(edge)
+		holder.add_child(gable)
+	return holder
+
+## Cati yerlestir: ust katmana ekle, duvar ustu Y'ye koy, hp ornegini kur.
+func _set_roof(cell: Vector2i, item_id: String, rot: int = 0) -> void:
+	_roofs[cell] = item_id
+	var def: Dictionary = PLACE_MODELS[item_id]
+	if not _roof_structures.has(cell):
+		_roof_structures.place(cell, item_id, rot, int(def.get("max_hp", 60)))
+	var holder := _build_roof_visual(item_id)
+	holder.position = _cell_center(cell) + Vector3(0, _ROOF_Y, 0)
+	holder.rotation_degrees.y = float(_roof_structures.rotation_of(cell))
+	add_child(holder)
+	_roof_nodes[cell] = holder
+	if _roof_structures.hp_ratio(cell) < 0.5:
+		holder.rotation_degrees.z = 6.0
+
+## Cati hucresinin tum kayitlarini temizle (sokme + cokme ortak yol).
+func _release_roof_cell(cell: Vector2i) -> void:
+	_roofs.erase(cell)
+	_roof_structures.remove(cell)
+	_faded_roof_cells.erase(cell)
+	if _roof_nodes.has(cell):
+		_roof_nodes[cell].queue_free()
+		_roof_nodes.erase(cell)
+
+## Tum catilari temizle (yeni oyun / yukleme oncesi).
+func _clear_roofs() -> void:
+	for n in _roof_nodes.values():
+		if n != null and is_instance_valid(n):
+			n.queue_free()
+	_roofs.clear()
+	_roof_nodes.clear()
+	_roof_structures.clear()
+	_faded_roof_cells.clear()
+	_roof_fade_anchor = Vector2i(-9999, -9999)
+
+## Cati sokme (Tasi modu / geri al): %100 iade.
+func _remove_roof(cell: Vector2i) -> void:
+	if not _roofs.has(cell):
+		return
+	var item_id: String = _roofs[cell]
+	if not Inventory.can_add_all({item_id: 1}):
+		_spawn_floating_text(cell, "Envanter dolu!", Color(1, 0.6, 0.6))
+		return
+	Inventory.add_item(item_id, 1)
+	_release_roof_cell(cell)
+	_spawn_floating_text(cell, "Geri alındı", Color(0.95, 0.9, 0.7))
+	_dirty = true
+	_recompute_roof_support()
+
+## Cati cokmesi (destek gidince): malzemenin %25'i sacilir, iade YOK. Yapi
+## yikim kuraliyla (13.4) tutarli.
+func _collapse_roof(cell: Vector2i) -> void:
+	var item_id := String(_roofs.get(cell, ""))
+	var cost: Dictionary = Recipes.CRAFT_RECIPES.get(item_id, {}).get("cost", {})
+	var drops: Dictionary = {}
+	for mat in cost:
+		var n := int(floor(float(cost[mat]) * 0.25))
+		if n > 0:
+			drops[mat] = n
+	var pos := _cell_center(cell) + Vector3(0, _ROOF_Y, 0)
+	_release_roof_cell(cell)
+	_spawn_particles(pos, Color(0.5, 0.4, 0.3), 9)
+	_play_sfx("break")
+	_spawn_floating_text(cell, "Çatı çöktü!", Color(1, 0.6, 0.5))
+	for mat in drops:
+		var t := _first_free_neighbor(cell)
+		if t != Vector2i(-999, -999):
+			_add_ground_item(t, mat, drops[mat])
+	_dirty = true
+
+## Destek agini yeniden hesapla: duvar/kapi ustundeki catilerden BFS ile
+## ulasilabilen tum catilar desteklidir; ulasilamayanlar coker. Yalnizca yapi
+## degisiminde cagrilir (her kare degil — havuz/flood mantiginin kardesi).
+func _recompute_roof_support() -> void:
+	if _roofs.is_empty():
+		return
+	var supported: Dictionary = {}
+	var frontier: Array = []
+	for cell in _roofs:
+		if _cell_has_wall_support(cell):
+			supported[cell] = true
+			frontier.append(cell)
+	while not frontier.is_empty():
+		var c: Vector2i = frontier.pop_back()
+		for n in _ROOF_DIRS:
+			var nc: Vector2i = c + n
+			if _roofs.has(nc) and not supported.has(nc):
+				supported[nc] = true
+				frontier.append(nc)
+	# Desteksiz kalanlari cokur (kopyada gez, cokme _roofs'u degistirir)
+	for cell in _roofs.keys():
+		if not supported.has(cell):
+			_collapse_roof(cell)
+
+# --- Gorunurluk cozumu: oyuncu catili alana girince cati grubu seffaflasir ---
+
+## Bir cati hucresinden bitisik cati grubunu (flood-fill) dondurur.
+func _roof_group(start: Vector2i) -> Array:
+	var group: Array = []
+	if not _roofs.has(start):
+		return group
+	var seen: Dictionary = {start: true}
+	var stack: Array = [start]
+	while not stack.is_empty():
+		var c: Vector2i = stack.pop_back()
+		group.append(c)
+		for n in _ROOF_DIRS:
+			var nc: Vector2i = c + n
+			if _roofs.has(nc) and not seen.has(nc):
+				seen[nc] = true
+				stack.append(nc)
+	return group
+
+## Bir cati dugumunun tum mesh'lerine seffaflik (transparency) tween'i uygular.
+## GeometryInstance3D.transparency hem GLB hem prosedurel icin calisir.
+func _fade_roof_node(cell: Vector2i, target: float, dur: float = 0.3) -> void:
+	var node: Node3D = _roof_nodes.get(cell, null)
+	if node == null or not is_instance_valid(node):
+		return
+	_apply_transparency_tween(node, target, dur)
+
+func _apply_transparency_tween(node: Node, target: float, dur: float) -> void:
+	if node is GeometryInstance3D:
+		var tw := create_tween()
+		tw.tween_property(node, "transparency", target, dur)
+	for child in node.get_children():
+		_apply_transparency_tween(child, target, dur)
+
+## Oyuncunun altinda cati varsa o grubu seffaflastir; disari cikinca geri getir.
+## Yalnizca oyuncu hucresi degisince yeniden hesaplanir (kare basi flood yok).
+func _update_roof_fade() -> void:
+	var pc := _player_cell()
+	if pc == _roof_fade_anchor:
+		return
+	_roof_fade_anchor = pc
+	var target_group: Dictionary = {}
+	if _roofs.has(pc):
+		for c in _roof_group(pc):
+			target_group[c] = true
+	# Geri getir: artik grupta olmayan seffaf catilar
+	for c in _faded_roof_cells.keys():
+		if not target_group.has(c):
+			_fade_roof_node(c, 0.0)
+			_faded_roof_cells.erase(c)
+	# Seffaflastir: gruba yeni giren catilar
+	for c in target_group:
+		if not _faded_roof_cells.has(c):
+			_fade_roof_node(c, _ROOF_FADE)
+			_faded_roof_cells[c] = true
 
 # --- YAPI YERLESTIRME MODU (YAPI_SISTEMI.md 13.2 + 13.3) -------------------
 const _PLACE_OK := Color(0.42, 0.80, 0.42)
@@ -3777,7 +4091,9 @@ func _update_ghost() -> void:
 		return
 	var cell := _facing_cell()
 	_place_cell = cell
-	_ghost.position = _cell_center(cell)
+	# EV/CATI: cati hayaleti duvar ustu yuksekliginde suzulur
+	var y_off := _ROOF_Y if _is_roof_item(_place_item) else 0.0
+	_ghost.position = _cell_center(cell) + Vector3(0, y_off, 0)
 	_ghost.rotation_degrees.y = float(_place_rot)
 	var v := _place_valid(cell)
 	var nv := bool(v["valid"])
@@ -3794,6 +4110,10 @@ func _update_ghost() -> void:
 ## Hucre yerlestirme icin gecerli mi? {valid, reason} (13.3 kurallari)
 func _place_valid(cell: Vector2i) -> Dictionary:
 	var def: Dictionary = PLACE_MODELS[_place_item]
+	# EV/CATI: cati ust katmandir; kendi destek kuralini kullanir (duvar/su/cukur
+	# zemin kontrollerini atlar — duvar ustune de konabilir).
+	if String(def.get("behavior", "")) == "roof":
+		return _roof_place_valid(cell)
 	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
 		return {"valid": false, "reason": "sınır"}
 	if _placed.has(cell) or _objects.has(cell) or _dummies.has(cell):
@@ -3833,10 +4153,15 @@ func _place_confirm() -> void:
 	if not Inventory.remove_item(_place_item, 1):
 		_exit_place_mode()
 		return
+	var was_roof := _is_roof_item(_place_item)
 	_set_placed(cell, _place_item, _place_rot)
-	_place_pop(cell)  # 13.2 pop animasyonu
+	if was_roof:
+		_place_pop_roof(cell)
+		_update_roof_fade()  # oyuncunun ustune kondiysa aninda seffaflasir
+	else:
+		_place_pop(cell)  # 13.2 pop animasyonu
 	# 13.5 cila: yerlesme tozu + ses kancasi
-	_spawn_particles(_cell_center(cell) + Vector3(0, 0.15, 0),
+	_spawn_particles(_cell_center(cell) + Vector3(0, (_ROOF_Y if was_roof else 0.15), 0),
 			Color(0.72, 0.66, 0.52), 7)
 	_play_sfx("place")
 	_spawn_floating_text(cell, Items.display_name(_place_item) + " kuruldu",

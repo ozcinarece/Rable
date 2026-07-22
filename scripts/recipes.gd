@@ -78,6 +78,12 @@ const CRAFT_RECIPES: Dictionary = {
 			"station": "", "category": "yapi", "time": 2.5},
 	"mesale": {"output": {"mesale": 1}, "cost": {"cubuk": 1, "odun": 1},
 			"station": "", "category": "yapi", "time": 1.5},
+	# Cati (Ev/Cati paketi): duvar ustune / catiya bitisik yerlesen ust katman.
+	# ahsap_cati = hafif; tugla_cati = saglam varyant (K2, kil = tugla malzemesi).
+	"ahsap_cati": {"output": {"ahsap_cati": 1}, "cost": {"kalas": 4},
+			"station": "", "category": "yapi", "time": 2.0},
+	"tugla_cati": {"output": {"tugla_cati": 1}, "cost": {"kil": 3, "tas": 1},
+			"station": "tezgah", "category": "yapi", "time": 3.0},
 	# BASE yapilari (Bolum 14) tezgahta uretilir. "hide/deri" henuz yok
 	# (yaratiklardan gelecek); yatakta muhafazakar olarak ip+yaprak kullanildi.
 	"sandik": {"output": {"sandik": 1}, "cost": {"odun": 8, "ip": 1},
