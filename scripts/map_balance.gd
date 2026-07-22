@@ -32,8 +32,8 @@ const ORE_HINT_CLUSTERS: int = 5          # kaç öbekte yüzey cevher ipucu
 # STIL: "bölüm bölüm sık orman" için orman öbekleri büyütüldü + sıklaştırıldı.
 # Açıklıklar (SPARSE düşük) korunur ki kontrast/orman hissi olsun.
 const FOREST_SCALE: float = 0.045
-const FOREST_THRESHOLD: float = 0.60      # bu üstü orman alanı (düşük = daha geniş öbekler)
-const FOREST_DENSITY: float = 0.62        # orman içinde ağaç şansı (sık öbek)
+const FOREST_THRESHOLD: float = 0.61      # bu üstü orman alanı (düşük = daha geniş öbekler)
+const FOREST_DENSITY: float = 0.52        # MOBIL PERF: 0.62->0.52 (hâlâ öbekli ama daha az ağaç = daha az üçgen)
 const SPARSE_TREE_CHANCE: float = 0.018   # açıklıkta seyrek ağaç
 # (world3d ağaç öbek kuralı: MAX_TREE_NEIGHBORS komşuya kadar; 4+ olursa boş)
 
