@@ -187,9 +187,7 @@ func _ready() -> void:
 
 	craft_button.toggled.connect(_on_craft_toggled)
 	research_button.toggled.connect(_on_research_toggled)
-	research_root.closed.connect(func():
-		research_button.set_pressed_no_signal(false)
-		_update_backdrop())  # BUGFIX: kapatinca overlay'i indir (yoksa girdi kilitlenir)
+	research_root.closed.connect(_on_research_closed)
 	craft_close.icon = ICON_CLOSE
 	craft_close.pressed.connect(func(): craft_button.button_pressed = false)
 	search_edit.text_changed.connect(func(_t: String): _rebuild_cards())
@@ -316,6 +314,13 @@ func _on_research_toggled(pressed: bool) -> void:
 		research_root.close()
 	_update_backdrop()
 
+## BUGFIX: arastirma paneli kendi kapatma butonuyla kapaninca butonu sessizce
+## birak + overlay'i indir. Yoksa yari saydam overlay takili kalip tum girdiyi
+## kilitliyordu ("hicbir tusa basilmiyor"). Adli fonksiyon (guvenli).
+func _on_research_closed() -> void:
+	research_button.set_pressed_no_signal(false)
+	_update_backdrop()
+
 # --- R0: Panel overlay_dim + HUD gizleme --------------------------------
 # Panel acikken oyun ekrani karartilir (odak) ve HUD oyun ogeleri gizlenir
 # (Gun pill'inin panel basligiyla cakismasi da boyle cozulur). overlay,
@@ -329,27 +334,7 @@ func _setup_backdrop() -> void:
 	_overlay.set_anchors_preset(Control.PRESET_FULL_RECT)
 	_overlay.mouse_filter = Control.MOUSE_FILTER_STOP  # arka plana dokunmayi engelle
 	_overlay.visible = false
-	# GUVENLIK AGI: karartilmis bosluga dokununca TUM panelleri kapat. Boylece
-	# herhangi bir kapatma yolu atlanip overlay takili kalsa bile oyun kilitlenmez.
-	_overlay.gui_input.connect(func(e: InputEvent):
-		var tap := (e is InputEventMouseButton and e.pressed) \
-				or (e is InputEventScreenTouch and e.pressed)
-		if tap:
-			close_all_panels())
 	add_child(_overlay)
-
-## Tum panelleri kapatir + overlay'i indirir (guvenlik agi + dis kaynaklar icin).
-## button_pressed=false -> ilgili _on_*_toggled(false) tetiklenir (panel kapanir).
-func close_all_panels() -> void:
-	inventory_button.button_pressed = false
-	craft_button.button_pressed = false
-	research_button.button_pressed = false  # -> _on_research_toggled(false) -> research_root.close()
-	if reset_button != null:
-		reset_button.button_pressed = false
-	if chest_panel.visible:
-		close_chest()
-		chest_closed.emit()
-	_update_backdrop()
 
 # Panel acik mi? (toggle butonlari + sandik durumu)
 func _any_panel_open() -> bool:
