@@ -2505,6 +2505,14 @@ func _tree_neighbor(cell: Vector2i) -> bool:
 	return false
 
 func _build_trees(cells: Array[Vector2i]) -> void:
+	# STIL DENEME: agir override modeli (pine_tree 524k ucgen) tum ormanda
+	# render edilemez (CI yazilim GL'de tek kare bile timeout). Yalniz CI
+	# ekran goruntusu modunda + override aktifken agac sayisini sinirla ki
+	# renkli agac GERCEK oyun dunyasinda (arazi/su/oyuncu) gorulebilsin.
+	# Normal oyunda (override kapali) bu blok tetiklenmez.
+	if OS.has_environment("RABLE_SCREENSHOT") and TREE_MODEL_OVERRIDE != "" \
+			and cells.size() > 8:
+		cells = cells.slice(0, 8)
 	var pool := _tree_pool()
 	var groups: Dictionary = {}
 	for cell in cells:
