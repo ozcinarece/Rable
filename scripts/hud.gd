@@ -212,6 +212,7 @@ func _ready() -> void:
 	_build_info_strip() # R3: envanter ORTAK alt bilgi bandi (yeniden kullanilir)
 	_style_backpack_sheet() # ENVANTER-MOCKUP: sirt cantasi gorsel dili
 	_style_chest_sheet()    # ENVANTER-MOCKUP: sandik ayni dil (iki sutun)
+	_style_craft_sheet()    # PANEL-MOCKUP: uretim ayni iskelete
 	_build_dock()           # R1: sag kenar dikey dock (canta/uretim/arastirma)
 	_build_settings_menu()  # R1: Ayarlar menusu (Yeni Oyun + Kamera/Gorunum)
 	_style_action_buttons() # R2: ana/saldiri butonlari + baglam etiketi
@@ -293,17 +294,20 @@ func _on_craft_toggled(pressed: bool) -> void:
 		_update_cards()
 	if _craft_tween != null:
 		_craft_tween.kill()
-	craft_root.pivot_offset = craft_root.size / 2.0
+	# PANEL-MOCKUP: uretim de ALTTAN YUKSELIR (0.3sn ease-out, mockup .rise)
 	_craft_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	var rise := get_viewport().get_visible_rect().size.y
 	if pressed:
 		craft_root.visible = true
-		craft_root.scale = Vector2.ONE * 0.96
-		craft_root.modulate.a = 0.0
-		_craft_tween.tween_property(craft_root, "scale", Vector2.ONE, 0.22)
-		_craft_tween.parallel().tween_property(craft_root, "modulate:a", 1.0, 0.18)
+		craft_root.position.y += rise
+		_craft_tween.tween_property(craft_root, "position:y",
+				craft_root.position.y - rise, 0.3)
 	else:
-		_craft_tween.tween_property(craft_root, "modulate:a", 0.0, 0.15)
-		_craft_tween.tween_callback(func(): craft_root.visible = false)
+		_craft_tween.tween_property(craft_root, "position:y",
+				craft_root.position.y + rise, 0.22)
+		_craft_tween.tween_callback(func():
+			craft_root.visible = false
+			craft_root.position.y -= rise)
 	_update_backdrop()
 
 func _on_research_toggled(pressed: bool) -> void:
@@ -524,35 +528,47 @@ func _style_round_close(btn: Button, root: Control, panel_top: float) -> void:
 	btn.add_theme_stylebox_override("pressed", close_pressed_sb)
 	btn.add_theme_stylebox_override("focus", close_sb)
 
-func _style_backpack_sheet() -> void:
-	# Sayfa: %84 yukseklik, %96 genislik, alta yaslanmis (mockup .sheet)
-	inventory_root.anchor_left = 0.02
-	inventory_root.anchor_right = 0.98
-	inventory_root.anchor_top = 0.16
-	inventory_root.anchor_bottom = 1.0
-	inventory_root.offset_left = 0.0
-	inventory_root.offset_right = 0.0
-	inventory_root.offset_top = 0.0
-	inventory_root.offset_bottom = 0.0
-	var panel: PanelContainer = $InventoryRoot/InventoryPanel
+# PANEL-MOCKUP Asama 1 — ORTAK ISKELET (tek bilesen): alttan yukselen
+# sayfa (%90 boy, %96 en), 24px ust kose, nokta dokusu, dikisli tutamac,
+# tasan koyu sekme, yuvarlak kapat. Envanter/uretim/sandik (ve ileride
+# arastirma) BU fonksiyonla giydirilir. Sekmedeki sag mini etiketi dondurur.
+func _build_sheet_chrome(root: Control, panel: PanelContainer,
+		vbox: Container, title: String) -> Label:
+	root.anchor_left = 0.02
+	root.anchor_right = 0.98
+	root.anchor_top = 0.10   # mockup .sheet: height %90
+	root.anchor_bottom = 1.0
+	root.offset_left = 0.0
+	root.offset_right = 0.0
+	root.offset_top = 0.0
+	root.offset_bottom = 0.0
+	panel.anchor_left = 0.0
+	panel.anchor_top = 0.0
+	panel.anchor_right = 1.0
+	panel.anchor_bottom = 1.0
+	panel.offset_left = 0.0
+	panel.offset_top = 20.0  # sekme bu boslukta panelden yukari tasar
+	panel.offset_right = 0.0
+	panel.offset_bottom = 0.0
 	panel.add_theme_stylebox_override("panel", _make_sheet_style())
-	# Cok soluk nokta dokusu (icerigin altina cizilir)
 	var dots := UiDots.new()
 	panel.add_child(dots)
 	panel.move_child(dots, 0)
-	# Dikisli deri tutamac: ust orta
-	var vbox: VBoxContainer = panel.get_node("VBox")
 	var handle := UiHandle.new()
 	handle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	vbox.add_child(handle)
 	vbox.move_child(handle, 0)
-	# Eski ust satir + kapasite satiri gizlenir (yerlerini sekme/kapat alir)
+	return _make_tab(root, title, panel.offset_top)
+
+func _style_backpack_sheet() -> void:
+	var panel: PanelContainer = $InventoryRoot/InventoryPanel
+	var vbox: VBoxContainer = panel.get_node("VBox")
+	# Eski ust satir + kapasite satiri gizlenir (doluluk YALNIZ sekmede)
 	vbox.get_node("TopRow").visible = false
 	var cap_row: Control = vbox.get_node_or_null("CapacityRow")
 	if cap_row != null:
 		cap_row.visible = false
-	# BASLIK SEKMESI (doluluk SEKMENIN ICINDE) + YUVARLAK KAPAT (sag ust)
-	_tab_cap_label = _make_tab(inventory_root, "Sırt Çantası", panel.offset_top)
+	_tab_cap_label = _build_sheet_chrome(inventory_root, panel, vbox, "Sırt Çantası")
 	_style_round_close(inventory_close, inventory_root, panel.offset_top)
 	# Izgara: 8 sutun SABIT; slot boyu ekran genisligine esner (mockup 1fr
 	# sutunlar; alt sinir 64px dokunma hedefi, ust sinir 104px)
@@ -569,10 +585,6 @@ func _style_chest_sheet() -> void:
 	# Sarmalayici kok: sekme/kapat panelden tasabilsin diye (container degil)
 	_chest_root = Control.new()
 	_chest_root.name = "ChestRoot"
-	_chest_root.anchor_left = 0.02
-	_chest_root.anchor_right = 0.98
-	_chest_root.anchor_top = 0.16
-	_chest_root.anchor_bottom = 1.0
 	_chest_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_chest_root.visible = false
 	_chest_root.theme = chest_panel.theme
@@ -582,30 +594,12 @@ func _style_chest_sheet() -> void:
 	chest_panel.get_parent().remove_child(chest_panel)
 	_chest_root.add_child(chest_panel)
 	_chest_root.move_child(chest_panel, 0)
-	chest_panel.anchor_left = 0.0
-	chest_panel.anchor_top = 0.0
-	chest_panel.anchor_right = 1.0
-	chest_panel.anchor_bottom = 1.0
-	chest_panel.offset_left = 0.0
-	chest_panel.offset_top = 20.0
-	chest_panel.offset_right = 0.0
-	chest_panel.offset_bottom = 0.0
-	chest_panel.add_theme_stylebox_override("panel", _make_sheet_style())
 	# Gorunurluk esitleme: mevcut show/close_chest chest_panel.visible'i
 	# degistirir; kok onu izler (oyun mantigina dokunmadan)
 	chest_panel.visibility_changed.connect(_on_chest_panel_visibility)
-	# Nokta dokusu + tutamac
-	var dots := UiDots.new()
-	chest_panel.add_child(dots)
-	chest_panel.move_child(dots, 0)
 	var vbox: VBoxContainer = chest_panel.get_node("VBox")
-	var handle := UiHandle.new()
-	handle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	vbox.add_child(handle)
-	vbox.move_child(handle, 0)
-	# Eski baslik satiri gizlenir; sekme "Sandık" + yuvarlak kapat
 	vbox.get_node("TitleRow").visible = false
-	_make_tab(_chest_root, "Sandık", chest_panel.offset_top)
+	_build_sheet_chrome(_chest_root, chest_panel, vbox, "Sandık")
 	_style_round_close(chest_close_button, _chest_root, chest_panel.offset_top)
 	# IKI KARDES SUTUN: solda sandik icerigi, sagda sirt cantasi
 	var scroll: ScrollContainer = vbox.get_node("Scroll")
@@ -629,6 +623,38 @@ func _style_chest_sheet() -> void:
 func _on_chest_panel_visibility() -> void:
 	if _chest_root != null:
 		_chest_root.visible = chest_panel.visible
+
+# --- PANEL-MOCKUP: Uretim paneli ayni iskelete (crafting mockup'i) --------
+var _craft_outer: VBoxContainer  # dis duzen: [raf+kartlar] [detay] [kuyruk]
+
+func _style_craft_sheet() -> void:
+	# Dikey dis duzen kur: ana satir (raf+kartlar) ustte, detay/kuyruk altta
+	# TAM GENISLIK (mockup .main + .strip). HBox tasinir, referanslar kalir.
+	var hbox: HBoxContainer = $CraftRoot/CraftPanel/HBox
+	craft_panel.remove_child(hbox)
+	_craft_outer = VBoxContainer.new()
+	_craft_outer.add_theme_constant_override("separation", 6)
+	craft_panel.add_child(_craft_outer)
+	_craft_outer.add_child(hbox)
+	hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hbox.add_theme_constant_override("separation", 10)
+	# Kuyruk satiri dis kutunun en altina (strip _build_craft_detail'de
+	# kuyrugun USTUNE eklenecek). NOT: hbox tasindi, path'ler degisti —
+	# dugumlere hbox uzerinden ulasilir.
+	var rb: VBoxContainer = hbox.get_node("RightBox")
+	rb.remove_child(queue_row)
+	_craft_outer.add_child(queue_row)
+	# Eski basligi gizle; ARAMA YOK (mockup karari — tarif sayisi 60'i
+	# asarsa geri gelir, RAPOR_PANEL TODO). search_edit gizli ama yasiyor:
+	# _rebuild_cards bos metin okur, davranis degismez.
+	var old_tab: Control = $CraftRoot/TitleTab
+	old_tab.visible = false
+	_style_round_close(craft_close, craft_root, 20.0)
+	rb.get_node("TopRow").visible = false
+	_build_sheet_chrome(craft_root, craft_panel, _craft_outer, "Üretim")
+	# Eski scale-acilisin kalintilarini temizle (artik yukselme animasyonu)
+	craft_root.scale = Vector2.ONE
+	craft_root.modulate.a = 1.0
 
 # --- R1: Sag kenar dikey DOCK (canta / uretim / arastirma) --------------
 # Dagitik beyaz daireler yerine TEK dikey dock: kategori renkli DOLGULU
@@ -1452,9 +1478,9 @@ var _craft_info: UiInfoStrip
 
 func _build_craft_detail() -> void:
 	_craft_info = UiInfoStrip.new()
-	var rightbox: VBoxContainer = $CraftRoot/CraftPanel/HBox/RightBox
-	rightbox.add_child(_craft_info)
-	rightbox.move_child(_craft_info, queue_row.get_index())  # kuyrugun ustune
+	# PANEL-MOCKUP: detay seridi TAM GENISLIK, kuyrugun ustunde (dis kutu)
+	_craft_outer.add_child(_craft_info)
+	_craft_outer.move_child(_craft_info, queue_row.get_index())
 	_update_craft_detail()
 
 func _update_craft_detail() -> void:
