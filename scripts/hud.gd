@@ -1561,6 +1561,8 @@ func _build_craft_detail() -> void:
 	_craft_outer.move_child(_craft_info, queue_row.get_index())
 	_update_craft_detail()
 
+# PANEL-MOCKUP detail(): malzeme cipleri (gercek envanterden yesil/kirmizi)
+# + istasyon satiri UC SESTE + TEK Uret (aktif koyu / pasif gri / Kilitli).
 func _update_craft_detail() -> void:
 	if _craft_info == null:
 		return
@@ -1573,6 +1575,15 @@ func _update_craft_detail() -> void:
 			(" ×%d" % out_count if out_count > 1 else "")
 	_craft_info.show_item(load(Items.ITEMS[_sel_recipe]["icon"]), title, "",
 			UIColors.category_color(CAT_COLOR_KEY.get(recipe["category"], "resource")))
+	# Kilitli tarif: cip + durum + "Kilitli" pasif pill (mockup lock dali)
+	var research := get_node_or_null("/root/Research")
+	if research != null and not research.is_recipe_unlocked(_sel_recipe):
+		_craft_info.set_chips([{"text": "Araştırma gerekli",
+				"color": UIColors.DANGER,
+				"icon": load("res://assets/ui/lock.png")}])
+		_craft_info.set_status("Araştırma masasında açılır", UIColors.INK_SOFT)
+		_craft_info.set_pills([{"text": "Kilitli", "disabled": true}])
+		return
 	var chips: Array = []
 	for item_id in recipe["cost"]:
 		var have := Inventory.get_count(item_id)
@@ -1580,16 +1591,27 @@ func _update_craft_detail() -> void:
 		var col: Color = UIColors.SUCCESS.darkened(0.25) if have >= need else UIColors.DANGER
 		chips.append({"text": "%d/%d" % [have, need], "color": col,
 				"icon": load(Items.ITEMS[item_id]["icon"])})
-	if recipe["station"] != "":
+	_craft_info.set_chips(chips)
+	# Istasyon satiri uc seste (mockup .st hand/ok/warn; gercek yakinlik)
+	if recipe["station"] == "":
+		_craft_info.set_status("Elde üretilir", UIColors.INK_SOFT)
+	else:
 		var is_hearth: bool = recipe["station"] == "ocak"
 		var near: bool = Crafting.near_hearth if is_hearth else Crafting.near_station
 		var st_name: String = "Ocak" if is_hearth else "Tezgah"
-		var st_text: String = "%s yanında ✓" % st_name if near \
-				else "%s gerekli — yanında değilsin" % st_name
-		chips.append({"text": st_text, "color": UIColors.SUCCESS.darkened(0.25) if near \
-				else UIColors.WARNING.darkened(0.3)})
-	_craft_info.set_chips(chips)
-	_craft_info.set_pills([{"text": "Üret", "primary": true, "on": _on_detail_craft}])
+		if near:
+			_craft_info.set_status("✓ %s yanında" % st_name,
+					UIColors.SUCCESS.darkened(0.25))
+		else:
+			_craft_info.set_status("⚠ %s gerekli — uzaktasın" % st_name,
+					UIColors.WARNING.darkened(0.3))
+	# TEK Uret: kosullar tamamsa koyu-aktif, degilse gri-pasif
+	var can: bool = Crafting.max_craftable(_sel_recipe) >= 1
+	if can:
+		_craft_info.set_pills([{"text": "Üret", "primary": true,
+				"on": _on_detail_craft}])
+	else:
+		_craft_info.set_pills([{"text": "Üret", "disabled": true}])
 
 func _on_detail_craft() -> void:
 	if _sel_recipe == "":

@@ -92,6 +92,14 @@ func set_placeholder(text: String) -> void:
 	clear_pills()
 	clear_chips()
 
+## PANEL-MOCKUP durum satiri (.st): ad/ciplerin ALTINDA tek satir renkli
+## metin — "Elde üretilir" / "✓ Tezgah yanında" / "⚠ Tezgah gerekli —
+## uzaktasın". Rengi cagiran verir (soft/yesil/amber).
+func set_status(text: String, color: Color) -> void:
+	_desc.text = text
+	_desc.visible = text != ""
+	_desc.add_theme_color_override("font_color", color)
+
 ## Renkli cipler (malzeme/maliyet): [{text, color, icon(Texture2D, ops.)}].
 func set_chips(chips: Array) -> void:
 	clear_chips()
@@ -125,17 +133,34 @@ func set_pills(pills: Array) -> void:
 	for p: Dictionary in pills:
 		var btn := Button.new()
 		btn.text = String(p.get("text", ""))
-		if bool(p.get("primary", false)):
+		if bool(p.get("disabled", false)):
+			_style_off_pill(btn)  # gri-pasif (mockup .pill.off)
+		elif bool(p.get("primary", false)):
 			btn.theme_type_variation = "PrimaryButton"
 		elif bool(p.get("danger", false)):
 			_style_danger_pill(btn)
 		btn.custom_minimum_size = Vector2(0, 44)
 		var cb: Callable = p.get("on", Callable())
-		if cb.is_valid():
+		if cb.is_valid() and not bool(p.get("disabled", false)):
 			btn.pressed.connect(cb)
 		btn.button_down.connect(_on_pill_down.bind(btn))
 		btn.button_up.connect(_on_pill_up.bind(btn))
 		_pills.add_child(btn)
+
+# Gri-pasif pill: ink-faint dolgu + krem metin; tiklama etkisiz.
+func _style_off_pill(btn: Button) -> void:
+	btn.disabled = true
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = UIColors.INK_FAINT
+	sb.set_corner_radius_all(999)
+	sb.content_margin_left = 28.0
+	sb.content_margin_right = 28.0
+	sb.content_margin_top = 8.0
+	sb.content_margin_bottom = 8.0
+	for state in ["normal", "hover", "pressed", "disabled", "focus"]:
+		btn.add_theme_stylebox_override(state, sb)
+	btn.add_theme_color_override("font_disabled_color", UIColors.PANEL_CREAM)
+	btn.add_theme_color_override("font_color", UIColors.PANEL_CREAM)
 
 # Kirmizi konturlu "tehlikeli eylem" pill'i (seffaf zemin + 3px kontur)
 func _style_danger_pill(btn: Button) -> void:
