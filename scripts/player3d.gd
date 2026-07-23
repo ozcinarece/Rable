@@ -62,9 +62,11 @@ const TOOL_HOLD := {
 	# scale>0: SABIT ~scale m boy (skinned el kemigi telafisini atla). grip:
 	# 0=alt uc(Y min), 1=ust uc. TEST: ortadan tut + sabit 0.5m -> balta gorunur mu.
 	# STABIL kavrama: yonelim govde cercevesinde (bkz _sync_attach_mirrors).
-	# Bu cercevede baltanin yerel +Y'si (kafa) zaten govde-yukari -> rot_deg=0
-	# kafayi yukari verir; grip 0.15 el sapin dibinde. Animasyonla savrulmaz.
-	"balta": {"axis": 1, "grip": 0.15, "scale": 0.5, "rot_deg": Vector3(0, 0, 0),
+	# rot_deg: baltanin uzun ekseni KOL EKSENINE PARALEL (el kemigi +Y
+	# olcumunden hesap; kullanici istegi "dik degil, kolla paralel").
+	# grip 0.6 = el sapin ustunde (kafanin hemen alti) -> sap kol boyunca
+	# asagi sarkar, dogal tasima.
+	"balta": {"axis": 1, "grip": 0.6, "scale": 0.5, "rot_deg": Vector3(28.9, 90.0, -28.7),
 			"extra": Vector3(0, 0, 0)},
 }
 
