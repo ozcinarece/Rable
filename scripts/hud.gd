@@ -359,7 +359,10 @@ func _update_backdrop() -> void:
 		# Yalnizca GERCEKTEN acik olan tek paneli overlay'in ustune al.
 		var top: Control = null
 		if chest_panel.visible:
-			top = chest_panel
+			# Sandik artik _chest_root sarmalayicisinin icinde; HUD'in dogrudan
+			# cocugu degil. move_child'a paneli degil KOKU vermek gerekir
+			# (yoksa hata + sandik overlay altinda tiklanamaz kalir).
+			top = _chest_root if _chest_root != null else chest_panel
 		elif inventory_button.button_pressed:
 			top = inventory_root
 		elif craft_button.button_pressed:

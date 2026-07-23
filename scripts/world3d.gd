@@ -360,6 +360,56 @@ func _ready() -> void:
 	if OS.has_environment("RABLE_SCREENSHOT"):
 		_setup_screenshot(OS.get_environment("RABLE_SCREENSHOT"))
 
+# GERCEK dokunus gonderir (basma+birakma). Buton sinyalleri kodla degil
+# giris zinciriyle tetiklenir — cihazdaki tiklama sorunlarini CI'da yakalar.
+func _tap_at(pos: Vector2) -> void:
+	var down := InputEventScreenTouch.new()
+	down.index = 0
+	down.position = pos
+	down.pressed = true
+	Input.parse_input_event(down)
+	await get_tree().create_timer(0.1).timeout
+	var up := InputEventScreenTouch.new()
+	up.index = 0
+	up.position = pos
+	up.pressed = false
+	Input.parse_input_event(up)
+	await get_tree().create_timer(0.4).timeout
+
+func _run_click_tests(save_path: String) -> void:
+	var lines := PackedStringArray()
+	# 1) Canta: dock butonuna dokun -> acilmali; X'e dokun -> kapanmali
+	await _tap_at(hud.inventory_button.get_global_rect().get_center())
+	var inv_acildi: bool = hud.inventory_button.button_pressed
+	_snap(save_path.replace(".png", "_click_env.png"))
+	await _tap_at(hud.inventory_close.get_global_rect().get_center())
+	var inv_kapandi: bool = not hud.inventory_button.button_pressed
+	lines.append("envanter: acildi=%s kapandi=%s" % [inv_acildi, inv_kapandi])
+	# 2) Uretim: ayni akis
+	await _tap_at(hud.craft_button.get_global_rect().get_center())
+	var cr_acildi: bool = hud.craft_button.button_pressed
+	_snap(save_path.replace(".png", "_click_uretim.png"))
+	await _tap_at(hud.craft_close.get_global_rect().get_center())
+	var cr_kapandi: bool = not hud.craft_button.button_pressed
+	lines.append("uretim: acildi=%s kapandi=%s" % [cr_acildi, cr_kapandi])
+	# 3) Arastirma: ac + kapat (research_root kendi X'i)
+	await _tap_at(hud.research_button.get_global_rect().get_center())
+	var ar_acildi: bool = hud.research_button.button_pressed
+	await _tap_at(hud.research_button.get_global_rect().get_center())
+	# dock gizliyken ayni noktaya dokunus bosa gider; X uzerinden kapat
+	if hud.research_button.button_pressed:
+		var rx := hud.research_root.find_child("CloseButton", true, false)
+		if rx != null:
+			await _tap_at((rx as Control).get_global_rect().get_center())
+	var ar_kapandi: bool = not hud.research_button.button_pressed
+	lines.append("arastirma: acildi=%s kapandi=%s" % [ar_acildi, ar_kapandi])
+	var out := "\n".join(lines) + "\n"
+	print("CLICKTEST:\n" + out)
+	var f := FileAccess.open("res://docs/screens/clicktest.txt", FileAccess.WRITE)
+	if f != null:
+		f.store_string(out)
+		f.close()
+
 func _setup_screenshot(save_path: String) -> void:
 	# harita-v2 MAPTEST: uretim istatistikleri (128x128 + su/agac/kaya/kil/dogus)
 	var water_n := 0
@@ -422,6 +472,10 @@ func _setup_screenshot(save_path: String) -> void:
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_tezgah.png"))
 	hud.visible = true
+	# CLICKTEST: GERCEK dokunus simulasyonu (kodla degil!). Cihazdaki
+	# "menuler kapanmiyor" sinifi hatalari CI'da yakalamak icin: dock
+	# butonuna DOKUN -> panel acildi mi; X'e DOKUN -> kapandi mi.
+	await _run_click_tests(save_path)
 	# Ikinci kare: kusbakisi tum ada (teshis icin)
 	# harita-v2: kusbakisi tum 128x128 adayi kapsar (yukseklik boyutla olcekli)
 	camera.position = Vector3(_map_w / 2.0, _map_w * 0.85,
