@@ -61,7 +61,9 @@ const TOOL_GLB_OVERRIDE := {
 const TOOL_HOLD := {
 	# scale>0: SABIT ~scale m boy (skinned el kemigi telafisini atla). grip:
 	# 0=alt uc(Y min), 1=ust uc. TEST: ortadan tut + sabit 0.5m -> balta gorunur mu.
-	"balta": {"axis": 1, "grip": 0.15, "scale": 0.6, "rot_deg": Vector3(0, 0, 0),
+	# rot_deg: el kemigi yoneliminden HESAPLANDI (handdbg) -> balta dik dursun
+	# (kafa yukari, bicak one). grip 0.12 = sapin en dibi.
+	"balta": {"axis": 1, "grip": 0.12, "scale": 0.6, "rot_deg": Vector3(11.2, 60.4, -125.4),
 			"extra": Vector3(0, 0, 0)},
 }
 
