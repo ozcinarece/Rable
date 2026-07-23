@@ -210,6 +210,7 @@ func _ready() -> void:
 	_build_slots()
 	_build_lock_chip()  # R0: kilitli slotlar tek kompakt cip olur
 	_build_info_strip() # R3: envanter ORTAK alt bilgi bandi (yeniden kullanilir)
+	_style_backpack_sheet() # ENVANTER-MOCKUP: sirt cantasi gorsel dili
 	_build_dock()           # R1: sag kenar dikey dock (canta/uretim/arastirma)
 	_build_settings_menu()  # R1: Ayarlar menusu (Yeni Oyun + Kamera/Gorunum)
 	_style_action_buttons() # R2: ana/saldiri butonlari + baglam etiketi
@@ -267,8 +268,9 @@ func _on_inventory_toggled(pressed: bool) -> void:
 	if pressed:
 		inventory_root.visible = true
 		inventory_root.position.y += rise  # ekranin altindan basla
+		# ENVANTER-MOCKUP: yukselme 0.3 sn ease-out
 		_inv_tween.tween_property(inventory_root, "position:y",
-				inventory_root.position.y - rise, 0.25)
+				inventory_root.position.y - rise, 0.3)
 	else:
 		_picked_slot = null
 		_inv_tween.tween_property(inventory_root, "position:y",
@@ -420,6 +422,110 @@ func _build_info_strip() -> void:
 	_info = UiInfoStrip.new()
 	inv_vbox.add_child(_info)
 	inv_vbox.move_child(_info, at + 1)
+
+# --- ENVANTER-MOCKUP: Sirt Cantasi panel iskeleti -------------------------
+# Tek dogruluk kaynagi: assets/mockups/backpack_ui_mockup.html
+const UiDots = preload("res://scripts/ui_dots.gd")
+const UiHandle = preload("res://scripts/ui_handle.gd")
+var _tab_cap_label: Label   # sekme icindeki doluluk "14/16"
+
+func _style_backpack_sheet() -> void:
+	# Sayfa: %84 yukseklik, %96 genislik, alta yaslanmis (mockup .sheet)
+	inventory_root.anchor_left = 0.02
+	inventory_root.anchor_right = 0.98
+	inventory_root.anchor_top = 0.16
+	inventory_root.anchor_bottom = 1.0
+	inventory_root.offset_left = 0.0
+	inventory_root.offset_right = 0.0
+	inventory_root.offset_top = 0.0
+	inventory_root.offset_bottom = 0.0
+	var panel: PanelContainer = $InventoryRoot/InventoryPanel
+	# Kagit: krem, YALNIZ ust koseler 24px, yukari golge
+	var sheet := StyleBoxFlat.new()
+	sheet.bg_color = UIColors.PANEL_CREAM
+	sheet.corner_radius_top_left = 24
+	sheet.corner_radius_top_right = 24
+	sheet.content_margin_left = 22.0
+	sheet.content_margin_right = 22.0
+	sheet.content_margin_top = 10.0
+	sheet.content_margin_bottom = 12.0
+	sheet.shadow_size = 16
+	sheet.shadow_color = Color(0, 0, 0, 0.22)
+	sheet.shadow_offset = Vector2(0, -6)
+	panel.add_theme_stylebox_override("panel", sheet)
+	# Cok soluk nokta dokusu (icerigin altina cizilir)
+	var dots := UiDots.new()
+	panel.add_child(dots)
+	panel.move_child(dots, 0)
+	# Dikisli deri tutamac: ust orta
+	var vbox: VBoxContainer = panel.get_node("VBox")
+	var handle := UiHandle.new()
+	handle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	vbox.add_child(handle)
+	vbox.move_child(handle, 0)
+	# Eski ust satir + kapasite satiri gizlenir (yerlerini sekme/kapat alir)
+	vbox.get_node("TopRow").visible = false
+	var cap_row: Control = vbox.get_node_or_null("CapacityRow")
+	if cap_row != null:
+		cap_row.visible = false
+	# BASLIK SEKMESI: panelden yukari tasan koyu kahve "canta kapagi";
+	# doluluk sayaci SEKMENIN ICINDE (mockup .tab + .cap)
+	var tab := PanelContainer.new()
+	tab.name = "BackpackTab"
+	var tab_sb := StyleBoxFlat.new()
+	tab_sb.bg_color = UIColors.TAB_BG
+	tab_sb.corner_radius_top_left = 14
+	tab_sb.corner_radius_top_right = 14
+	tab_sb.corner_radius_bottom_left = 16
+	tab_sb.corner_radius_bottom_right = 16
+	tab_sb.content_margin_left = 20.0
+	tab_sb.content_margin_right = 20.0
+	tab_sb.content_margin_top = 7.0
+	tab_sb.content_margin_bottom = 8.0
+	tab_sb.shadow_size = 8
+	tab_sb.shadow_color = Color(0, 0, 0, 0.19)
+	tab_sb.shadow_offset = Vector2(0, 4)
+	tab.add_theme_stylebox_override("panel", tab_sb)
+	var tab_row := HBoxContainer.new()
+	tab_row.add_theme_constant_override("separation", 10)
+	tab.add_child(tab_row)
+	var tab_title := Label.new()
+	tab_title.text = "Sırt Çantası"
+	tab_title.add_theme_font_size_override("font_size", 22)
+	tab_title.add_theme_color_override("font_color", UIColors.TAB_TEXT)
+	tab_row.add_child(tab_title)
+	_tab_cap_label = Label.new()
+	_tab_cap_label.add_theme_font_size_override("font_size", 13)
+	_tab_cap_label.add_theme_color_override("font_color",
+			Color(UIColors.TAB_TEXT, 0.75))
+	_tab_cap_label.size_flags_vertical = Control.SIZE_SHRINK_END
+	tab_row.add_child(_tab_cap_label)
+	tab.position = Vector2(26.0, panel.offset_top - 16.0)
+	inventory_root.add_child(tab)  # panelden SONRA -> ustune cizilir
+	# YUVARLAK KAPAT: mevcut buton sag uste tasinir, krem daire + golge
+	inventory_close.get_parent().remove_child(inventory_close)
+	inventory_root.add_child(inventory_close)
+	inventory_close.custom_minimum_size = Vector2(44, 44)
+	inventory_close.anchor_left = 1.0
+	inventory_close.anchor_right = 1.0
+	inventory_close.anchor_top = 0.0
+	inventory_close.anchor_bottom = 0.0
+	inventory_close.offset_left = -62.0
+	inventory_close.offset_right = -18.0
+	inventory_close.offset_top = panel.offset_top - 12.0
+	inventory_close.offset_bottom = panel.offset_top + 32.0
+	var close_sb := StyleBoxFlat.new()
+	close_sb.bg_color = UIColors.PANEL_CREAM
+	close_sb.set_corner_radius_all(999)
+	close_sb.shadow_size = 8
+	close_sb.shadow_color = Color(0, 0, 0, 0.16)
+	close_sb.shadow_offset = Vector2(0, 4)
+	var close_pressed_sb := close_sb.duplicate()
+	close_pressed_sb.bg_color = UIColors.PANEL_CREAM_DARK
+	inventory_close.add_theme_stylebox_override("normal", close_sb)
+	inventory_close.add_theme_stylebox_override("hover", close_sb)
+	inventory_close.add_theme_stylebox_override("pressed", close_pressed_sb)
+	inventory_close.add_theme_stylebox_override("focus", close_sb)
 
 # --- R1: Sag kenar dikey DOCK (canta / uretim / arastirma) --------------
 # Dagitik beyaz daireler yerine TEK dikey dock: kategori renkli DOLGULU
@@ -757,6 +863,9 @@ func _refresh() -> void:
 		if locked_count > 0:
 			_lock_chip_label.text = "+%d slot (deri çanta ile)" % locked_count
 	capacity_label.text = "%d/%d" % [Inventory.get_used_slots(), capacity]
+	# ENVANTER-MOCKUP: doluluk sekmenin icinde de yasar ("Sırt Çantası 14/16")
+	if _tab_cap_label != null:
+		_tab_cap_label.text = capacity_label.text
 	_refresh_hotbar(_mini_hotbar_slots)
 	_update_detail()
 	_update_cards()
