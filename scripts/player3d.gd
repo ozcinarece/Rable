@@ -59,7 +59,9 @@ const TOOL_GLB_OVERRIDE := {
 ##  extra  : son ince ayar ofseti (metre, dunya).
 ## Kullanici "biraz yukari / dondur" derse bu sayilari degistiririz.
 const TOOL_HOLD := {
-	"balta": {"axis": 1, "grip": 0.85, "rot_deg": Vector3(0, 0, 0),
+	# scale>0: SABIT ~scale m boy (skinned el kemigi telafisini atla). grip:
+	# 0=alt uc(Y min), 1=ust uc. TEST: ortadan tut + sabit 0.5m -> balta gorunur mu.
+	"balta": {"axis": 1, "grip": 0.5, "scale": 0.5, "rot_deg": Vector3(0, 0, 0),
 			"extra": Vector3(0, 0, 0)},
 }
 
@@ -398,24 +400,25 @@ func set_held_tool(model_path: String) -> void:
 	var size := aabb.get_longest_axis_size()
 	if size > 0.01:
 		var s := 0.5 / (size * _node_world_scale(_tool_attach))
-		visual.scale = Vector3(s, s, s)
-		# KAVRAMA (veri tabanli, TOOL_HOLD): otomatik "hangi uc sap" tahmini
-		# guvenilir degildi (kah kafadan kah havada tutuyordu). Artik elin
-		# tuttugu nokta + donme ELLE ayarlanir; render'a bakip TOOL_HOLD
-		# sayilarini degistiririz.
+		# KAVRAMA (veri tabanli, TOOL_HOLD). scale>0 verilirse _node_world_scale
+		# telafisi ATLANIR ve SABIT yerel olcek kullanilir (skinned rig'de o
+		# telafi baltayi minik yapiyordu). El noktasi + donme ELLE ayarlanir.
 		if TOOL_HOLD.has(model_path):
 			var cfg: Dictionary = TOOL_HOLD[model_path]
-			# Once donme (aleti dik/dogru yone getir), sonra kavrama noktasi
+			var fixed: float = float(cfg.get("scale", 0.0))
+			if fixed > 0.0:
+				s = fixed / size  # sabit ~fixed m boy (telafi yok)
+			visual.scale = Vector3(s, s, s)
 			visual.rotation_degrees = cfg.get("rot_deg", Vector3.ZERO)
 			var sz := aabb.size
 			var li: int = int(cfg.get("axis", 1))  # aletin uzun ekseni (balta=Y)
-			# grip: 0 = eksenin MIN ucu, 1 = MAX ucu. Elin hizalanacagi nokta.
-			var frac: float = float(cfg.get("grip", 0.5))
+			var frac: float = float(cfg.get("grip", 0.5))  # 0=MIN uc,1=MAX uc
 			var g := aabb.get_center()
 			g[li] = aabb.position[li] + frac * sz[li]
-			# Donmus gorselde kaydirma: kavrama noktasini ele getir + ince ayar
 			var basis := Basis.from_euler(visual.rotation)
 			visual.position = -(basis * (g * s)) + cfg.get("extra", Vector3.ZERO)
+		else:
+			visual.scale = Vector3(s, s, s)
 
 ## Uc fazli alet sallamasi (12.3). Profil pozlarini Tween ile oynatir;
 ## strike aninda on_strike cagrilir (ETKI orada uygulanir, buton aninda
