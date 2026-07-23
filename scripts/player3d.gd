@@ -51,6 +51,18 @@ const TOOL_GLB_OVERRIDE := {
 	"balta": "res://assets/models/test/axe.glb",
 }
 
+## ELLE AYARLANAN ALET KAVRAMASI (veri; render'a bakip ayarlanir).
+##  axis   : aletin uzun ekseni (0=X,1=Y,2=Z). axe.glb olculdu -> Y (1).
+##  grip   : elin hizalanacagi nokta; 0 = eksenin MIN ucu, 1 = MAX ucu.
+##           "en asagi sapini tut" => sapin oldugu uca yakin deger.
+##  rot_deg: aleti elde dogru yone cevirmek icin donme (derece).
+##  extra  : son ince ayar ofseti (metre, dunya).
+## Kullanici "biraz yukari / dondur" derse bu sayilari degistiririz.
+const TOOL_HOLD := {
+	"balta": {"axis": 1, "grip": 0.85, "rot_deg": Vector3(0, 0, 0),
+			"extra": Vector3(0, 0, 0)},
+}
+
 ## STIL: esya id -> karakterin GOVDE saldiri animasyonu (character_animated).
 ## Alete ozel: balta kilic kesigi, kazma cekic savurmasi. Karakter o animasyona
 ## sahip degilse otomatik bulunan _anim_attack'e duser.
@@ -177,15 +189,15 @@ func set_character(model_path: String) -> void:
 		var weapon := model.find_child(weapon_name, true, false)
 		if weapon != null and weapon is Node3D:
 			(weapon as Node3D).visible = false
-	# Model hangi olcekte gelirse gelsin boyunu TARGET_HEIGHT'a getir.
-	# Boy, BIRIKIMLI donusumlerle olculur: bazi paketlerde (orn.
-	# Quaternius Sam) iskelet dugumu 100x olcek tasir, mesh verisi ise
-	# minicik - yerel kutuya bakmak devasa/minik karaktere yol acar.
+	# OLCEK: artik KODDA olceklenmez. Boy, GLB'nin .import dosyasindaki
+	# Root Scale'iyle (apply_root_scale + root_scale) ithal aninda verilir ->
+	# model node'u 1.0 olcekte kalir (tool-attach/carpisma gercek metrede olur,
+	# eski AABB/kemik olcum hilelerinin yarattigi "kubbe/patlama" sorunu biter).
+	# Referans deger RAPOR_KARAKTER.md'de; yeni Meshy modelde ayni yontem kullanilir.
+	_model_scale = 1.0
 	var vis_aabb := _visual_aabb(model, Transform3D.IDENTITY)
 	if vis_aabb.size.y > 0.01:
 		_raw_height = vis_aabb.size.y
-		_model_scale = TARGET_HEIGHT / _raw_height
-		model.scale = Vector3(_model_scale, _model_scale, _model_scale)
 	# Alet baglama noktasi: sag el kemigi (yoksa govde onunde yedek nokta).
 	# Kemik baglantilari iskelet olcegini tasiyabilir; bu yuzden gorseller
 	# dogrudan kemige degil, olcegi 1 olan AYNA dugumlere takilir
@@ -235,12 +247,9 @@ func set_character(model_path: String) -> void:
 	set_hat(_hat_id)
 	set_face(_face_path)
 	set_hair(_hair_style, _hair_color)
-	# STIL: iskeletli modelde gercek boyu kemik pozlarindan dogrula (bir kare
-	# sonra). Armature 0.01 gibi olcekler mesh AABB'siyle yakalanamaz.
-	if skeleton != null:
-		_rescale_skel = skeleton
-		_rescale_model = model
-		_rescale_wait = 2
+	# NOT: eski _fix_skinned_scale (kemik-pozu ile ikinci kez olcekleme) KALDIRILDI.
+	# Olcek artik import Root Scale ile tek seferde dogru; ikinci olcekleme
+	# "kubbe" bozulmasina yol aciyordu.
 
 # Gorunur mesh'lerin BIRIKIMLI donusumlerle birlesik sinir kutusu
 # (iskelet dugumundeki 100x gibi olcekler dahil edilir)
@@ -383,19 +392,23 @@ func set_held_tool(model_path: String) -> void:
 	if size > 0.01:
 		var s := 0.5 / (size * _node_world_scale(_tool_attach))
 		visual.scale = Vector3(s, s, s)
-		# STIL: Meshy aletleri (override) orijini ORTADA gelir -> el ortadan
-		# kavrar (kullanici: "ucundan tutuyor"). Sapindan tutsun diye en uzun
-		# eksende ALT uca (min = sap) dogru kaydir: el, alt uctan ~%25 yukarida.
-		if TOOL_GLB_OVERRIDE.has(model_path):
+		# KAVRAMA (veri tabanli, TOOL_HOLD): otomatik "hangi uc sap" tahmini
+		# guvenilir degildi (kah kafadan kah havada tutuyordu). Artik elin
+		# tuttugu nokta + donme ELLE ayarlanir; render'a bakip TOOL_HOLD
+		# sayilarini degistiririz.
+		if TOOL_HOLD.has(model_path):
+			var cfg: Dictionary = TOOL_HOLD[model_path]
+			# Once donme (aleti dik/dogru yone getir), sonra kavrama noktasi
+			visual.rotation_degrees = cfg.get("rot_deg", Vector3.ZERO)
 			var sz := aabb.size
+			var li: int = int(cfg.get("axis", 1))  # aletin uzun ekseni (balta=Y)
+			# grip: 0 = eksenin MIN ucu, 1 = MAX ucu. Elin hizalanacagi nokta.
+			var frac: float = float(cfg.get("grip", 0.5))
 			var g := aabb.get_center()
-			var li := 0
-			if sz.y >= sz.x and sz.y >= sz.z: li = 1
-			elif sz.z >= sz.x and sz.z >= sz.y: li = 2
-			# BUGFIX: onceki %25 (min uc) balta BASINDAN tutturuyordu ("ucundan
-			# tutuyor"). Sap DIGER uctadir -> kavramayi max uca yakin al (%80).
-			g[li] = aabb.position[li] + 0.80 * sz[li]  # sap kavrama noktasi (dip)
-			visual.position = -g * s
+			g[li] = aabb.position[li] + frac * sz[li]
+			# Donmus gorselde kaydirma: kavrama noktasini ele getir + ince ayar
+			var basis := Basis.from_euler(visual.rotation)
+			visual.position = -(basis * (g * s)) + cfg.get("extra", Vector3.ZERO)
 
 ## Uc fazli alet sallamasi (12.3). Profil pozlarini Tween ile oynatir;
 ## strike aninda on_strike cagrilir (ETKI orada uygulanir, buton aninda
