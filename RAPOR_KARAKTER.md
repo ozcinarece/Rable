@@ -45,8 +45,25 @@ const TOOL_HOLD := {
 - İdeal (ileride Blender olursa): GLB'de **Apply All Transforms** → Armature 1.0,
   boy ~1.7 m; o zaman kod ölçeği ve sabit-ölçek hilesi gerekmez.
 
+## Balta duruşu — ÇÖZÜLDÜ (el kemiği yöneliminden hesap)
+Sorun: balta el kemiğinin yönelimini miras alıyordu → **yatay, öne doğru**
+duruyordu (sap gövdeye gömülü). Built-in aletler kısa olduğu için sorun
+olmuyordu; uzun balta yatayken kötü görünüyordu.
+
+Çözüm (oto-tahmin yerine ÖLÇÜM):
+1. `player3d.debug_hand_orientation()` — el kemiğinin eksenlerini karakter
+   gövde çerçevesinde `docs/screens/handdbg.txt`'e yazar (yalnız screenshot).
+2. O veriden, baltanın **uzun ekseni (yerel +Y = kafa) gövde-yukarı**, bıçak
+   öne gelecek `rot_deg` hesaplandı:
+   `rot_deg = Vector3(11.2, 60.4, -125.4)` (Euler YXZ, Godot varsayılanı).
+3. `grip = 0.12` → el sapın en dibinde. Sonuç: **bıçak yukarı, sap aşağı,
+   el sapın altında** (kullanıcı seçimi "A").
+
+**Yeni GLB alet eklerken:** aleti dik/sap-aşağı ver; screenshot'ta
+`handdbg.txt` zaten el eksenini verir → aynı formülle `rot_deg` hesaplanır.
+
 ## Bilinen / açık
-- Balta açısı tepeden-görünümde net değil; canlı teste göre `grip`/`rot_deg`
-  ince ayarlanacak (kullanıcı geri bildirimiyle).
+- Balta boşta (idle) hafif dışa yatık görünebilir — idle pozunun el açısı;
+  yürürken kol zaten sallanır. `scale`/`rot_deg` istenirse ince ayarlanır.
 - Karakterin "kırmızı yuvarlak kafa" görünümü modelin tasarımı (Meshy avatarı);
   teknik değil.
