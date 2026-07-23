@@ -189,16 +189,18 @@ func set_character(model_path: String) -> void:
 		var weapon := model.find_child(weapon_name, true, false)
 		if weapon != null and weapon is Node3D:
 			(weapon as Node3D).visible = false
-	# OLCEK: skinned Meshy modellerde Armature 0.01 tasidigi icin mesh AABB'si
-	# gercek render boyunu YANSITMAZ (mesh-yerel ~1.7m ama render ~0.017m). Bu
-	# yuzden AABB ile kaba olcek + bir kare sonra KEMIK-POZUNDAN kesin olcek
-	# (_fix_skinned_scale) SART. (import Root Scale yontemi headless CI'da
-	# el-yapimi .import'u tanimadigi icin kullanilamadi.)
-	var vis_aabb := _visual_aabb(model, Transform3D.IDENTITY)
-	if vis_aabb.size.y > 0.01:
-		_raw_height = vis_aabb.size.y
-		_model_scale = TARGET_HEIGHT / _raw_height
-		model.scale = Vector3(_model_scale, _model_scale, _model_scale)
+	# OLCEK: "_scaled" modeller ONCEDEN dogru boya gomulmustur (GLB icinde
+	# Armature olcegi Blender-Apply gibi bakilmistir) -> KODDA olceklenmez,
+	# node 1.0 kalir (tool-attach gercek metrede -> balta sapindan oturur).
+	# Diger (ham) Meshy modellerde Armature 0.01 tasidigi icin AABB gercek boyu
+	# yansitmaz; onlarda AABB + kemik-pozu (_fix_skinned_scale) ile olceklenir.
+	var prescaled := model_path.contains("_scaled")
+	if not prescaled:
+		var vis_aabb := _visual_aabb(model, Transform3D.IDENTITY)
+		if vis_aabb.size.y > 0.01:
+			_raw_height = vis_aabb.size.y
+			_model_scale = TARGET_HEIGHT / _raw_height
+			model.scale = Vector3(_model_scale, _model_scale, _model_scale)
 	# Alet baglama noktasi: sag el kemigi (yoksa govde onunde yedek nokta).
 	# Kemik baglantilari iskelet olcegini tasiyabilir; bu yuzden gorseller
 	# dogrudan kemige degil, olcegi 1 olan AYNA dugumlere takilir
@@ -249,9 +251,9 @@ func set_character(model_path: String) -> void:
 	set_face(_face_path)
 	set_hair(_hair_style, _hair_color)
 	# Skinned modelde gercek boyu kemik pozlarindan dogrula (bir kare sonra);
-	# Armature 0.01 gibi olcekler mesh AABB'siyle yakalanamaz. Bu, skinned
-	# Meshy karakterin dogru boya gelmesi icin SART.
-	if skeleton != null:
+	# Armature 0.01 gibi olcekler mesh AABB'siyle yakalanamaz. ONCEDEN gomulu
+	# ("_scaled") modellerde gerek yok (zaten dogru boyda, node 1.0).
+	if skeleton != null and not prescaled:
 		_rescale_skel = skeleton
 		_rescale_model = model
 		_rescale_wait = 2
