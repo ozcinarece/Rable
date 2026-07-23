@@ -1317,7 +1317,22 @@ func _flash_night_pill(text: String) -> void:
 
 # R4: sol dikey 56px kategori sekmeleri — kategori RENKLI dolgulu daire +
 # ikon (etiket KIRPILMAZ; isim tooltip + detay bandinda). "Tümü" ayri durur.
+# PANEL-MOCKUP .rail: 92px dikey raf; renkli daire (60px) + altinda TAM
+# kelime mini etiket (kirpma YASAK); aktif raf 6px SAGA kayar + koyu halka
+# + tam opak; "Tümü" dahil. Pasifler %68 opak (mockup .cat opacity .68).
 func _build_category_buttons() -> void:
+	cat_box.custom_minimum_size = Vector2(92, 0)
+	cat_box.add_theme_constant_override("separation", 10)
+	# Raf tasarsa dikey kaydirma (mockup .rail overflow-y:auto)
+	var rail_scroll := ScrollContainer.new()
+	rail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	rail_scroll.custom_minimum_size = Vector2(100, 0)
+	var rail_parent := cat_box.get_parent()
+	var rail_at := cat_box.get_index()
+	rail_parent.remove_child(cat_box)
+	rail_parent.add_child(rail_scroll)
+	rail_parent.move_child(rail_scroll, rail_at)
+	rail_scroll.add_child(cat_box)
 	var group := ButtonGroup.new()
 	var cats := {"tumu": "Tümü"}
 	cats.merge(Recipes.CATEGORIES)
@@ -1328,23 +1343,38 @@ func _build_category_buttons() -> void:
 		var button := Button.new()
 		button.toggle_mode = true
 		button.button_group = group
-		button.tooltip_text = String(cats[cat_id])
 		button.icon = _category_icon(cat_id)
 		_style_cat_button(button, color)
+		# Giydirme: Margin (aktifken 6px saga) > VBox > daire + etiket
+		var wrap := MarginContainer.new()
+		wrap.add_theme_constant_override("margin_left", 0)
+		var entry := VBoxContainer.new()
+		entry.add_theme_constant_override("separation", 2)
+		entry.alignment = BoxContainer.ALIGNMENT_CENTER
+		button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		entry.add_child(button)
+		var lbl := Label.new()
+		lbl.text = String(cats[cat_id])
+		lbl.add_theme_font_size_override("font_size", 13)
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		entry.add_child(lbl)
+		wrap.add_child(entry)
+		cat_box.add_child(wrap)
+		_cat_buttons[cat_id] = {"btn": button, "lbl": lbl, "wrap": wrap,
+				"color": color}
 		button.button_pressed = cat_id == _current_cat
-		_apply_cat_state(button, cat_id == _current_cat)
+		_apply_cat_state(cat_id, cat_id == _current_cat)
 		var cid: String = cat_id
 		button.toggled.connect(func(pressed: bool):
-			_apply_cat_state(button, pressed)
+			_apply_cat_state(cid, pressed)
 			if pressed:
 				_current_cat = cid
 				_rebuild_cards())
-		cat_box.add_child(button)
-		_cat_buttons[cat_id] = button
 
-# 56px kategori sekmesi: renkli dolgulu daire + %65+ dolduran koyu kahve ikon.
+# 60px kategori dairesi: renkli dolgu + koyu kahve ikon (%65+ doluluk).
 func _style_cat_button(button: Button, color: Color) -> void:
-	button.custom_minimum_size = Vector2(56, 56)
+	button.custom_minimum_size = Vector2(60, 60)
 	button.expand_icon = true
 	button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	button.vertical_icon_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1352,10 +1382,10 @@ func _style_cat_button(button: Button, color: Color) -> void:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = color
 	sb.set_corner_radius_all(999)
-	sb.content_margin_left = 9
-	sb.content_margin_right = 9
-	sb.content_margin_top = 9
-	sb.content_margin_bottom = 9
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
 	for state in ["normal", "hover", "pressed", "disabled"]:
 		button.add_theme_stylebox_override(state, sb)
 	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
@@ -1373,11 +1403,29 @@ func _category_icon(cat_id: String) -> Texture2D:
 					return load(p)
 	return load("res://assets/ui/wrench.png")
 
-# Aktif sekme tam opak + hafif buyuk; pasifler %65 opak (UI_DESIGN 4.3)
-func _apply_cat_state(button: Button, active: bool) -> void:
-	button.modulate.a = 1.0 if active else 0.65
-	button.pivot_offset = button.custom_minimum_size / 2.0
-	button.scale = Vector2.ONE * (1.08 if active else 1.0)
+# Aktif raf: 6px saga + koyu 3px halka + tam opak; pasif %68 + halkasiz.
+func _apply_cat_state(cat_id: String, active: bool) -> void:
+	if not _cat_buttons.has(cat_id):
+		return
+	var refs: Dictionary = _cat_buttons[cat_id]
+	var button: Button = refs["btn"]
+	var wrap: MarginContainer = refs["wrap"]
+	wrap.add_theme_constant_override("margin_left", 6 if active else 0)
+	button.modulate.a = 1.0 if active else 0.68
+	(refs["lbl"] as Label).add_theme_color_override("font_color",
+			UIColors.INK_DARK if active else UIColors.INK_SOFT)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = refs["color"]
+	sb.set_corner_radius_all(999)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
+	if active:
+		sb.set_border_width_all(3)
+		sb.border_color = UIColors.INK_DARK
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		button.add_theme_stylebox_override(state, sb)
 
 # R4: kart izgarasi (88px kare kart: ikon %65 + altinda ad). Kart faded
 # durumu + eksik-malzeme rozeti _update_cards'ta tazelenir.
