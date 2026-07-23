@@ -477,11 +477,25 @@ func _make_tab(parent_root: Control, title: String, panel_top: float) -> Label:
 	cap.add_theme_color_override("font_color", Color(UIColors.TAB_TEXT, 0.75))
 	cap.size_flags_vertical = Control.SIZE_SHRINK_END
 	tab_row.add_child(cap)
-	tab.position = Vector2(26.0, panel_top - 16.0)
-	parent_root.add_child(tab)
-	# Konteyner disinda duran Control kendini min boyuta GETIRMEZ; metinler
-	# yerlesince sekmeyi icerige oturt (yoksa doluluk sekmeden tasar).
-	tab.call_deferred("reset_size")
+	# Konteyner disindaki Control kendini min boyuta GETIRMEZ (doluluk
+	# sekmeden tasiyordu). Sekme, boyutu yoneten tam-genislik HBox seridine
+	# konur: [26px bosluk][sekme][esnek bosluk] -> sekme icerigine oturur.
+	var bar := HBoxContainer.new()
+	bar.anchor_left = 0.0
+	bar.anchor_right = 1.0
+	bar.offset_top = panel_top - 16.0
+	bar.offset_bottom = panel_top + 30.0
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var lead := Control.new()
+	lead.custom_minimum_size = Vector2(26, 0)
+	lead.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(lead)
+	bar.add_child(tab)
+	var tail := Control.new()
+	tail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tail.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(tail)
+	parent_root.add_child(bar)
 	return cap
 
 # Ortak yuvarlak KAPAT butonu stili + sag ust konum (root icinde)
