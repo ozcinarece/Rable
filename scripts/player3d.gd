@@ -189,11 +189,11 @@ func set_character(model_path: String) -> void:
 		var weapon := model.find_child(weapon_name, true, false)
 		if weapon != null and weapon is Node3D:
 			(weapon as Node3D).visible = false
-	# OLCEK: TEK, temiz olcek (AABB boyundan). ESKI SORUN cift olceklemeydi
-	# (_visual_aabb + sonra _fix_skinned_scale kemik-pozu ile IKINCI kez) ->
-	# oranlar bozulup "kubbe" cikiyordu. Ikinci olcekleme kaldirildi; burada
-	# TEK sefer TARGET_HEIGHT'a getiriyoruz. (Not: import Root Scale yontemi
-	# headless CI'da el-yapimi .import'u tanimadigi icin kullanilamadi.)
+	# OLCEK: skinned Meshy modellerde Armature 0.01 tasidigi icin mesh AABB'si
+	# gercek render boyunu YANSITMAZ (mesh-yerel ~1.7m ama render ~0.017m). Bu
+	# yuzden AABB ile kaba olcek + bir kare sonra KEMIK-POZUNDAN kesin olcek
+	# (_fix_skinned_scale) SART. (import Root Scale yontemi headless CI'da
+	# el-yapimi .import'u tanimadigi icin kullanilamadi.)
 	var vis_aabb := _visual_aabb(model, Transform3D.IDENTITY)
 	if vis_aabb.size.y > 0.01:
 		_raw_height = vis_aabb.size.y
@@ -248,9 +248,13 @@ func set_character(model_path: String) -> void:
 	set_hat(_hat_id)
 	set_face(_face_path)
 	set_hair(_hair_style, _hair_color)
-	# NOT: eski _fix_skinned_scale (kemik-pozu ile ikinci kez olcekleme) KALDIRILDI.
-	# Olcek artik import Root Scale ile tek seferde dogru; ikinci olcekleme
-	# "kubbe" bozulmasina yol aciyordu.
+	# Skinned modelde gercek boyu kemik pozlarindan dogrula (bir kare sonra);
+	# Armature 0.01 gibi olcekler mesh AABB'siyle yakalanamaz. Bu, skinned
+	# Meshy karakterin dogru boya gelmesi icin SART.
+	if skeleton != null:
+		_rescale_skel = skeleton
+		_rescale_model = model
+		_rescale_wait = 2
 
 # Gorunur mesh'lerin BIRIKIMLI donusumlerle birlesik sinir kutusu
 # (iskelet dugumundeki 100x gibi olcekler dahil edilir)
