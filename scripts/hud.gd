@@ -479,6 +479,9 @@ func _make_tab(parent_root: Control, title: String, panel_top: float) -> Label:
 	tab_row.add_child(cap)
 	tab.position = Vector2(26.0, panel_top - 16.0)
 	parent_root.add_child(tab)
+	# Konteyner disinda duran Control kendini min boyuta GETIRMEZ; metinler
+	# yerlesince sekmeyi icerige oturt (yoksa doluluk sekmeden tasar).
+	tab.call_deferred("reset_size")
 	return cap
 
 # Ortak yuvarlak KAPAT butonu stili + sag ust konum (root icinde)
@@ -951,8 +954,11 @@ func _refresh() -> void:
 			_lock_chip_label.text = "+%d slot · deri çanta ile" % locked_count
 	capacity_label.text = "%d/%d" % [Inventory.get_used_slots(), capacity]
 	# ENVANTER-MOCKUP: doluluk sekmenin icinde de yasar ("Sırt Çantası 14/16")
-	if _tab_cap_label != null:
+	if _tab_cap_label != null and _tab_cap_label.text != capacity_label.text:
 		_tab_cap_label.text = capacity_label.text
+		var tab_panel := _tab_cap_label.get_parent().get_parent() as Control
+		if tab_panel != null:
+			tab_panel.call_deferred("reset_size")  # sekme yeni metne otursun
 	_refresh_hotbar(_mini_hotbar_slots)
 	_update_detail()
 	_update_cards()
