@@ -154,7 +154,80 @@ const DESCRIPTIONS: Dictionary = {
 	"metal_kova": "Metal kova: su tasir (ileride sicak sivi da).",
 }
 
+## ENVANTER-MOCKUP "flavor" alani: bilgi seridindeki TEK SATIR kisilikli
+## metin (kisa, oyunun sesiyle; kuru veri degil). Mockup'taki metinler
+## baslangic seti; kalanlar ayni seste yazildi. Sayilar oyun degerleriyle
+## dogrulandi (FOOD_SATIATION, hasar/koruma tablolari). description()
+## ONCE buraya bakar; olmayan id eski DESCRIPTIONS'a duser.
+const FLAVOR: Dictionary = {
+	# --- kaynaklar
+	"odun": "Her şeyin başı. Yapı, alet, yakıt.",
+	"yaprak": "3 yaprak = 1 ip. Bıçakla 2 kat verim.",
+	"kalas": "Odunun terbiye görmüş hali. İnşaatın bel kemiği.",
+	"cubuk": "İnce ama vazgeçilmez — her sapın içinde bir çubuk var.",
+	"ip": "Bağla, ger, sık. Dağılmasın diye.",
+	"tas": "Sağlam duvarların hammaddesi.",
+	"cakil": "Sapanın dişleri. Cebinde şıngırdar.",
+	"toprak": "Çukur doldurur, zemin yükseltir (en fazla +2).",
+	"kil": "Sığ kazının armağanı. Fırın çağının kapısı.",
+	"kum": "Şimdilik sadece kum. Ama camı hayal et...",
+	"bakir": "Derinlerin ilk parıltısı. Demir çağına giden yol.",
+	"komur": "Kara elmas. Ateşi uzun tutar.",
+	"altin": "Parlar ama karın doyurmaz. Şimdilik.",
+	"cicek": "Güzel diye topladın, değil mi? Olsun.",
+	# --- yiyecek / tarim
+	"meyve": "Atıştırmalık — doygunluk +12.",
+	"mantar": "Şüpheli görünüyor ama iş görür — doygunluk +10.",
+	"cig_et": "Pişir. Cidden, pişir (%20 mide bulantısı).",
+	"pismis_et": "Ocakta pişti. Tok tutar — doygunluk +40.",
+	"tohum": "Toprağa ek, bekle. Sabrın meyvesi.",
+	# --- aletler
+	"balta": "Ağaçların korkulu rüyası. Tek vuruş, tek ağaç.",
+	"kazma": "Kayaya inat, iki vuruşta yol açar.",
+	"kurek": "Toprağa dokun, çukur olsun.",
+	"bicak": "Hassas işlerin aleti — bitkiden 2 kat lif.",
+	"cekic": "Yanlış yaptıysan geri söker. Malzeme ziyan olmaz.",
+	"kova": "Boş kova. Göle uzat, dolsun.",
+	"kova_dolu": "1 birim su taşıyor. Çukura dök.",
+	"metal_kova": "Ahşabın taşıyamadığını taşır. Sıcak işler için.",
+	# --- silahlar
+	"sopa": "İlk savunma hattı. Basit ama elin boş değil (12 hasar).",
+	"kilic": "18 hasar; peş peşe bas — ikinci kesik daha çabuk.",
+	"mizrak": "Mesafeni koru: 30 hasar, uzun erişim.",
+	"yay": "Basılı tut, ger, bırak. Ok uçar.",
+	"sapan": "Çakıl fırlatır. Gürültüsüz, masrafsız.",
+	"ok": "Yaysız işe yaramaz. Yayla ölümcül.",
+	"zirh": "Sırtında dursun yeter — hasarı %40 keser.",
+	"sapka": "Şıklık + %15 koruma. İkisi bir arada.",
+	"kukla": "Vur, kırılmaz. Alışman için burada.",
+	# --- yapilar / istasyonlar
+	"canta": "+4 slot. Sırtın genişledi (en fazla 2).",
+	"ahsap_duvar": "Dört duvar bir yuva. Savunmanın ilk adımı.",
+	"tas_duvar": "Ahşap dayanmazsa taş konuşur.",
+	"kapi": "Sen geçersin, onlar geçemez.",
+	"zemin": "Ev hissi ayaktan başlar.",
+	"tezgah": "Yanındayken elin ustalaşır — karmaşık tarifler açılır.",
+	"arastirma_masasi": "Bilginin başladığı yer. Düğümler burada çözülür.",
+	"kamp_evi": "Dönülecek bir yer. Yeniden doğuş noktası.",
+	"sandik": "Sırtın taşımazsa sandık taşır.",
+	"mesale": "Karanlık geri çekilsin.",
+	"yatak": "Uyu, sabahı getir (+30 can).",
+	"tuzak": "Üstüne basanın gecesi kötü biter.",
+	"ocak": "Ateş yanar, et pişer, ev ısınır.",
+	"platform": "Yüksekten bakan kazanır.",
+	# --- muhendislik
+	"merdiven": "Derin çukurdan çıkış. Gece çekmeyi unutma.",
+	"kazik": "Çukurun dibinde sivri bir sürpriz.",
+	"boru": "Suyu aşağı ve yana taşır. Ağın damarı.",
+	"pompa": "Suya 'yukarı' demenin tek yolu.",
+	"vana": "Aç, kapa. Akışın hâkimi sensin.",
+	# --- ozel
+	"oz": "Geceden hasat. Gizli araştırmaların anahtarı.",
+}
+
 static func description(item_id: String) -> String:
+	if FLAVOR.has(item_id):
+		return String(FLAVOR[item_id])
 	return DESCRIPTIONS.get(item_id, "")
 
 static func display_name(item_id: String) -> String:
