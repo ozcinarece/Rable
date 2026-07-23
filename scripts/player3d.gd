@@ -67,10 +67,10 @@ const TOOL_HOLD := {
 	# (Onceki yanlislik alet degil KEMIKti: on kol -> RightHand duzeltildi.)
 	# rot_y=109: keskin kenar (-X; vertex olcumu: Z-kalinlik 0.006=agiz,
 	# +X 0.069=kut sirt) ASAGI doner. grip 0.18: el sapin ucuna yakin.
-	# extra: govde-asagi yonunde 6cm (el cercevesinde) -> sap elin ALTINDA
-	# durur, el ustte kalir (kullanici: "el yukarida olmali").
+	# extra: govde-asagi yonunde 10cm (el cercevesinde) -> sap elin ALTINDA
+	# durur, el ustte kalir (kullanici: "el yukarida olmali" + "biraz daha").
 	"balta": {"axis": 1, "grip": 0.18, "scale": 0.5, "rot_deg": Vector3(0, 109, 0),
-			"extra": Vector3(0.013, 0.046, 0.036)},
+			"extra": Vector3(0.021, 0.077, 0.060)},
 }
 
 ## STIL: esya id -> karakterin GOVDE saldiri animasyonu (character_animated).
