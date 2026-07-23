@@ -65,7 +65,9 @@ const TOOL_HOLD := {
 	# el kemigi yonelimini kullanir, sap yerel +Y, tutus sapin ~0.3'unde.
 	# axe.glb de +Y=kafa oldugundan rot_deg=0 birebir ayni pozu verir.
 	# (Onceki yanlislik alet degil KEMIKti: on kol -> RightHand duzeltildi.)
-	"balta": {"axis": 1, "grip": 0.3, "scale": 0.5, "rot_deg": Vector3(0, 0, 0),
+	# rot_y=109: keskin kenar (-X; vertex olcumu: Z-kalinlik 0.006=agiz,
+	# +X 0.069=kut sirt) ASAGI doner. grip 0.18: el sapin ucuna yakin.
+	"balta": {"axis": 1, "grip": 0.18, "scale": 0.5, "rot_deg": Vector3(0, 109, 0),
 			"extra": Vector3(0, 0, 0)},
 }
 
