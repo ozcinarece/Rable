@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sırt Çantası — UI Mockup v1</title>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=Nunito:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --panel:#F6EDD6; --panel-dark:#EDE0C3;
+    --ink:#4A3728; --ink-soft:#8A7660; --ink-faint:#C4B49A;
+    --tab:#4A3728; --tab-text:#F6EDD6;
+    --c-resource:#A8D8A0; --c-tool:#F5B971; --c-weapon:#F09090;
+    --c-station:#C9A87C; --c-trap:#B9A0E8; --c-structure:#9FC5E8;
+    --c-farming:#D6E8A0; --c-eng:#A0D8D8; --c-special:#E8C4F0;
+    --ok:#7BC47F; --bad:#E07A5F; --warn:#E8B84A;
+    --r-panel:24px; --r-card:16px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{margin:0; font-family:'Baloo 2','Nunito',system-ui,sans-serif;
+    background:#2b241c;}
+
+  /* ---- Tam ekran ---- */
+  .phone{width:100%; height:100dvh; position:relative; overflow:hidden;}
+
+  /* ---- Sahte oyun sahnesi ---- */
+  .game{position:absolute; inset:0;
+    background:linear-gradient(160deg,#9fce7e 0%,#8cc06e 45%,#7db463 100%);}
+  .blob{position:absolute; border-radius:50%;}
+  .tree{width:70px;height:70px;background:#5F7A52;top:12%;left:8%;
+    box-shadow:120px 30px 0 -8px #5F7A52, 620px -10px 0 -4px #5F7A52;}
+  .trunk{width:16px;height:26px;background:#8A6642;border-radius:6px;
+    position:absolute;top:26%;left:11%;}
+  .water{position:absolute; right:-6%; top:-10%; width:38%; height:70%;
+    background:#8fb8de; border-radius:50%; opacity:.9;}
+  .char{position:absolute; left:46%; top:30%; width:34px; height:44px;}
+  .char .head{width:30px;height:30px;background:#F2C6A0;border-radius:50%;
+    border:3px solid #583C2C; position:relative;}
+  .char .hat{position:absolute; top:-4px; left:-3px; width:30px; height:16px;
+    background:#C66C4A; border:3px solid #583C2C; border-radius:16px 16px 4px 4px;}
+  .char .body{width:22px;height:16px;background:#8CA278;border-radius:8px;
+    border:3px solid #583C2C; margin:-4px auto 0;}
+
+  /* ---- Karartma ---- */
+  .dim{position:absolute; inset:0; background:#2B1F14; opacity:.42;}
+
+  /* ---- Alttan kayan panel ---- */
+  .sheet{position:absolute; left:50%; bottom:0; transform:translateX(-50%);
+    width:96%; height:90%; background:var(--panel);
+    border-radius:var(--r-panel) var(--r-panel) 0 0;
+    box-shadow:0 -10px 32px #00000038;
+    display:flex; flex-direction:column; padding:10px 22px 12px;
+    animation:rise .3s cubic-bezier(.2,.9,.3,1);
+    background-image:radial-gradient(#00000006 1px, transparent 1px);
+    background-size:14px 14px;}
+  @keyframes rise{from{transform:translate(-50%,12%);opacity:.6}
+    to{transform:translate(-50%,0);opacity:1}}
+  @media (prefers-reduced-motion:reduce){.sheet{animation:none}}
+
+  /* dikişli tutamaç — imza dokunuş */
+  .handle{width:84px; height:12px; margin:0 auto 6px; background:#C9A87C;
+    border-radius:99px; position:relative;}
+  .handle::after{content:""; position:absolute; inset:3px 8px;
+    border-top:2px dashed #F6EDD6; border-bottom:2px dashed #F6EDD6;
+    border-radius:99px; opacity:.9;}
+
+  /* başlık sekmesi — çanta kapağı gibi panelden taşar */
+  .tab{position:absolute; top:-16px; left:26px; background:var(--tab);
+    color:var(--tab-text); padding:7px 20px 8px;
+    border-radius:14px 14px 16px 16px; font-weight:700; font-size:22px;
+    letter-spacing:.3px; box-shadow:0 4px 10px #00000030;}
+  .tab .cap{font-size:13px; opacity:.75; font-weight:600; margin-left:10px;}
+  .close{position:absolute; top:-12px; right:18px; width:44px; height:44px;
+    border-radius:50%; background:var(--panel); border:none; color:var(--ink);
+    font-size:20px; font-weight:700; box-shadow:0 4px 10px #00000028;
+    cursor:pointer;}
+
+  /* ---- Slot ızgarası ---- */
+  .grid{display:grid; grid-template-columns:repeat(8,1fr); gap:clamp(8px,1.6vh,14px);
+    padding:14px 4px 6px; flex:1; align-content:start;}
+  .slot{aspect-ratio:1; border:none; background:transparent; cursor:pointer;
+    position:relative; display:flex; align-items:center; justify-content:center;
+    transition:transform .12s;}
+  .slot:active{transform:scale(.92);}
+  .slot .ring{width:86%; aspect-ratio:1; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    font-size:clamp(24px,7vh,40px); transition:box-shadow .15s;}
+  .slot.empty .ring{background:var(--panel-dark);}
+  .slot .qty{position:absolute; right:2%; bottom:0; background:var(--panel);
+    color:var(--ink); font-size:15px; font-weight:700; padding:0 7px;
+    border-radius:99px; box-shadow:0 1px 4px #00000022; line-height:20px;}
+  .slot.sel .ring{box-shadow:0 0 0 4px var(--ink), 0 0 0 8px #4A372822;}
+  .slot:focus-visible{outline:3px solid var(--ink); outline-offset:2px;
+    border-radius:50%;}
+  .chip{grid-column:span 2; font-size:14px; align-self:center; justify-self:start;
+    background:var(--panel-dark); color:var(--ink-soft); font-size:13px;
+    font-weight:700; padding:8px 14px; border-radius:99px; white-space:nowrap;}
+
+  /* ---- Bilgi şeridi ---- */
+  .strip{background:var(--panel-dark); border-radius:var(--r-card);
+    padding:10px 14px; display:flex; align-items:center; gap:14px;
+    min-height:74px;}
+  .strip .big{width:68px; height:68px; border-radius:50%; flex:none;
+    display:flex; align-items:center; justify-content:center; font-size:30px;}
+  .strip .txt{flex:1; min-width:0;}
+  .strip .name{font-weight:700; font-size:21px; color:var(--ink);
+    line-height:1.1;}
+  .strip .desc{font-size:16px; color:var(--ink-soft); white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; font-family:'Nunito';}
+  .pills{display:flex; gap:10px; flex:none;}
+  .pill{border:none; border-radius:99px; padding:14px 28px; font-size:18px;
+    font-weight:700; font-family:inherit; cursor:pointer;
+    transition:transform .1s;}
+  .pill:active{transform:scale(.94);}
+  .pill.primary{background:var(--ink); color:var(--tab-text);}
+  .pill.ghost{background:transparent; color:var(--ink);
+    box-shadow:inset 0 0 0 2.5px var(--ink);}
+  .pill.danger{background:transparent; color:var(--bad);
+    box-shadow:inset 0 0 0 2.5px var(--bad);}
+
+  .strip{margin-bottom:6px;}
+
+  /* ---- Yatay kilidi ---- */
+  .rotate{display:none; position:fixed; inset:0; background:#2b241c;
+    z-index:99; color:#F6EDD6; flex-direction:column; align-items:center;
+    justify-content:center; gap:14px; text-align:center; padding:24px;}
+  .rotate .ph{font-size:56px; animation:tilt 1.6s ease-in-out infinite;}
+  @keyframes tilt{0%,100%{transform:rotate(0)}50%{transform:rotate(-90deg)}}
+  .rotate .tx{font-size:20px; font-weight:700;}
+  @media (orientation:portrait){
+    .rotate{display:flex;}
+    .sheet,.dim{display:none;}
+  }
+  /* ---- Yatay (kısa-geniş) ekran sıkılaştırma ---- */
+  @media (orientation:landscape) and (max-height:500px){
+    .sheet{padding-top:6px;}
+    .handle{height:9px; margin-bottom:2px;}
+    .tab{font-size:18px; padding:5px 16px 6px; top:-13px;}
+    .strip{min-height:64px; padding:8px 12px;}
+    .strip .big{width:54px; height:54px; font-size:26px;}
+    .strip .name{font-size:18px;}
+  }
+</style>
+</head>
+<body>
+<div class="rotate" aria-hidden="true">
+  <div class="ph">📱</div>
+  <div class="tx">Cihazını yatay çevir<br><span style="opacity:.7;font-size:15px">Oyun yatay ekranda oynanır</span></div>
+</div>
+
+<div class="phone">
+  <div class="game">
+    <div class="blob tree"></div><div class="trunk"></div>
+    <div class="water"></div>
+    <div class="char"><div class="hat"></div><div class="head"></div><div class="body"></div></div>
+  </div>
+  <div class="dim"></div>
+
+  <section class="sheet" aria-label="Sırt Çantası">
+    <div class="tab">Sırt Çantası <span class="cap" id="capTop">14/16</span></div>
+    <button class="close" aria-label="Kapat">✕</button>
+    <div class="handle" aria-hidden="true"></div>
+
+    <div class="grid" id="grid"></div>
+
+    <div class="strip" id="strip">
+      <div class="big" id="sIcon" style="background:var(--c-resource)">🍖</div>
+      <div class="txt">
+        <div class="name" id="sName">Pişmiş Et</div>
+        <div class="desc" id="sDesc">Ocakta pişti. Tok tutar — doygunluk +40.</div>
+      </div>
+      <div class="pills" id="sPills"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+const C = {resource:'var(--c-resource)', tool:'var(--c-tool)',
+  weapon:'var(--c-weapon)', station:'var(--c-station)',
+  farming:'var(--c-farming)', eng:'var(--c-eng)', special:'var(--c-special)',
+  structure:'var(--c-structure)'};
+
+const items=[
+ {n:'Odun', i:'🪵', c:'resource', q:24, d:'Her şeyin başı. Yapı, alet, yakıt.', a:['drop']},
+ {n:'Taş', i:'🪨', c:'resource', q:18, d:'Sağlam duvarların hammaddesi.', a:['drop']},
+ {n:'Bitki Lifi', i:'🌿', c:'resource', q:9, d:'3 lif = 1 ip. Bıçakla 2 kat verim.', a:['drop']},
+ {n:'Yaban Meyvesi', i:'🫐', c:'resource', q:7, d:'Atıştırmalık — doygunluk +12.', a:['eat','drop']},
+ {n:'Pişmiş Et', i:'🍖', c:'resource', q:3, d:'Ocakta pişti. Tok tutar — doygunluk +40.', a:['eat','drop'], sel:true},
+ {n:'Çelik Balta', i:'🪓', c:'tool', q:1, d:'Tek vuruşta ağaç. Kademe: Çelik.', a:['equip','drop']},
+ {n:'Kova (dolu)', i:'🪣', c:'eng', q:1, d:'1 birim su taşıyor. Çukura dök.', a:['equip','drop']},
+ {n:'Mızrak', i:'🗡️', c:'weapon', q:1, d:'Dürt, fırlat, balık tut — üçü bir arada.', a:['equip','drop']},
+ {n:'Tuğla', i:'🧱', c:'resource', q:12, d:'Fırından çıktı. Sur zamanı.', a:['drop']},
+ {n:'Tohum', i:'🌱', c:'farming', q:5, d:'Sulanan tarlada 3 günde olgunlaşır.', a:['drop']},
+ {n:'Yaratık Özü', i:'✨', c:'special', q:2, d:'Geceden hasat. Gizli araştırmaların anahtarı.', a:['drop']},
+ {n:'Merdiven', i:'🪜', c:'structure', q:2, d:'Derin çukurdan çıkış. Gece çekmeyi unutma.', a:['place','drop']},
+ {n:'Ahşap Çatı', i:'🏠', c:'structure', q:6, d:'Duvar üstüne. Bir evin olsun.', a:['place','drop']},
+ null,null,null
+];
+
+const LBL={eat:'Ye', equip:'Kuşan', place:'Yerleştir', drop:'At'};
+const KIND={eat:'primary', equip:'primary', place:'primary', drop:'danger'};
+
+const grid=document.getElementById('grid');
+let selIdx=items.findIndex(x=>x&&x.sel);
+
+items.forEach((it,idx)=>{
+  const b=document.createElement('button');
+  b.className='slot'+(it?'':' empty')+(idx===selIdx?' sel':'');
+  b.setAttribute('aria-label', it? it.n+' x'+it.q : 'Boş slot');
+  b.innerHTML = it
+    ? `<div class="ring" style="background:${C[it.c]}">${it.i}</div>
+       ${it.q>1?`<span class="qty">${it.q}</span>`:''}`
+    : `<div class="ring"></div>`;
+  b.onclick=()=>{ if(!it) return; select(idx); };
+  grid.appendChild(b);
+});
+const chip=document.createElement('div');
+chip.className='chip'; chip.textContent='🔒 +8 slot · deri çanta ile';
+grid.appendChild(chip);
+
+function select(idx){
+  selIdx=idx;
+  [...grid.children].forEach((el,i)=>el.classList.toggle('sel', i===idx));
+  const it=items[idx];
+  document.getElementById('sIcon').style.background=C[it.c];
+  document.getElementById('sIcon').textContent=it.i;
+  document.getElementById('sName').textContent=it.n;
+  document.getElementById('sDesc').textContent=it.d;
+  const p=document.getElementById('sPills'); p.innerHTML='';
+  it.a.forEach(a=>{
+    const btn=document.createElement('button');
+    btn.className='pill '+KIND[a]; btn.textContent=LBL[a];
+    btn.onclick=()=>{btn.style.transform='scale(.9)';
+      setTimeout(()=>btn.style.transform='',120);};
+    p.appendChild(btn);
+  });
+}
+select(selIdx);
+</script>
+</body>
+</html>

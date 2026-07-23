@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Üretim — UI Mockup v1</title>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;600;700&family=Nunito:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --panel:#F6EDD6; --panel-dark:#EDE0C3;
+    --ink:#4A3728; --ink-soft:#8A7660; --ink-faint:#C4B49A;
+    --tab:#4A3728; --tab-text:#F6EDD6;
+    --c-resource:#A8D8A0; --c-tool:#F5B971; --c-weapon:#F09090;
+    --c-station:#C9A87C; --c-trap:#B9A0E8; --c-structure:#9FC5E8;
+    --c-farming:#D6E8A0; --c-eng:#A0D8D8;
+    --ok:#7BC47F; --bad:#E07A5F; --warn:#E8B84A;
+    --r-panel:24px; --r-card:16px;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{height:100%;}
+  body{margin:0; font-family:'Baloo 2','Nunito',system-ui,sans-serif;
+    background:#2b241c;}
+  .phone{width:100%; height:100dvh; position:relative; overflow:hidden;}
+  .game{position:absolute; inset:0;
+    background:linear-gradient(160deg,#9fce7e,#8cc06e 45%,#7db463);}
+  .dim{position:absolute; inset:0; background:#2B1F14; opacity:.42;}
+
+  .sheet{position:absolute; left:50%; bottom:0; transform:translateX(-50%);
+    width:96%; height:90%; background:var(--panel);
+    border-radius:var(--r-panel) var(--r-panel) 0 0;
+    box-shadow:0 -10px 32px #00000038;
+    display:flex; flex-direction:column; padding:10px 16px 12px 0;
+    animation:rise .3s cubic-bezier(.2,.9,.3,1);
+    background-image:radial-gradient(#00000006 1px, transparent 1px);
+    background-size:14px 14px;}
+  @keyframes rise{from{transform:translate(-50%,12%);opacity:.6}
+    to{transform:translate(-50%,0);opacity:1}}
+  @media (prefers-reduced-motion:reduce){.sheet{animation:none}}
+
+  .handle{width:84px; height:12px; margin:0 auto 4px; background:#C9A87C;
+    border-radius:99px; position:relative; flex:none;}
+  .handle::after{content:""; position:absolute; inset:3px 8px;
+    border-top:2px dashed #F6EDD6; border-bottom:2px dashed #F6EDD6;
+    border-radius:99px; opacity:.9;}
+  .tab{position:absolute; top:-16px; left:26px; background:var(--tab);
+    color:var(--tab-text); padding:7px 20px 8px;
+    border-radius:14px 14px 16px 16px; font-weight:700; font-size:22px;
+    box-shadow:0 4px 10px #00000030;}
+  .close{position:absolute; top:-12px; right:18px; width:44px; height:44px;
+    border-radius:50%; background:var(--panel); border:none; color:var(--ink);
+    font-size:20px; font-weight:700; box-shadow:0 4px 10px #00000028;
+    cursor:pointer;}
+
+  .main{flex:1; display:flex; min-height:0; gap:10px;}
+
+  /* ---- Sol kategori rafı ---- */
+  .rail{width:92px; flex:none; display:flex; flex-direction:column;
+    gap:10px; padding:8px 0 8px 10px; overflow-y:auto;}
+  .cat{border:none; background:transparent; cursor:pointer; position:relative;
+    display:flex; flex-direction:column; align-items:center; gap:2px;
+    padding:0; transition:transform .15s; opacity:.68;}
+  .cat .ico{width:clamp(52px,10vh,64px); height:clamp(52px,10vh,64px); border-radius:50%; display:flex;
+    align-items:center; justify-content:center; font-size:24px;
+    transition:box-shadow .15s;}
+  .cat .lbl{font-size:13px; font-weight:700; color:var(--ink-soft);}
+  .cat.on{opacity:1; transform:translateX(6px);}
+  .cat.on .ico{box-shadow:0 0 0 3px var(--ink);}
+  .cat.on .lbl{color:var(--ink);}
+
+  /* ---- Tarif ızgarası ---- */
+  .cards{flex:1; display:grid; grid-template-columns:repeat(auto-fill,minmax(clamp(96px,20vh,120px),1fr));
+    gap:12px; padding:10px 4px; overflow-y:auto; align-content:start;}
+  .card{border:none; background:var(--panel-dark); cursor:pointer;
+    border-radius:var(--r-card); padding:10px 6px 8px; position:relative;
+    display:flex; flex-direction:column; align-items:center; gap:5px;
+    transition:transform .12s, box-shadow .15s;}
+  .card:active{transform:scale(.95);}
+  .card .ico{width:clamp(52px,11vh,64px); height:clamp(52px,11vh,64px); border-radius:50%; display:flex;
+    align-items:center; justify-content:center; font-size:33px;}
+  .card .nm{font-size:14.5px; font-weight:700; color:var(--ink);
+    line-height:1.05; text-align:center;}
+  .card.no{opacity:.55;}
+  .card.no .miss{position:absolute; top:6px; right:6px; background:var(--bad);
+    color:#fff; font-size:11px; font-weight:800; min-width:20px; height:20px;
+    border-radius:99px; display:flex; align-items:center;
+    justify-content:center; padding:0 5px;}
+  .card.lock{opacity:.45;}
+  .card.lock .ico{filter:grayscale(.8);}
+  .card.lock::after{content:"🔒"; position:absolute; top:6px; right:6px;
+    font-size:14px;}
+  .card.sel{box-shadow:0 0 0 3px var(--ink); opacity:1;}
+
+  /* ---- Detay şeridi ---- */
+  .strip{margin:0 4px 4px 10px; background:var(--panel-dark);
+    border-radius:var(--r-card); padding:10px 14px; display:flex;
+    align-items:center; gap:14px; min-height:80px;}
+  .strip .big{width:68px; height:68px; border-radius:50%; flex:none;
+    display:flex; align-items:center; justify-content:center; font-size:30px;}
+  .strip .txt{flex:1; min-width:0;}
+  .strip .name{font-weight:700; font-size:21px; color:var(--ink);
+    line-height:1.1;}
+  .mats{display:flex; gap:8px; margin-top:5px; flex-wrap:wrap;}
+  .mat{display:flex; align-items:center; gap:4px; background:var(--panel);
+    border-radius:99px; padding:5px 12px 5px 8px; font-size:16px;
+    font-weight:800;}
+  .mat.ok{color:var(--ok);} .mat.no{color:var(--bad);}
+  .st{display:flex; align-items:center; gap:5px; font-size:14.5px;
+    font-weight:700; margin-top:5px; font-family:'Nunito';}
+  .st.ok{color:var(--ok);} .st.warn{color:var(--warn);} .st.hand{color:var(--ink-soft);}
+  .pill{border:none; border-radius:99px; padding:15px 32px; font-size:19px;
+    font-weight:700; font-family:inherit; cursor:pointer; flex:none;
+    transition:transform .1s;}
+  .pill:active{transform:scale(.94);}
+  .pill.go{background:var(--ink); color:var(--tab-text);}
+  .pill.off{background:var(--ink-faint); color:var(--panel); cursor:default;}
+
+  /* ---- Yatay kilidi ---- */
+  .rotate{display:none; position:fixed; inset:0; background:#2b241c;
+    z-index:99; color:#F6EDD6; flex-direction:column; align-items:center;
+    justify-content:center; gap:14px; text-align:center; padding:24px;}
+  .rotate .ph{font-size:56px; animation:tilt 1.6s ease-in-out infinite;}
+  @keyframes tilt{0%,100%{transform:rotate(0)}50%{transform:rotate(-90deg)}}
+  .rotate .tx{font-size:20px; font-weight:700;}
+  @media (orientation:portrait){
+    .rotate{display:flex;}
+    .sheet,.dim{display:none;}
+  }
+  /* ---- Yatay (kısa-geniş) ekran sıkılaştırma ---- */
+  @media (orientation:landscape) and (max-height:500px){
+    .sheet{padding-top:6px;}
+    .handle{height:9px; margin-bottom:2px;}
+    .tab{font-size:18px; padding:5px 16px 6px; top:-13px;}
+    .strip{min-height:64px; padding:8px 12px;}
+    .strip .big{width:54px; height:54px; font-size:26px;}
+    .strip .name{font-size:18px;}
+  }
+</style>
+</head>
+<body>
+<div class="rotate" aria-hidden="true">
+  <div class="ph">📱</div>
+  <div class="tx">Cihazını yatay çevir<br><span style="opacity:.7;font-size:15px">Oyun yatay ekranda oynanır</span></div>
+</div>
+
+<div class="phone">
+  <div class="game"></div>
+  <div class="dim"></div>
+
+  <section class="sheet" aria-label="Üretim">
+    <div class="tab">Üretim</div>
+    <button class="close" aria-label="Kapat">✕</button>
+    <div class="handle" aria-hidden="true"></div>
+
+    <div class="main">
+      <nav class="rail" id="rail"></nav>
+      <div class="cards" id="cards"></div>
+    </div>
+
+    <div class="strip">
+      <div class="big" id="dIco"></div>
+      <div class="txt">
+        <div class="name" id="dName"></div>
+        <div class="mats" id="dMats"></div>
+        <div class="st" id="dSt"></div>
+      </div>
+      <button class="pill go" id="dGo">Üret</button>
+    </div>
+  </section>
+</div>
+
+<script>
+const C={tool:'var(--c-tool)', weapon:'var(--c-weapon)',
+  structure:'var(--c-structure)', trap:'var(--c-trap)',
+  farming:'var(--c-farming)', eng:'var(--c-eng)',
+  station:'var(--c-station)', resource:'var(--c-resource)'};
+
+const inv={odun:24, taş:18, lif:9, ip:2, deri:1, kil:4, dal:6, çakıl:8, kömür:0};
+const MI={odun:'🪵', taş:'🪨', lif:'🌿', ip:'🧵', deri:'🟤', kil:'🏺',
+  dal:'🥢', çakıl:'⚪', kömür:'⬛'};
+
+const cats=[
+ {id:'all', lbl:'Tümü', i:'✳️', c:'resource'},
+ {id:'tool', lbl:'Aletler', i:'🪓', c:'tool'},
+ {id:'weapon', lbl:'Silahlar', i:'🗡️', c:'weapon'},
+ {id:'structure', lbl:'Yapılar', i:'🧱', c:'structure'},
+ {id:'trap', lbl:'Tuzaklar', i:'🪤', c:'trap'},
+ {id:'farming', lbl:'Tarım', i:'🌱', c:'farming'},
+ {id:'eng', lbl:'Müh.', i:'⚙️', c:'eng'},
+ {id:'station', lbl:'İstasyon', i:'🔥', c:'station'},
+];
+
+const R=[
+ {n:'İp', i:'🧵', c:'resource', m:{lif:3}, st:null},
+ {n:'Taş Balta', i:'🪓', c:'tool', m:{dal:2, çakıl:1, ip:1}, st:null},
+ {n:'Kürek', i:'🥄', c:'tool', m:{dal:2, taş:2, ip:1}, st:'Tezgah'},
+ {n:'Mızrak', i:'🗡️', c:'weapon', m:{dal:2, taş:1, ip:1}, st:null},
+ {n:'Ahşap Duvar', i:'🟫', c:'structure', m:{odun:4}, st:'Tezgah'},
+ {n:'Kapı', i:'🚪', c:'structure', m:{odun:6}, st:'Tezgah'},
+ {n:'Sandık', i:'📦', c:'structure', m:{odun:8, ip:1}, st:'Tezgah'},
+ {n:'Merdiven', i:'🪜', c:'structure', m:{odun:4, ip:1}, st:'Tezgah'},
+ {n:'Meşale', i:'🕯️', c:'structure', m:{dal:1, kömür:1}, st:null},
+ {n:'Sivri Kazık', i:'📍', c:'trap', m:{odun:4, ip:2}, st:'Tezgah'},
+ {n:'Yatak', i:'🛏️', c:'structure', m:{odun:6, deri:3}, st:'Tezgah'},
+ {n:'Fırın', i:'🔥', c:'station', m:{taş:10, kil:4}, st:'Tezgah'},
+ {n:'Çapa', i:'⛏️', c:'farming', m:{dal:2, taş:2, ip:1}, st:'Tezgah'},
+ {n:'Kova', i:'🪣', c:'eng', m:{odun:4, ip:1}, st:'Tezgah'},
+ {n:'Yay', i:'🏹', c:'weapon', lock:true},
+ {n:'Su Borusu', i:'〰️', c:'eng', lock:true},
+];
+const nearStation='Tezgah'; // mock: oyuncu tezgah yanında
+
+function calc(r){
+  if(r.lock) return {state:'lock'};
+  let missing=0, mats=[];
+  for(const k in r.m){
+    const have=inv[k]||0, need=r.m[k], ok=have>=need;
+    if(!ok) missing++;
+    mats.push({k, have, need, ok});
+  }
+  const stOk = !r.st || r.st===nearStation;
+  return {state: missing? 'no' : (stOk? 'yes':'far'), mats, missing, stOk};
+}
+
+let curCat='all', curIdx=1;
+const rail=document.getElementById('rail'),
+      cards=document.getElementById('cards');
+
+cats.forEach(c=>{
+  const b=document.createElement('button');
+  b.className='cat'+(c.id===curCat?' on':'');
+  b.innerHTML=`<div class="ico" style="background:${C[c.c]}">${c.i}</div>
+               <div class="lbl">${c.lbl}</div>`;
+  b.onclick=()=>{curCat=c.id;
+    [...rail.children].forEach((el,i)=>el.classList.toggle('on', cats[i].id===c.id));
+    draw();};
+  rail.appendChild(b);
+});
+
+function draw(){
+  cards.innerHTML='';
+  R.forEach((r,idx)=>{
+    if(curCat!=='all' && r.c!==curCat) return;
+    const s=calc(r);
+    const b=document.createElement('button');
+    b.className='card'+(s.state==='no'?' no':'')+(s.state==='lock'?' lock':'')
+      +(idx===curIdx?' sel':'');
+    b.innerHTML=`<div class="ico" style="background:${C[r.c]}">${r.i}</div>
+      <div class="nm">${r.n}</div>
+      ${s.state==='no'?`<span class="miss">${s.missing}</span>`:''}`;
+    b.onclick=()=>{curIdx=idx; draw(); detail();};
+    cards.appendChild(b);
+  });
+}
+
+function detail(){
+  const r=R[curIdx], s=calc(r);
+  document.getElementById('dIco').style.background=C[r.c];
+  document.getElementById('dIco').textContent=r.i;
+  document.getElementById('dName').textContent=r.n;
+  const dm=document.getElementById('dMats'); dm.innerHTML='';
+  const st=document.getElementById('dSt');
+  const go=document.getElementById('dGo');
+  if(s.state==='lock'){
+    dm.innerHTML='<span class="mat no">🔒 Araştırma gerekli</span>';
+    st.className='st hand'; st.textContent='Araştırma masasında açılır';
+    go.className='pill off'; go.textContent='Kilitli'; return;
+  }
+  s.mats.forEach(m=>{
+    const el=document.createElement('span');
+    el.className='mat '+(m.ok?'ok':'no');
+    el.textContent=`${MI[m.k]} ${m.have}/${m.need}`;
+    dm.appendChild(el);
+  });
+  if(!r.st){ st.className='st hand'; st.textContent='🖐 Elde üretilir'; }
+  else if(s.stOk){ st.className='st ok'; st.textContent=`✓ ${r.st} yanında`; }
+  else{ st.className='st warn'; st.textContent=`⚠ ${r.st} gerekli — uzaktasın`; }
+  const can = s.state==='yes';
+  go.className='pill '+(can?'go':'off');
+  go.textContent='Üret';
+}
+draw(); detail();
+</script>
+</body>
+</html>
