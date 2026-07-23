@@ -526,6 +526,12 @@ func _style_backpack_sheet() -> void:
 	inventory_close.add_theme_stylebox_override("hover", close_sb)
 	inventory_close.add_theme_stylebox_override("pressed", close_pressed_sb)
 	inventory_close.add_theme_stylebox_override("focus", close_sb)
+	# Izgara: 8 sutun SABIT; slot boyu ekran genisligine esner (mockup 1fr
+	# sutunlar; alt sinir 64px dokunma hedefi, ust sinir 104px)
+	var vw := get_viewport().get_visible_rect().size.x * 0.96 - 44.0
+	var cell := clampf((vw - 7.0 * 12.0) / 8.0, 64.0, 104.0)
+	for s in _inv_slots:
+		(s as Control).custom_minimum_size = Vector2(cell, cell)
 
 # --- R1: Sag kenar dikey DOCK (canta / uretim / arastirma) --------------
 # Dagitik beyaz daireler yerine TEK dikey dock: kategori renkli DOLGULU
@@ -861,7 +867,7 @@ func _refresh() -> void:
 		var locked_count: int = _inv_slots.size() - capacity
 		_lock_chip.visible = locked_count > 0
 		if locked_count > 0:
-			_lock_chip_label.text = "+%d slot (deri çanta ile)" % locked_count
+			_lock_chip_label.text = "+%d slot · deri çanta ile" % locked_count
 	capacity_label.text = "%d/%d" % [Inventory.get_used_slots(), capacity]
 	# ENVANTER-MOCKUP: doluluk sekmenin icinde de yasar ("Sırt Çantası 14/16")
 	if _tab_cap_label != null:
@@ -910,7 +916,7 @@ func _update_detail() -> void:
 			"primary": true, "on": _on_hold_pressed})
 	if Items.PLACEABLE.has(_selected_item):
 		pills.append({"text": "Yerleştir", "primary": true, "on": _on_place_pill})
-	pills.append({"text": "At", "on": _on_drop_pressed})
+	pills.append({"text": "At", "danger": true, "on": _on_drop_pressed})
 	_info.set_pills(pills)
 
 func _on_place_pill() -> void:
