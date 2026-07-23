@@ -296,6 +296,20 @@ func debug_hand_orientation() -> void:
 	var rel := pb.inverse() * hb  # el ekseni, karakter cercevesinde
 	var line := "handX=(%.3f,%.3f,%.3f) handY=(%.3f,%.3f,%.3f) handZ=(%.3f,%.3f,%.3f)" % [
 		rel.x.x, rel.x.y, rel.x.z, rel.y.x, rel.y.y, rel.y.z, rel.z.x, rel.z.y, rel.z.z]
+	# el kemiginin GOVDE'ye gore konumu (arkada mi? yanda mi? -Z=on, +Z=arka)
+	var rel_o := global_transform.affine_inverse() * _tool_src.global_transform.origin
+	line += "\norigin(govde): x=%.2f(sag) y=%.2f(yukari) z=%.2f(+arka/-on)" % [
+		rel_o.x, rel_o.y, rel_o.z]
+	# secili kemik adi + TUM kemik listesi (dogru el kemigini secmek icin)
+	var sk: Skeleton3D = null
+	if _tool_src is BoneAttachment3D:
+		sk = (_tool_src as BoneAttachment3D).get_parent() as Skeleton3D
+		line += "\nsecili kemik: " + (_tool_src as BoneAttachment3D).bone_name
+	if sk != null:
+		var names := PackedStringArray()
+		for i in sk.get_bone_count():
+			names.append(sk.get_bone_name(i))
+		line += "\nkemikler: " + ", ".join(names)
 	print("HANDDBG: " + line)
 	# Log tail-30'da kaybolmasin diye dosyaya da yaz (screenshot commit'i alir).
 	var f := FileAccess.open("res://docs/screens/handdbg.txt", FileAccess.WRITE)
