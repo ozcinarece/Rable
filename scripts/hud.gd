@@ -644,6 +644,12 @@ func _style_craft_sheet() -> void:
 	var rb: VBoxContainer = hbox.get_node("RightBox")
 	rb.remove_child(queue_row)
 	_craft_outer.add_child(queue_row)
+	# Kart alani zemini SEFFAF (mockup: kartlar panel-koyu, zemin krem
+	# sayfa; Body'nin InnerPanel'i kartlarla ayni renkti -> gorunmez kart)
+	var body: PanelContainer = rb.get_node("Body")
+	body.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	cards_box.add_theme_constant_override("h_separation", 12)
+	cards_box.add_theme_constant_override("v_separation", 12)
 	# Eski basligi gizle; ARAMA YOK (mockup karari — tarif sayisi 60'i
 	# asarsa geri gelir, RAPOR_PANEL TODO). search_edit gizli ama yasiyor:
 	# _rebuild_cards bos metin okur, davranis degismez.
@@ -1501,10 +1507,10 @@ func _make_recipe_card(recipe_id: String, recipe: Dictionary) -> PanelContainer:
 	bstyle.content_margin_top = 0
 	bstyle.content_margin_bottom = 1
 	badge.add_theme_stylebox_override("panel", bstyle)
-	badge.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	badge.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	badge.offset_top = 6.0
-	badge.offset_right = -6.0
+	# NOT: kart PanelContainer cocuk anchor'larini ezer; konum size_flags
+	# ile verilir (sag ust = SHRINK_END / SHRINK_BEGIN)
+	badge.size_flags_horizontal = Control.SIZE_SHRINK_END
+	badge.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	badge.visible = false
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var badge_label := Label.new()
@@ -1519,9 +1525,8 @@ func _make_recipe_card(recipe_id: String, recipe: Dictionary) -> PanelContainer:
 	lock_icon.custom_minimum_size = Vector2(18, 18)
 	lock_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	lock_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	lock_icon.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	lock_icon.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	lock_icon.position = Vector2(-24, 6)
+	lock_icon.size_flags_horizontal = Control.SIZE_SHRINK_END
+	lock_icon.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	lock_icon.visible = false
 	lock_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	card.add_child(lock_icon)
