@@ -1448,31 +1448,34 @@ func _rebuild_cards() -> void:
 		_sel_recipe = ""
 	_update_cards()
 
-# 88px kare tarif karti: kategori dairesi + %65 ikon + altinda ad + eksik rozeti.
+# PANEL-MOCKUP .card: ikon-once kart (112px, 16px kose, panel-koyu zemin),
+# 64px kategori dairesi + altinda ad. UC DURUM _update_cards'ta islenir:
+# uretilebilir tam renk / eksik %55 + kirmizi rozet / kilitli %45 gri + kilit.
 func _make_recipe_card(recipe_id: String, recipe: Dictionary) -> PanelContainer:
 	var card := PanelContainer.new()
 	card.theme_type_variation = "CardPanel"
-	card.custom_minimum_size = Vector2(88, 88)
+	card.custom_minimum_size = Vector2(112, 0)
 	var v := VBoxContainer.new()
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
-	v.add_theme_constant_override("separation", 3)
+	v.add_theme_constant_override("separation", 5)
 	card.add_child(v)
 
-	var circle := Panel.new()
-	circle.custom_minimum_size = Vector2(50, 50)
-	circle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = UIColors.category_color(
+	var base_color: Color = UIColors.category_color(
 			CAT_COLOR_KEY.get(recipe["category"], "resource"))
-	sb.set_corner_radius_all(999)
-	circle.add_theme_stylebox_override("panel", sb)
+	var circle := Panel.new()
+	circle.custom_minimum_size = Vector2(64, 64)
+	circle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var circle_style := StyleBoxFlat.new()
+	circle_style.bg_color = base_color
+	circle_style.set_corner_radius_all(999)
+	circle.add_theme_stylebox_override("panel", circle_style)
 	var icon := TextureRect.new()
 	icon.texture = load(Items.ITEMS[recipe_id]["icon"])
 	icon.set_anchors_preset(Control.PRESET_FULL_RECT)
-	icon.offset_left = 8
-	icon.offset_top = 8
-	icon.offset_right = -8
-	icon.offset_bottom = -8
+	icon.offset_left = 10
+	icon.offset_top = 10
+	icon.offset_right = -10
+	icon.offset_bottom = -10
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1481,14 +1484,14 @@ func _make_recipe_card(recipe_id: String, recipe: Dictionary) -> PanelContainer:
 
 	var name_label := Label.new()
 	name_label.text = Items.display_name(recipe_id)
-	name_label.theme_type_variation = "SubtleLabel"
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.clip_text = true
-	name_label.add_theme_font_size_override("font_size", 13)
-	name_label.custom_minimum_size = Vector2(84, 0)
+	name_label.add_theme_font_size_override("font_size", 14)
+	name_label.add_theme_color_override("font_color", UIColors.INK_DARK)
+	name_label.custom_minimum_size = Vector2(104, 0)
 	v.add_child(name_label)
 
-	# Eksik malzeme sayisi rozeti (sag ust; danger)
+	# Eksik malzeme sayisi rozeti (sag ust; kirmizi kapsul)
 	var badge := PanelContainer.new()
 	var bstyle := StyleBoxFlat.new()
 	bstyle.bg_color = UIColors.DANGER
@@ -1500,6 +1503,8 @@ func _make_recipe_card(recipe_id: String, recipe: Dictionary) -> PanelContainer:
 	badge.add_theme_stylebox_override("panel", bstyle)
 	badge.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	badge.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	badge.offset_top = 6.0
+	badge.offset_right = -6.0
 	badge.visible = false
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var badge_label := Label.new()
@@ -1508,15 +1513,40 @@ func _make_recipe_card(recipe_id: String, recipe: Dictionary) -> PanelContainer:
 	badge.add_child(badge_label)
 	card.add_child(badge)
 
-	card.gui_input.connect(func(event: InputEvent):
-		if (event is InputEventMouseButton and event.pressed) \
-				or (event is InputEventScreenTouch and event.pressed):
-			_select_recipe(recipe_id))
-	_recipe_cards[recipe_id] = {"card": card, "badge": badge, "badge_label": badge_label}
+	# Kilit ikonu (sag ust; yalniz arastirilmamis tarifte)
+	var lock_icon := TextureRect.new()
+	lock_icon.texture = load("res://assets/ui/lock.png")
+	lock_icon.custom_minimum_size = Vector2(18, 18)
+	lock_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	lock_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	lock_icon.set_anchors_preset(Control.PRESET_TOP_RIGHT)
+	lock_icon.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	lock_icon.position = Vector2(-24, 6)
+	lock_icon.visible = false
+	lock_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(lock_icon)
+
+	card.gui_input.connect(_on_card_input.bind(recipe_id, card))
+	_recipe_cards[recipe_id] = {"card": card, "badge": badge,
+			"badge_label": badge_label, "circle_style": circle_style,
+			"icon": icon, "lock": lock_icon, "color": base_color}
 	return card
+
+# Kart dokunusu: basista %95 kuculme (mockup :active), birakinca sec.
+func _on_card_input(event: InputEvent, recipe_id: String, card: Control) -> void:
+	var is_tap := (event is InputEventMouseButton) or (event is InputEventScreenTouch)
+	if not is_tap:
+		return
+	if event.pressed:
+		card.pivot_offset = card.size / 2.0
+		card.scale = Vector2.ONE * 0.95
+		_select_recipe(recipe_id)
+	else:
+		card.scale = Vector2.ONE
 
 func _select_recipe(recipe_id: String) -> void:
 	_sel_recipe = recipe_id
+	_update_cards()  # secili halka aninda gorunsun
 	_update_craft_detail()
 
 # R4: alt detay bandi (ORTAK bilesen) — buyuk ikon + ad + malzeme cipleri
@@ -1702,20 +1732,51 @@ func _make_vignette_texture() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 # R4: kartlarin faded durumu + eksik malzeme rozeti; detay bandi da tazelenir.
+# PANEL-MOCKUP UC DURUM (mockup calc/draw birebir):
+#  1) uretilebilir: tam renk
+#  2) malzeme eksik: %55 soluk + sag ustte kirmizi "eksik sayisi" rozeti
+#  3) arastirilmamis: %45 soluk + gri daire/ikon + kilit ikonu
+#  + secili kart: 3px koyu halka, tam opak (mockup .sel)
 func _update_cards() -> void:
+	var research := get_node_or_null("/root/Research")
 	for recipe_id in _recipe_cards:
 		var refs: Dictionary = _recipe_cards[recipe_id]
 		var recipe: Dictionary = Recipes.CRAFT_RECIPES[recipe_id]
-		var can := Crafting.max_craftable(recipe_id) >= 1
-		# Craftlanamayan kart %55 soluk (hedef gostermek motivasyondur)
-		refs["card"].modulate.a = 1.0 if can else 0.55
+		var locked: bool = research != null \
+				and not research.is_recipe_unlocked(recipe_id)
 		var missing := 0
 		for item_id in recipe["cost"]:
 			if Inventory.get_count(item_id) < int(recipe["cost"][item_id]):
 				missing += 1
-		refs["badge"].visible = missing > 0
-		if missing > 0:
-			refs["badge_label"].text = str(missing)
+		var card: Control = refs["card"]
+		var cstyle: StyleBoxFlat = refs["circle_style"]
+		var sel: bool = recipe_id == _sel_recipe
+		if locked:
+			card.modulate.a = 1.0 if sel else 0.45
+			cstyle.bg_color = Color(0.72, 0.70, 0.66)  # grileşmiş daire
+			(refs["icon"] as TextureRect).modulate = Color(0.55, 0.55, 0.55)
+			refs["lock"].visible = true
+			refs["badge"].visible = false
+		else:
+			cstyle.bg_color = refs["color"]
+			(refs["icon"] as TextureRect).modulate = Color.WHITE
+			refs["lock"].visible = false
+			refs["badge"].visible = missing > 0
+			if missing > 0:
+				refs["badge_label"].text = str(missing)
+			card.modulate.a = 1.0 if (sel or missing == 0) else 0.55
+		# Secili karta koyu halka (kart koseleriyle ayni yaricap)
+		var card_sb := StyleBoxFlat.new()
+		card_sb.bg_color = UIColors.PANEL_CREAM_DARK
+		card_sb.set_corner_radius_all(16)
+		card_sb.content_margin_left = 6.0
+		card_sb.content_margin_right = 6.0
+		card_sb.content_margin_top = 10.0
+		card_sb.content_margin_bottom = 8.0
+		if sel:
+			card_sb.set_border_width_all(3)
+			card_sb.border_color = UIColors.INK_DARK
+		card.add_theme_stylebox_override("panel", card_sb)
 	if craft_root.visible and _sel_recipe != "":
 		_update_craft_detail()
 
