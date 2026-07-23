@@ -291,8 +291,14 @@ func debug_hand_orientation() -> void:
 	var pb := global_transform.basis.orthonormalized()
 	var hb := _tool_src.global_transform.basis.orthonormalized()
 	var rel := pb.inverse() * hb  # el ekseni, karakter cercevesinde
-	print("HANDDBG: handX=(%.2f,%.2f,%.2f) handY=(%.2f,%.2f,%.2f) handZ=(%.2f,%.2f,%.2f)" % [
-		rel.x.x, rel.x.y, rel.x.z, rel.y.x, rel.y.y, rel.y.z, rel.z.x, rel.z.y, rel.z.z])
+	var line := "handX=(%.3f,%.3f,%.3f) handY=(%.3f,%.3f,%.3f) handZ=(%.3f,%.3f,%.3f)" % [
+		rel.x.x, rel.x.y, rel.x.z, rel.y.x, rel.y.y, rel.y.z, rel.z.x, rel.z.y, rel.z.z]
+	print("HANDDBG: " + line)
+	# Log tail-30'da kaybolmasin diye dosyaya da yaz (screenshot commit'i alir).
+	var f := FileAccess.open("res://docs/screens/handdbg.txt", FileAccess.WRITE)
+	if f != null:
+		f.store_string(line + "\n")
+		f.close()
 
 func _sync_attach_mirrors() -> void:
 	if _tool_src != null and _tool_attach != null:
