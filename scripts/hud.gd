@@ -460,9 +460,8 @@ func _make_tab(parent_root: Control, title: String, panel_top: float) -> Label:
 	tab_sb.content_margin_right = 20.0
 	tab_sb.content_margin_top = 7.0
 	tab_sb.content_margin_bottom = 8.0
-	tab_sb.shadow_size = 8
-	tab_sb.shadow_color = Color(0, 0, 0, 0.19)
-	tab_sb.shadow_offset = Vector2(0, 4)
+	# NOT: StyleBoxFlat golgesi BLURSUZ (ofsetli ikinci kutu gibi cizilir);
+	# koyu zeminde "cift sekme" yanilsamasi yaratiyordu -> sekmede golge yok.
 	tab.add_theme_stylebox_override("panel", tab_sb)
 	var tab_row := HBoxContainer.new()
 	tab_row.add_theme_constant_override("separation", 10)
@@ -515,9 +514,9 @@ func _style_round_close(btn: Button, root: Control, panel_top: float) -> void:
 	var close_sb := StyleBoxFlat.new()
 	close_sb.bg_color = UIColors.PANEL_CREAM
 	close_sb.set_corner_radius_all(999)
-	close_sb.shadow_size = 8
-	close_sb.shadow_color = Color(0, 0, 0, 0.16)
-	close_sb.shadow_offset = Vector2(0, 4)
+	close_sb.shadow_size = 4
+	close_sb.shadow_color = Color(0, 0, 0, 0.10)
+	close_sb.shadow_offset = Vector2(0, 2)
 	var close_pressed_sb: StyleBoxFlat = close_sb.duplicate()
 	close_pressed_sb.bg_color = UIColors.PANEL_CREAM_DARK
 	btn.add_theme_stylebox_override("normal", close_sb)

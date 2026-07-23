@@ -249,3 +249,6 @@ platform, kazik, boru, pompa, vana. Sayılar oyun verisiyle doğrulandı
 5. Doluluk sekmede güncelleniyor mu (eşya at/al)?
 6. Sandığa dokun: aynı dil, iki sütun, Al/Koy çalışıyor mu?
 7. Kapat (yuvarlak buton): oyun devam ediyor mu (girdi kilidi yok)?
+- **Sekme gölgesi kaldırıldı:** Godot StyleBoxFlat gölgesi blursuz (ofsetli
+  ikinci kutu gibi çizilir); koyu zeminde "çift sekme" yanılsaması yapıyordu.
+  Mockup'ın yumuşak blur'una StyleBoxFlat ile ulaşılamıyor — sapma gerekçesi.
