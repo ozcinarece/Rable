@@ -387,10 +387,14 @@ func _setup_screenshot(save_path: String) -> void:
 	_cam_locked = true
 	player.debug_hand_orientation()  # HANDDBG: el kemigi yonelimi (log)
 	var _hand_focus := player.position + Vector3(0.0, 0.75, 0.0)
-	camera.position = player.position + Vector3(2.3, 0.85, 0.6)
-	camera.look_at(_hand_focus)
-	await get_tree().create_timer(0.5).timeout
-	_snap(save_path.replace(".png", "_balta.png"))
+	# Baltayi 4 acidan yakin cek (on/sag/arka/sol) -> ele oturma teshisi
+	var _angs := [["_balta", Vector3(0, 0.6, 2.3)], ["_balta_sag", Vector3(2.3, 0.6, 0.2)],
+			["_balta_arka", Vector3(0.2, 0.9, -2.3)], ["_balta_sol", Vector3(-2.3, 0.6, 0.2)]]
+	for a in _angs:
+		camera.position = player.position + a[1]
+		camera.look_at(_hand_focus)
+		await get_tree().create_timer(0.35).timeout
+		_snap(save_path.replace(".png", String(a[0]) + ".png"))
 	# Ikinci kare: kusbakisi tum ada (teshis icin)
 	# harita-v2: kusbakisi tum 128x128 adayi kapsar (yukseklik boyutla olcekli)
 	camera.position = Vector3(_map_w / 2.0, _map_w * 0.85,
