@@ -382,8 +382,15 @@ func _setup_screenshot(save_path: String) -> void:
 	player.set_held_tool("balta")  # yeni axe.glb elde gorunsun
 	await get_tree().create_timer(4.0).timeout
 	_snap(save_path)
-	# Ikinci kare: kusbakisi tum ada (teshis icin)
+	# TESHIS: baltayi elde YAKINDAN gor (kavrama ayari icin). Kamerayi el
+	# hizasina, yandan yaklastir; sonra normal kareler icin geri alinir.
 	_cam_locked = true
+	var _hand_focus := player.position + Vector3(0.0, 0.95, 0.0)
+	camera.position = player.position + Vector3(1.4, 1.15, 1.4)
+	camera.look_at(_hand_focus)
+	await get_tree().create_timer(0.5).timeout
+	_snap(save_path.replace(".png", "_balta.png"))
+	# Ikinci kare: kusbakisi tum ada (teshis icin)
 	# harita-v2: kusbakisi tum 128x128 adayi kapsar (yukseklik boyutla olcekli)
 	camera.position = Vector3(_map_w / 2.0, _map_w * 0.85,
 			_map_h / 2.0 + _map_w * 0.22)
