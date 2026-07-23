@@ -49,6 +49,8 @@ const TOOL_GLB := {
 ## Doldurulmussa tools/ placeholder yerine bu kullanilir.
 const TOOL_GLB_OVERRIDE := {
 	"balta": "res://assets/models/test/axe.glb",
+	"kazma": "res://assets/models/test/pickaxe.glb",
+	"kurek": "res://assets/models/test/shovel.glb",
 }
 
 ## ELLE AYARLANAN ALET KAVRAMASI (veri; render'a bakip ayarlanir).
@@ -70,6 +72,17 @@ const TOOL_HOLD := {
 	# extra: govde-asagi yonunde 10cm (el cercevesinde) -> sap elin ALTINDA
 	# durur, el ustte kalir (kullanici: "el yukarida olmali" + "biraz daha").
 	"balta": {"axis": 1, "grip": 0.18, "scale": 0.5, "rot_deg": Vector3(0, 109, 0),
+			"extra": Vector3(0.021, 0.077, 0.060)},
+	# pickaxe.glb baltayla AYNI duzen (olculdu: sap Y -0.5..+0.1, kafa
+	# +0.1..+0.5, kafa duzlemi X) -> ayni tarif.
+	"kazma": {"axis": 1, "grip": 0.18, "scale": 0.5, "rot_deg": Vector3(0, 109, 0),
+			"extra": Vector3(0.021, 0.077, 0.060)},
+	# shovel.glb CAPRAZ modellenmis (yaslanmis kurek: sap -Z/+Y ucunda,
+	# agiz +Z/-Y ucunda; sap->agiz v=(0,-0.63,0.78)). X etrafinda -129.1
+	# derece donus v'yi el ekseni +Y'ye getirir (agiz asagi-on). Tutus
+	# noktasi capraz sapin USTUNDE oldugundan grip_pt ile verildi.
+	"kurek": {"axis": 2, "grip": 0.15, "scale": 0.5, "rot_deg": Vector3(-129.1, 0, 0),
+			"grip_pt": Vector3(0, 0.36, -0.45),
 			"extra": Vector3(0.021, 0.077, 0.060)},
 }
 
@@ -461,6 +474,10 @@ func set_held_tool(model_path: String) -> void:
 			var frac: float = float(cfg.get("grip", 0.5))  # 0=MIN uc,1=MAX uc
 			var g := aabb.get_center()
 			g[li] = aabb.position[li] + frac * sz[li]
+			# CAPRAZ modellenen aletler (kurek): tutus noktasi AABB orta
+			# hattinda degil; model-uzayinda acik nokta verilebilir.
+			if cfg.has("grip_pt"):
+				g = cfg["grip_pt"]
 			var basis := Basis.from_euler(visual.rotation)
 			visual.position = -(basis * (g * s)) + cfg.get("extra", Vector3.ZERO)
 		else:

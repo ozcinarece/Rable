@@ -71,7 +71,8 @@ const STONE_VARIANTS := [
 #   rotatable:yon 0/90/180/270 (13.2 dondur)
 #   on_water/in_pit: 13.3 gecerlilik istisnalari (varsayilan false)
 const PLACE_MODELS := {
-	"tezgah": {"model": "res://assets/models/tools/workbench.glb",
+	# Kullanicinin Meshy tezgahi (test/workbench.glb; olculdu 1.0x0.64x0.66)
+	"tezgah": {"model": "res://assets/models/test/workbench.glb",
 			"h": 0.85, "solid": true, "behavior": "station", "max_hp": 120},
 	"arastirma_masasi": {"model": "res://assets/models/nature/quat_table.glb",
 			"h": 0.8, "solid": true, "long": 1.0,
@@ -395,6 +396,28 @@ func _setup_screenshot(save_path: String) -> void:
 		camera.look_at(_hand_focus)
 		await get_tree().create_timer(0.35).timeout
 		_snap(save_path.replace(".png", String(a[0]) + ".png"))
+	# Yeni GLB aletler: kazma + kurek yakin cekim (on + sag)
+	for tf in [["kazma", "_kazma"], ["kurek", "_kurek"]]:
+		player.set_held_tool(String(tf[0]))
+		await get_tree().create_timer(0.4).timeout
+		camera.position = player.position + Vector3(0, 0.6, 2.3)
+		camera.look_at(_hand_focus)
+		await get_tree().create_timer(0.3).timeout
+		_snap(save_path.replace(".png", String(tf[1]) + "_on.png"))
+		camera.position = player.position + Vector3(2.3, 0.6, 0.2)
+		camera.look_at(_hand_focus)
+		await get_tree().create_timer(0.3).timeout
+		_snap(save_path.replace(".png", String(tf[1]) + "_sag.png"))
+	player.set_held_tool("balta")
+	# Tezgah GLB yakin cekim: oyuncunun onune koy
+	var tzc := _player_cell() + Vector2i(0, 2)
+	if _ground_char.get(tzc, "") in [".", "d", "s"] and not _objects.has(tzc) \
+			and not _placed.has(tzc):
+		_set_placed(tzc, "tezgah")
+	camera.position = Vector3(float(tzc.x) + 0.5 - 1.6, 1.5, float(tzc.y) + 0.5 + 1.6)
+	camera.look_at(Vector3(float(tzc.x) + 0.5, 0.35, float(tzc.y) + 0.5))
+	await get_tree().create_timer(0.5).timeout
+	_snap(save_path.replace(".png", "_tezgah.png"))
 	# Ikinci kare: kusbakisi tum ada (teshis icin)
 	# harita-v2: kusbakisi tum 128x128 adayi kapsar (yukseklik boyutla olcekli)
 	camera.position = Vector3(_map_w / 2.0, _map_w * 0.85,
