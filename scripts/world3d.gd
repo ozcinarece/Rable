@@ -385,8 +385,9 @@ func _setup_screenshot(save_path: String) -> void:
 	# TESHIS: baltayi elde YAKINDAN gor (kavrama ayari icin). Kamerayi el
 	# hizasina, yandan yaklastir; sonra normal kareler icin geri alinir.
 	_cam_locked = true
-	var _hand_focus := player.position + Vector3(0.0, 0.95, 0.0)
-	camera.position = player.position + Vector3(1.4, 1.15, 1.4)
+	player.debug_hand_orientation()  # HANDDBG: el kemigi yonelimi (log)
+	var _hand_focus := player.position + Vector3(0.0, 0.75, 0.0)
+	camera.position = player.position + Vector3(2.3, 0.85, 0.6)
 	camera.look_at(_hand_focus)
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_balta.png"))

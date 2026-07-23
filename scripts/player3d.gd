@@ -282,6 +282,18 @@ func _visual_aabb(node: Node, xform: Transform3D) -> AABB:
 
 # Kemik kaynaklarinin konum/donusunu olcek-1 aynalara kopyalar
 # (iskeletteki dev olcekler aksesuarlara bulasmaz)
+# TESHIS (yalniz screenshot): el kemiginin karakter-govde cercevesindeki
+# yonelimini yazar. Baltanin uzun ekseni (yerel +Y) elde hangi dunya yonune
+# gidiyor -> rot_deg'i buradan hesaplariz.
+func debug_hand_orientation() -> void:
+	if _tool_src == null:
+		print("HANDDBG: el kemigi yok"); return
+	var pb := global_transform.basis.orthonormalized()
+	var hb := _tool_src.global_transform.basis.orthonormalized()
+	var rel := pb.inverse() * hb  # el ekseni, karakter cercevesinde
+	print("HANDDBG: handX=(%.2f,%.2f,%.2f) handY=(%.2f,%.2f,%.2f) handZ=(%.2f,%.2f,%.2f)" % [
+		rel.x.x, rel.x.y, rel.x.z, rel.y.x, rel.y.y, rel.y.z, rel.z.x, rel.z.y, rel.z.z])
+
 func _sync_attach_mirrors() -> void:
 	if _tool_src != null and _tool_attach != null:
 		var gt := _tool_src.global_transform
