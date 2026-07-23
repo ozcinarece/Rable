@@ -182,3 +182,70 @@ TOOLDUP/TIMETEST…) korunur — **UI katmanı oyun mantığını bozmadı**. Ka
   de alınabilir.
 - Gündüz/gece, kayıt, yaşam, base sistemleri **dokunulmadı** (yalnız UI).
 
+
+---
+
+## ENVANTER-MOCKUP — Sırt Çantası UI'ı mockup'a göre yeniden (branch: envanter-mockup)
+
+**Tek doğruluk kaynağı:** `assets/mockups/backpack_ui_mockup.html`. UI_DESIGN /
+REVIZYON ile çelişen her yerde mockup kazandı.
+
+### Uygulananlar (mockup birebir)
+1. **Sayfa:** %84 yükseklik, %96 genişlik, alta yaslı; 24px üst köşe; yükselme
+   0.3sn ease-out; arkada karartma (mevcut backdrop). Zeminde çok soluk nokta
+   dokusu (`ui_dots.gd`, 14px ızgara).
+2. **İmza öğeler:** dikişli deri tutamaç (`ui_handle.gd`, 84×12 + kesik dikiş),
+   panelden taşan koyu kahve sekme **"Sırt Çantası"** + doluluk **sekmenin
+   içinde** ("14/16"), sağ üstte yuvarlak krem kapatma butonu (44px + gölge).
+3. **Izgara 8×2:** 8 sütun sabit; slot boyu ekrana esner (64–104px, mockup 1fr).
+   Kategori renkli daire slotlar + krem kapsül stack rozeti (daire dışına
+   taşar) + boş slot soluk krem + seçili slotta **çift halka**. Kilitli slotlar
+   çizilmez; tek çip: "🔒 +N slot · deri çanta ile" (kilit ikon + metin).
+4. **Bilgi şeridi:** 68px ikon dairesi + ad + TEK satır flavor ("..." kırpma) +
+   duruma göre pill'ler: Ye/Kuşan/Yerleştir dolgulu koyu, **At kırmızı
+   KONTURLU** (danger).
+5. **Dokunuş:** slot basışta %92 küçülme, pill basışta %94 pop (adlı
+   fonksiyonlar — cihaz-kırılganlığı dersi gereği inline lambda YOK).
+6. **Sandık aynı dil:** alttan sayfa + "Sandık" sekmesi + yuvarlak kapat +
+   doku/tutamaç; içerik **iki kardeş sütun** (sol: Sandık + "Tümünü Al";
+   sağ: Sırt Çantası + "Tümünü Koy"), sütun başlıkları koyu mini çip.
+   Aktarım sinyalleri/oyun mantığı AYNEN korunmuştur.
+
+### Mockup'tan sapmalar (gerekçeli)
+- **Kilit çipi ızgaranın içinde değil altında:** GridContainer'da hücre
+  birleştirme (span) yok; çip ızgara sonunda ayrı satırda. Görsel dil aynı.
+- **Flavor "flavor" alanı olarak ayrı sözlükte** (`items.gd FLAVOR`):
+  ITEMS satır yapısını (name+icon) bozmamak için; `description()` önce
+  FLAVOR'a bakar. İşlevsel olarak istenenle aynı.
+- **Sandık çift paneli tek sayfada iki sütun:** iki ayrı yüzen panel yerine
+  tek sheet içinde kardeş sütunlar — mevcut aktarım listesi korunarak en
+  düşük riskli birebir karşılık.
+- Mockup'taki emoji ikonlar yerine oyunun mevcut 32px item ikonları
+  (UI_DESIGN R0 kuralı; emoji fontu cihazda garanti değil).
+
+### Flavor yazılan itemler (55)
+Mockup başlangıç seti uyarlandı: odun, tas, yaprak(lif), meyve, pismis_et,
+kova_dolu, mizrak, tohum, oz, merdiven, balta, ahsap_duvar. Aynı seste
+yazılanlar: kalas, cubuk, ip, cakil, toprak, kil, kum, bakir, komur, altin,
+cicek, mantar, cig_et, kazma, kurek, bicak, cekic, kova, metal_kova, sopa,
+kilic, yay, sapan, ok, zirh, sapka, kukla, canta, tas_duvar, kapi, zemin,
+tezgah, arastirma_masasi, kamp_evi, sandik, mesale, yatak, tuzak, ocak,
+platform, kazik, boru, pompa, vana. Sayılar oyun verisiyle doğrulandı
+(FOOD_SATIATION, hasar/koruma değerleri).
+
+### Ekran oranı testi (8 sütun sabit, slot 64px altına düşmez)
+- **16:9 (1280×720):** sheet 1228px; hücre (1184−84)/8 = 137 → üst sınır
+  104px uygulanır. Izgara 916px, ortalanır. Dikey: 604px sayfada ızgara
+  2×104 + şerit ~90 + tutamaç → bolca yer. ✔
+- **19.5:9 (1560×720):** hücre 171 → yine 104px (üst sınır). ✔
+- Alt sınır 64px yalnız <700px genişlikte devreye girer (hedef cihazlarda
+  yok); formül: `clamp((0.96·W − 44 − 7·12)/8, 64, 104)`.
+
+### Test adımları (telefonda)
+1. Çanta aç: panel alttan 0.3sn'de yükseliyor mu, sekme "Sırt Çantası 14/16"?
+2. Tutamaç dikişli, zeminde hafif nokta dokusu var mı?
+3. Eşyaya dokun: çift halka + altta ad/flavor + pill'ler; At kırmızı konturlu mu?
+4. Slot basışta küçülüyor, pill basışta pop yapıyor mu?
+5. Doluluk sekmede güncelleniyor mu (eşya at/al)?
+6. Sandığa dokun: aynı dil, iki sütun, Al/Koy çalışıyor mu?
+7. Kapat (yuvarlak buton): oyun devam ediyor mu (girdi kilidi yok)?
