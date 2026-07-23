@@ -189,15 +189,16 @@ func set_character(model_path: String) -> void:
 		var weapon := model.find_child(weapon_name, true, false)
 		if weapon != null and weapon is Node3D:
 			(weapon as Node3D).visible = false
-	# OLCEK: artik KODDA olceklenmez. Boy, GLB'nin .import dosyasindaki
-	# Root Scale'iyle (apply_root_scale + root_scale) ithal aninda verilir ->
-	# model node'u 1.0 olcekte kalir (tool-attach/carpisma gercek metrede olur,
-	# eski AABB/kemik olcum hilelerinin yarattigi "kubbe/patlama" sorunu biter).
-	# Referans deger RAPOR_KARAKTER.md'de; yeni Meshy modelde ayni yontem kullanilir.
-	_model_scale = 1.0
+	# OLCEK: TEK, temiz olcek (AABB boyundan). ESKI SORUN cift olceklemeydi
+	# (_visual_aabb + sonra _fix_skinned_scale kemik-pozu ile IKINCI kez) ->
+	# oranlar bozulup "kubbe" cikiyordu. Ikinci olcekleme kaldirildi; burada
+	# TEK sefer TARGET_HEIGHT'a getiriyoruz. (Not: import Root Scale yontemi
+	# headless CI'da el-yapimi .import'u tanimadigi icin kullanilamadi.)
 	var vis_aabb := _visual_aabb(model, Transform3D.IDENTITY)
 	if vis_aabb.size.y > 0.01:
 		_raw_height = vis_aabb.size.y
+		_model_scale = TARGET_HEIGHT / _raw_height
+		model.scale = Vector3(_model_scale, _model_scale, _model_scale)
 	# Alet baglama noktasi: sag el kemigi (yoksa govde onunde yedek nokta).
 	# Kemik baglantilari iskelet olcegini tasiyabilir; bu yuzden gorseller
 	# dogrudan kemige degil, olcegi 1 olan AYNA dugumlere takilir
