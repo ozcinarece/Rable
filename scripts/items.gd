@@ -10,7 +10,8 @@ const ITEMS: Dictionary = {
 	"cubuk": {"name": "Çubuk", "icon": "res://assets/items/cubuk.png"},
 	"ip": {"name": "İp", "icon": "res://assets/items/ip.png"},
 	"tas": {"name": "Taş", "icon": "res://assets/items/tas.png"},
-	"balta": {"name": "Balta", "icon": "res://assets/items/balta.png"},
+	# Kullanici render'i (tools_2d/axe_png.png'den kirpilip 256'ya indirildi)
+	"balta": {"name": "Balta", "icon": "res://assets/items/balta_render.png"},
 	"kazma": {"name": "Kazma", "icon": "res://assets/items/kazma.png"},
 	"meyve": {"name": "Meyve", "icon": "res://assets/items/meyve.png"},
 	"komur": {"name": "Kömür", "icon": "res://assets/items/komur.png"},
