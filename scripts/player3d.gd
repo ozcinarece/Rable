@@ -61,9 +61,10 @@ const TOOL_GLB_OVERRIDE := {
 const TOOL_HOLD := {
 	# scale>0: SABIT ~scale m boy (skinned el kemigi telafisini atla). grip:
 	# 0=alt uc(Y min), 1=ust uc. TEST: ortadan tut + sabit 0.5m -> balta gorunur mu.
-	# rot_deg: el kemigi yoneliminden HESAPLANDI (handdbg) -> balta dik dursun
-	# (kafa yukari, bicak one). grip 0.12 = sapin en dibi.
-	"balta": {"axis": 1, "grip": 0.12, "scale": 0.6, "rot_deg": Vector3(11.2, 60.4, -125.4),
+	# STABIL kavrama: yonelim govde cercevesinde (bkz _sync_attach_mirrors).
+	# Bu cercevede baltanin yerel +Y'si (kafa) zaten govde-yukari -> rot_deg=0
+	# kafayi yukari verir; grip 0.15 el sapin dibinde. Animasyonla savrulmaz.
+	"balta": {"axis": 1, "grip": 0.15, "scale": 0.5, "rot_deg": Vector3(0, 0, 0),
 			"extra": Vector3(0, 0, 0)},
 }
 
@@ -305,7 +306,15 @@ func debug_hand_orientation() -> void:
 func _sync_attach_mirrors() -> void:
 	if _tool_src != null and _tool_attach != null:
 		var gt := _tool_src.global_transform
-		_tool_attach.global_transform = Transform3D(gt.basis.orthonormalized(), gt.origin)
+		# GLB aletler (TOOL_HOLD): el POZISYONUNU izle ama yonelim GOVDE'den
+		# gelsin (dik, one bakar) -> el kemiginin animasyonlu bilek donmesiyle
+		# alet arkaya/yana savrulmaz, her karede STABIL durur. Hazir proseduel
+		# aletler eski davranista (el kemigi yonelimi) kalir.
+		if TOOL_HOLD.has(_held_tool_path):
+			var body := global_transform.basis.orthonormalized()
+			_tool_attach.global_transform = Transform3D(body, gt.origin)
+		else:
+			_tool_attach.global_transform = Transform3D(gt.basis.orthonormalized(), gt.origin)
 	if _head_src != null and _head_attach != null:
 		var gt2 := _head_src.global_transform
 		_head_attach.global_transform = Transform3D(gt2.basis.orthonormalized(), gt2.origin)
