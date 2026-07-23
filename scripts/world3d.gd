@@ -396,7 +396,9 @@ func _setup_screenshot(save_path: String) -> void:
 		camera.look_at(_hand_focus)
 		await get_tree().create_timer(0.35).timeout
 		_snap(save_path.replace(".png", String(a[0]) + ".png"))
-	# Yeni GLB aletler: kazma + kurek yakin cekim (on + sag)
+	# Yeni GLB aletler: kazma + kurek yakin cekim (on + sag).
+	# HUD (hotbar) alet ucunu kapatiyordu -> cekim boyunca gizle.
+	hud.visible = false
 	for tf in [["kazma", "_kazma"], ["kurek", "_kurek"]]:
 		player.set_held_tool(String(tf[0]))
 		await get_tree().create_timer(0.4).timeout
@@ -418,6 +420,7 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(Vector3(float(tzc.x) + 0.5, 0.35, float(tzc.y) + 0.5))
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_tezgah.png"))
+	hud.visible = true
 	# Ikinci kare: kusbakisi tum ada (teshis icin)
 	# harita-v2: kusbakisi tum 128x128 adayi kapsar (yukseklik boyutla olcekli)
 	camera.position = Vector3(_map_w / 2.0, _map_w * 0.85,
