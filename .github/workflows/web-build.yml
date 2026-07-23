@@ -75,6 +75,26 @@ jobs:
             --export-release "Web" "$GITHUB_WORKSPACE/site/3d/index.html"
           ls -la site site/3d
 
+      - name: Onbellek/eski service-worker temizleyici enjekte et
+        # Eski build'lerden kalan service-worker'lar telefonda eski oyunu
+        # cevrimdisi onbellekten servis edip "hep eski geliyor" sorununa yol
+        # aciyordu. Her index.html basina; kalan SW'leri kaldirir, cache'i
+        # bosaltir ve bir kez yeniler (network'ten taze surumu ceker).
+        run: |
+          SNIP='<script>(function(){try{if("serviceWorker" in navigator){navigator.serviceWorker.getRegistrations().then(function(rs){var had=rs.length>0;rs.forEach(function(r){r.unregister();});if(window.caches&&caches.keys){caches.keys().then(function(ks){ks.forEach(function(k){caches.delete(k);});});}if(had&&!sessionStorage.getItem("sw_cleared")){sessionStorage.setItem("sw_cleared","1");location.reload();}});}}catch(e){}})();</script>'
+          for f in site/index.html site/3d/index.html; do
+            SNIP="$SNIP" python3 - "$f" <<'PY'
+import os,sys
+f=sys.argv[1]; snip=os.environ["SNIP"]
+s=open(f,encoding="utf-8").read()
+if "sw_cleared" not in s:
+    s=s.replace("<head>","<head>"+snip,1)
+    open(f,"w",encoding="utf-8").write(s); print("injected",f)
+else:
+    print("already",f)
+PY
+          done
+
       - name: Pages artifact'i olarak yukle
         uses: actions/upload-pages-artifact@v3
         with:
