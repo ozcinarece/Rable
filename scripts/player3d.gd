@@ -343,6 +343,7 @@ func _node_world_scale(n: Node3D) -> float:
 # (Kenney mini karakterlerde el kemigi yok, "arm-right" var)
 func _find_hand_bone(skeleton: Skeleton3D) -> int:
 	var best_hand := -1
+	var best_fore := -1
 	var best_arm := -1
 	for i in skeleton.get_bone_count():
 		var lower := skeleton.get_bone_name(i).to_lower()
@@ -352,14 +353,19 @@ func _find_hand_bone(skeleton: Skeleton3D) -> int:
 			continue
 		if lower.contains("handslot"):
 			return i
+		# GERCEK el kemigi her zaman on koldan ustundur (Meshy: RightForeArm
+		# listede RightHand'den ONCE gelir; eski kod on kolu kilitliyordu ->
+		# alet elde degil dirsekte/omuzda duruyordu)
 		if lower.contains("hand") and best_hand == -1:
 			best_hand = i
-		# On kol (bilek) ust koldan iyi tutma noktasidir (Quaternius rigi)
-		if (lower.contains("lowerarm") or lower.contains("forearm")) and best_hand == -1:
-			best_hand = i
-		if lower.contains("arm") and best_arm == -1:
+		elif (lower.contains("lowerarm") or lower.contains("forearm")) and best_fore == -1:
+			best_fore = i
+		elif lower.contains("arm") and best_arm == -1:
 			best_arm = i
-	return best_hand if best_hand != -1 else best_arm
+	if best_hand != -1:
+		return best_hand
+	# On kol (bilek) ust koldan iyi tutma noktasidir (Quaternius/Kenney rigi)
+	return best_fore if best_fore != -1 else best_arm
 
 # Idle/yurume/kosma animasyonlarini ada gore esnek bulur
 func _detect_animations() -> void:
