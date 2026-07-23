@@ -13,6 +13,10 @@ name: Web build ve GitHub Pages yayini
 on:
   push:
     branches: [main, 3d]
+    # Ekran-goruntusu botunun docs/screens commit'leri oyunu degistirmez;
+    # ustelik her biri suren Pages yayinini iptal edip (cancel-in-progress)
+    # "web hep eski" sorununa yol aciyordu. Docs push'lari yayini tetiklemez.
+    paths-ignore: ["docs/**"]
   workflow_dispatch: {}
 
 env:
