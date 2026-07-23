@@ -210,6 +210,8 @@ func _ready() -> void:
 	_build_slots()
 	_build_lock_chip()  # R0: kilitli slotlar tek kompakt cip olur
 	_build_info_strip() # R3: envanter ORTAK alt bilgi bandi (yeniden kullanilir)
+	_style_backpack_sheet() # ENVANTER-MOCKUP: sirt cantasi gorsel dili
+	_style_chest_sheet()    # ENVANTER-MOCKUP: sandik ayni dil (iki sutun)
 	_build_dock()           # R1: sag kenar dikey dock (canta/uretim/arastirma)
 	_build_settings_menu()  # R1: Ayarlar menusu (Yeni Oyun + Kamera/Gorunum)
 	_style_action_buttons() # R2: ana/saldiri butonlari + baglam etiketi
@@ -267,8 +269,9 @@ func _on_inventory_toggled(pressed: bool) -> void:
 	if pressed:
 		inventory_root.visible = true
 		inventory_root.position.y += rise  # ekranin altindan basla
+		# ENVANTER-MOCKUP: yukselme 0.3 sn ease-out
 		_inv_tween.tween_property(inventory_root, "position:y",
-				inventory_root.position.y - rise, 0.25)
+				inventory_root.position.y - rise, 0.3)
 	else:
 		_picked_slot = null
 		_inv_tween.tween_property(inventory_root, "position:y",
@@ -420,6 +423,212 @@ func _build_info_strip() -> void:
 	_info = UiInfoStrip.new()
 	inv_vbox.add_child(_info)
 	inv_vbox.move_child(_info, at + 1)
+
+# --- ENVANTER-MOCKUP: Sirt Cantasi panel iskeleti -------------------------
+# Tek dogruluk kaynagi: assets/mockups/backpack_ui_mockup.html
+const UiDots = preload("res://scripts/ui_dots.gd")
+const UiHandle = preload("res://scripts/ui_handle.gd")
+var _tab_cap_label: Label   # sekme icindeki doluluk "14/16"
+
+# Ortak "alttan sayfa" stili: krem, YALNIZ ust koseler 24px, yukari golge
+func _make_sheet_style() -> StyleBoxFlat:
+	var sheet := StyleBoxFlat.new()
+	sheet.bg_color = UIColors.PANEL_CREAM
+	sheet.corner_radius_top_left = 24
+	sheet.corner_radius_top_right = 24
+	sheet.content_margin_left = 22.0
+	sheet.content_margin_right = 22.0
+	sheet.content_margin_top = 10.0
+	sheet.content_margin_bottom = 12.0
+	sheet.shadow_size = 16
+	sheet.shadow_color = Color(0, 0, 0, 0.22)
+	sheet.shadow_offset = Vector2(0, -6)
+	return sheet
+
+# Ortak "canta kapagi" sekmesi: panelden yukari tasan koyu kahve tab.
+# parent_root: sekmenin eklenecegi (container OLMAYAN) kok; icine baslik +
+# opsiyonel sag kucuk etiket koyar; sag etiketi (doluluk) dondurur.
+func _make_tab(parent_root: Control, title: String, panel_top: float) -> Label:
+	var tab := PanelContainer.new()
+	var tab_sb := StyleBoxFlat.new()
+	tab_sb.bg_color = UIColors.TAB_BG
+	tab_sb.corner_radius_top_left = 14
+	tab_sb.corner_radius_top_right = 14
+	tab_sb.corner_radius_bottom_left = 16
+	tab_sb.corner_radius_bottom_right = 16
+	tab_sb.content_margin_left = 20.0
+	tab_sb.content_margin_right = 20.0
+	tab_sb.content_margin_top = 7.0
+	tab_sb.content_margin_bottom = 8.0
+	# NOT: StyleBoxFlat golgesi BLURSUZ (ofsetli ikinci kutu gibi cizilir);
+	# koyu zeminde "cift sekme" yanilsamasi yaratiyordu -> sekmede golge yok.
+	tab.add_theme_stylebox_override("panel", tab_sb)
+	var tab_row := HBoxContainer.new()
+	tab_row.add_theme_constant_override("separation", 10)
+	tab.add_child(tab_row)
+	var tab_title := Label.new()
+	tab_title.text = title
+	tab_title.add_theme_font_size_override("font_size", 22)
+	tab_title.add_theme_color_override("font_color", UIColors.TAB_TEXT)
+	tab_row.add_child(tab_title)
+	var cap := Label.new()
+	cap.add_theme_font_size_override("font_size", 13)
+	cap.add_theme_color_override("font_color", Color(UIColors.TAB_TEXT, 0.75))
+	cap.size_flags_vertical = Control.SIZE_SHRINK_END
+	tab_row.add_child(cap)
+	# Konteyner disindaki Control kendini min boyuta GETIRMEZ (doluluk
+	# sekmeden tasiyordu). Sekme, boyutu yoneten tam-genislik HBox seridine
+	# konur: [26px bosluk][sekme][esnek bosluk] -> sekme icerigine oturur.
+	var bar := HBoxContainer.new()
+	bar.anchor_left = 0.0
+	bar.anchor_right = 1.0
+	bar.offset_top = panel_top - 16.0
+	bar.offset_bottom = panel_top + 30.0
+	bar.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var lead := Control.new()
+	lead.custom_minimum_size = Vector2(26, 0)
+	lead.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(lead)
+	bar.add_child(tab)
+	var tail := Control.new()
+	tail.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	tail.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	bar.add_child(tail)
+	parent_root.add_child(bar)
+	return cap
+
+# Ortak yuvarlak KAPAT butonu stili + sag ust konum (root icinde)
+func _style_round_close(btn: Button, root: Control, panel_top: float) -> void:
+	if btn.get_parent() != null:
+		btn.get_parent().remove_child(btn)
+	root.add_child(btn)
+	btn.custom_minimum_size = Vector2(44, 44)
+	btn.anchor_left = 1.0
+	btn.anchor_right = 1.0
+	btn.anchor_top = 0.0
+	btn.anchor_bottom = 0.0
+	btn.offset_left = -62.0
+	btn.offset_right = -18.0
+	btn.offset_top = panel_top - 12.0
+	btn.offset_bottom = panel_top + 32.0
+	var close_sb := StyleBoxFlat.new()
+	close_sb.bg_color = UIColors.PANEL_CREAM
+	close_sb.set_corner_radius_all(999)
+	close_sb.shadow_size = 4
+	close_sb.shadow_color = Color(0, 0, 0, 0.10)
+	close_sb.shadow_offset = Vector2(0, 2)
+	var close_pressed_sb: StyleBoxFlat = close_sb.duplicate()
+	close_pressed_sb.bg_color = UIColors.PANEL_CREAM_DARK
+	btn.add_theme_stylebox_override("normal", close_sb)
+	btn.add_theme_stylebox_override("hover", close_sb)
+	btn.add_theme_stylebox_override("pressed", close_pressed_sb)
+	btn.add_theme_stylebox_override("focus", close_sb)
+
+func _style_backpack_sheet() -> void:
+	# Sayfa: %84 yukseklik, %96 genislik, alta yaslanmis (mockup .sheet)
+	inventory_root.anchor_left = 0.02
+	inventory_root.anchor_right = 0.98
+	inventory_root.anchor_top = 0.16
+	inventory_root.anchor_bottom = 1.0
+	inventory_root.offset_left = 0.0
+	inventory_root.offset_right = 0.0
+	inventory_root.offset_top = 0.0
+	inventory_root.offset_bottom = 0.0
+	var panel: PanelContainer = $InventoryRoot/InventoryPanel
+	panel.add_theme_stylebox_override("panel", _make_sheet_style())
+	# Cok soluk nokta dokusu (icerigin altina cizilir)
+	var dots := UiDots.new()
+	panel.add_child(dots)
+	panel.move_child(dots, 0)
+	# Dikisli deri tutamac: ust orta
+	var vbox: VBoxContainer = panel.get_node("VBox")
+	var handle := UiHandle.new()
+	handle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	vbox.add_child(handle)
+	vbox.move_child(handle, 0)
+	# Eski ust satir + kapasite satiri gizlenir (yerlerini sekme/kapat alir)
+	vbox.get_node("TopRow").visible = false
+	var cap_row: Control = vbox.get_node_or_null("CapacityRow")
+	if cap_row != null:
+		cap_row.visible = false
+	# BASLIK SEKMESI (doluluk SEKMENIN ICINDE) + YUVARLAK KAPAT (sag ust)
+	_tab_cap_label = _make_tab(inventory_root, "Sırt Çantası", panel.offset_top)
+	_style_round_close(inventory_close, inventory_root, panel.offset_top)
+	# Izgara: 8 sutun SABIT; slot boyu ekran genisligine esner (mockup 1fr
+	# sutunlar; alt sinir 64px dokunma hedefi, ust sinir 104px)
+	var vw := get_viewport().get_visible_rect().size.x * 0.96 - 44.0
+	var cell := clampf((vw - 7.0 * 12.0) / 8.0, 64.0, 104.0)
+	for s in _inv_slots:
+		(s as Control).custom_minimum_size = Vector2(cell, cell)
+
+# --- ENVANTER-MOCKUP: Sandik ayni gorsel dile (iki kardes sutun) ----------
+var _chest_root: Control          # sandik sayfasinin sarmalayici koku
+var _chest_inv_rows: VBoxContainer  # sag sutun: "Sırt Çantası" tarafi
+
+func _style_chest_sheet() -> void:
+	# Sarmalayici kok: sekme/kapat panelden tasabilsin diye (container degil)
+	_chest_root = Control.new()
+	_chest_root.name = "ChestRoot"
+	_chest_root.anchor_left = 0.02
+	_chest_root.anchor_right = 0.98
+	_chest_root.anchor_top = 0.16
+	_chest_root.anchor_bottom = 1.0
+	_chest_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_chest_root.visible = false
+	_chest_root.theme = chest_panel.theme
+	var idx := chest_panel.get_index()
+	add_child(_chest_root)
+	move_child(_chest_root, idx)
+	chest_panel.get_parent().remove_child(chest_panel)
+	_chest_root.add_child(chest_panel)
+	_chest_root.move_child(chest_panel, 0)
+	chest_panel.anchor_left = 0.0
+	chest_panel.anchor_top = 0.0
+	chest_panel.anchor_right = 1.0
+	chest_panel.anchor_bottom = 1.0
+	chest_panel.offset_left = 0.0
+	chest_panel.offset_top = 20.0
+	chest_panel.offset_right = 0.0
+	chest_panel.offset_bottom = 0.0
+	chest_panel.add_theme_stylebox_override("panel", _make_sheet_style())
+	# Gorunurluk esitleme: mevcut show/close_chest chest_panel.visible'i
+	# degistirir; kok onu izler (oyun mantigina dokunmadan)
+	chest_panel.visibility_changed.connect(_on_chest_panel_visibility)
+	# Nokta dokusu + tutamac
+	var dots := UiDots.new()
+	chest_panel.add_child(dots)
+	chest_panel.move_child(dots, 0)
+	var vbox: VBoxContainer = chest_panel.get_node("VBox")
+	var handle := UiHandle.new()
+	handle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	vbox.add_child(handle)
+	vbox.move_child(handle, 0)
+	# Eski baslik satiri gizlenir; sekme "Sandık" + yuvarlak kapat
+	vbox.get_node("TitleRow").visible = false
+	_make_tab(_chest_root, "Sandık", chest_panel.offset_top)
+	_style_round_close(chest_close_button, _chest_root, chest_panel.offset_top)
+	# IKI KARDES SUTUN: solda sandik icerigi, sagda sirt cantasi
+	var scroll: ScrollContainer = vbox.get_node("Scroll")
+	var cols := HBoxContainer.new()
+	cols.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	cols.add_theme_constant_override("separation", 16)
+	vbox.add_child(cols)
+	vbox.move_child(cols, scroll.get_index())
+	vbox.remove_child(scroll)
+	cols.add_child(scroll)  # mevcut scroll SOL sutun (sandik) olur
+	scroll.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var scroll2 := ScrollContainer.new()
+	scroll2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll2.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	cols.add_child(scroll2)
+	_chest_inv_rows = VBoxContainer.new()
+	_chest_inv_rows.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_chest_inv_rows.add_theme_constant_override("separation", 6)
+	scroll2.add_child(_chest_inv_rows)
+
+func _on_chest_panel_visibility() -> void:
+	if _chest_root != null:
+		_chest_root.visible = chest_panel.visible
 
 # --- R1: Sag kenar dikey DOCK (canta / uretim / arastirma) --------------
 # Dagitik beyaz daireler yerine TEK dikey dock: kategori renkli DOLGULU
@@ -755,8 +964,14 @@ func _refresh() -> void:
 		var locked_count: int = _inv_slots.size() - capacity
 		_lock_chip.visible = locked_count > 0
 		if locked_count > 0:
-			_lock_chip_label.text = "+%d slot (deri çanta ile)" % locked_count
+			_lock_chip_label.text = "+%d slot · deri çanta ile" % locked_count
 	capacity_label.text = "%d/%d" % [Inventory.get_used_slots(), capacity]
+	# ENVANTER-MOCKUP: doluluk sekmenin icinde de yasar ("Sırt Çantası 14/16")
+	if _tab_cap_label != null and _tab_cap_label.text != capacity_label.text:
+		_tab_cap_label.text = capacity_label.text
+		var tab_panel := _tab_cap_label.get_parent().get_parent() as Control
+		if tab_panel != null:
+			tab_panel.call_deferred("reset_size")  # sekme yeni metne otursun
 	_refresh_hotbar(_mini_hotbar_slots)
 	_update_detail()
 	_update_cards()
@@ -801,7 +1016,7 @@ func _update_detail() -> void:
 			"primary": true, "on": _on_hold_pressed})
 	if Items.PLACEABLE.has(_selected_item):
 		pills.append({"text": "Yerleştir", "primary": true, "on": _on_place_pill})
-	pills.append({"text": "At", "on": _on_drop_pressed})
+	pills.append({"text": "At", "danger": true, "on": _on_drop_pressed})
 	_info.set_pills(pills)
 
 func _on_place_pill() -> void:
@@ -1530,40 +1745,38 @@ func show_chest(contents: Dictionary, message: String = "") -> void:
 	craft_button.button_pressed = false
 	for child in chest_rows.get_children():
 		child.queue_free()
+	for child in _chest_inv_rows.get_children():
+		child.queue_free()
 
-	# 14.1 hizli butonlar: Tümünü Koy / Tümünü Al
-	var quick := HBoxContainer.new()
-	quick.add_theme_constant_override("separation", 10)
-	var put_all := Button.new()
-	put_all.text = "Tümünü Koy"
-	put_all.add_theme_font_size_override("font_size", 20)
-	put_all.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	put_all.pressed.connect(func(): chest_transfer_all_requested.emit(true))
-	quick.add_child(put_all)
+	# ENVANTER-MOCKUP: iki kardes sutun — SOL sandik ("Al"), SAG canta
+	# ("Koy"); her sutunun basinda mini baslik + hizli aktarim butonu.
+	_add_chest_section_title("Sandık" + ("" if message == "" else " — " + message),
+			chest_rows)
 	var take_all := Button.new()
 	take_all.text = "Tümünü Al"
 	take_all.add_theme_font_size_override("font_size", 20)
-	take_all.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	take_all.pressed.connect(func(): chest_transfer_all_requested.emit(false))
-	quick.add_child(take_all)
-	chest_rows.add_child(quick)
-
-	_add_chest_section_title("Sandıktakiler:")
+	chest_rows.add_child(take_all)
 	if contents.is_empty():
-		_add_chest_note("(boş)")
+		_add_chest_note("(boş)", chest_rows)
 	for item_id in contents:
-		_add_chest_row(item_id, contents[item_id], "Al", false)
+		_add_chest_row(item_id, contents[item_id], "Al", false, chest_rows)
 
-	_add_chest_section_title("Envanterin:")
+	_add_chest_section_title("Sırt Çantası", _chest_inv_rows)
+	var put_all := Button.new()
+	put_all.text = "Tümünü Koy"
+	put_all.add_theme_font_size_override("font_size", 20)
+	put_all.pressed.connect(func(): chest_transfer_all_requested.emit(true))
+	_chest_inv_rows.add_child(put_all)
 	var has_any := false
 	for item_id in Items.ITEMS:
 		var count := Inventory.get_count(item_id)
 		if count <= 0:
 			continue
 		has_any = true
-		_add_chest_row(item_id, count, "Koy", true)
+		_add_chest_row(item_id, count, "Koy", true, _chest_inv_rows)
 	if not has_any:
-		_add_chest_note("(boş)")
+		_add_chest_note("(boş)", _chest_inv_rows)
 
 	chest_dismantle_button.disabled = not contents.is_empty()
 	_update_backdrop()
@@ -1572,22 +1785,35 @@ func close_chest() -> void:
 	chest_panel.visible = false
 	_update_backdrop()
 
-func _add_chest_section_title(text: String) -> void:
+# Sutun basligi: koyu kahve mini sekme cipi (kardes panellerin kimligi)
+func _add_chest_section_title(text: String, target: VBoxContainer) -> void:
+	var chip := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = UIColors.TAB_BG
+	sb.set_corner_radius_all(12)
+	sb.content_margin_left = 14.0
+	sb.content_margin_right = 14.0
+	sb.content_margin_top = 4.0
+	sb.content_margin_bottom = 5.0
+	chip.add_theme_stylebox_override("panel", sb)
+	chip.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	var label := Label.new()
 	label.text = text
-	label.add_theme_font_size_override("font_size", 22)
-	label.modulate = Color(0.85, 0.6, 0.3)
-	chest_rows.add_child(label)
+	label.add_theme_font_size_override("font_size", 18)
+	label.add_theme_color_override("font_color", UIColors.TAB_TEXT)
+	chip.add_child(label)
+	target.add_child(chip)
 
-func _add_chest_note(text: String) -> void:
+func _add_chest_note(text: String, target: VBoxContainer) -> void:
 	var label := Label.new()
 	label.text = text
 	label.add_theme_font_size_override("font_size", 20)
 	label.modulate = Color(0.6, 0.55, 0.5)
-	chest_rows.add_child(label)
+	target.add_child(label)
 
 # Tek esya satiri: ikon + "Ad x adet" + tasima butonu (tum yigini tasir)
-func _add_chest_row(item_id: String, count: int, button_text: String, to_chest: bool) -> void:
+func _add_chest_row(item_id: String, count: int, button_text: String,
+		to_chest: bool, target: VBoxContainer) -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 10)
 

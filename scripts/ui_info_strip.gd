@@ -25,9 +25,9 @@ func _init() -> void:
 	row.add_theme_constant_override("separation", 14)
 	add_child(row)
 
-	# Sol: buyuk ikon dairesi (kategori rengi)
+	# Sol: buyuk ikon dairesi (kategori rengi; mockup .big = 68px)
 	_circle = Panel.new()
-	_circle.custom_minimum_size = Vector2(64, 64)
+	_circle.custom_minimum_size = Vector2(68, 68)
 	_circle.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_circle_style = StyleBoxFlat.new()
 	_circle_style.bg_color = UIColors.PANEL_CREAM_DARK
@@ -118,6 +118,8 @@ func clear_chips() -> void:
 		c.queue_free()
 
 ## Eylem pill'leri: [{text, primary(bool), on(Callable), danger(bool)}].
+## primary = dolgulu koyu (Ye/Kusan/Yerlestir); danger = kirmizi KONTURLU
+## (At, mockup .pill.danger). Basista pop kuculmesi (mockup :active).
 func set_pills(pills: Array) -> void:
 	clear_pills()
 	for p: Dictionary in pills:
@@ -125,11 +127,43 @@ func set_pills(pills: Array) -> void:
 		btn.text = String(p.get("text", ""))
 		if bool(p.get("primary", false)):
 			btn.theme_type_variation = "PrimaryButton"
+		elif bool(p.get("danger", false)):
+			_style_danger_pill(btn)
 		btn.custom_minimum_size = Vector2(0, 44)
 		var cb: Callable = p.get("on", Callable())
 		if cb.is_valid():
 			btn.pressed.connect(cb)
+		btn.button_down.connect(_on_pill_down.bind(btn))
+		btn.button_up.connect(_on_pill_up.bind(btn))
 		_pills.add_child(btn)
+
+# Kirmizi konturlu "tehlikeli eylem" pill'i (seffaf zemin + 3px kontur)
+func _style_danger_pill(btn: Button) -> void:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0, 0, 0, 0)
+	sb.set_corner_radius_all(999)
+	sb.set_border_width_all(3)
+	sb.border_color = UIColors.DANGER
+	sb.content_margin_left = 24.0
+	sb.content_margin_right = 24.0
+	sb.content_margin_top = 8.0
+	sb.content_margin_bottom = 8.0
+	var sb_pressed: StyleBoxFlat = sb.duplicate()
+	sb_pressed.bg_color = Color(UIColors.DANGER, 0.12)
+	btn.add_theme_stylebox_override("normal", sb)
+	btn.add_theme_stylebox_override("hover", sb)
+	btn.add_theme_stylebox_override("pressed", sb_pressed)
+	btn.add_theme_stylebox_override("focus", sb)
+	btn.add_theme_color_override("font_color", UIColors.DANGER)
+	btn.add_theme_color_override("font_pressed_color", UIColors.DANGER)
+	btn.add_theme_color_override("font_hover_color", UIColors.DANGER)
+
+func _on_pill_down(btn: Button) -> void:
+	btn.pivot_offset = btn.size / 2.0
+	btn.scale = Vector2.ONE * 0.94
+
+func _on_pill_up(btn: Button) -> void:
+	btn.scale = Vector2.ONE
 
 func clear_pills() -> void:
 	for c in _pills.get_children():

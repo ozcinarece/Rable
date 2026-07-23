@@ -90,7 +90,19 @@ func _ready() -> void:
 	_badge_label.add_theme_color_override("font_color", UIColors.INK_DARK)
 	_badge_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_badge.add_child(_badge_label)
+	# ENVANTER-MOCKUP: dokunus geri bildirimi — basista %92'ye kuculur
+	button_down.connect(_on_press_down)
+	button_up.connect(_on_press_up)
 	_apply_content()
+
+func _on_press_down() -> void:
+	pivot_offset = size / 2.0
+	scale = Vector2.ONE * 0.92
+
+func _on_press_up() -> void:
+	# Hotbar'da secili slot 1.15x buyuk yasar (R7); ona geri don
+	var base := 1.15 if (kind == "hotbar" and selected) else 1.0
+	scale = Vector2.ONE * base
 
 ## Slot icerigini gunceller (bos icin id="").
 func set_content(id: String, count: int) -> void:
@@ -147,7 +159,9 @@ func _draw() -> void:
 	if selected:
 		draw_arc(center, radius + 2.0, 0, TAU, 40, UIColors.INK_DARK, 3.0, true)
 		draw_circle(Vector2(center.x, size.y - 3.0), 3.5, UIColors.INK_DARK)
-	# Tasima icin secildi: kalin halka + hafif parlaklik
+	# Tasima icin secildi: CIFT HALKA vurgusu (mockup .sel: koyu ic halka +
+	# yumusak dis halka)
 	if picked:
-		draw_circle(center, radius, Color(1, 1, 1, 0.25))
-		draw_arc(center, radius + 3.0, 0, TAU, 40, UIColors.INK_DARK, 4.0, true)
+		draw_arc(center, radius + 4.0, 0, TAU, 48, UIColors.INK_DARK, 4.0, true)
+		draw_arc(center, radius + 8.0, 0, TAU, 48,
+				Color(UIColors.INK_DARK, 0.13), 4.0, true)
