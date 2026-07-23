@@ -81,9 +81,10 @@ const TOOL_HOLD := {
 	# agiz +Z/-Y ucunda; sap->agiz v=(0,-0.63,0.78)). X etrafinda -129.1
 	# derece donus v'yi el ekseni +Y'ye getirir (agiz asagi-on). Tutus
 	# noktasi capraz sapin USTUNDE oldugundan grip_pt ile verildi.
+	# extra: yere giriyordu -> govde-YUKARI 5cm (kullanici: "kolun yukarisina")
 	"kurek": {"axis": 2, "grip": 0.15, "scale": 0.5, "rot_deg": Vector3(-129.1, 0, 0),
 			"grip_pt": Vector3(0, 0.36, -0.45),
-			"extra": Vector3(0.021, 0.077, 0.060)},
+			"extra": Vector3(-0.011, -0.038, -0.030)},
 }
 
 ## STIL: esya id -> karakterin GOVDE saldiri animasyonu (character_animated).

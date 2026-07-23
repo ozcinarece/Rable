@@ -71,9 +71,10 @@ const STONE_VARIANTS := [
 #   rotatable:yon 0/90/180/270 (13.2 dondur)
 #   on_water/in_pit: 13.3 gecerlilik istisnalari (varsayilan false)
 const PLACE_MODELS := {
-	# Kullanicinin Meshy tezgahi (test/workbench.glb; olculdu 1.0x0.64x0.66)
+	# Kullanicinin Meshy tezgahi (test/workbench.glb; olculdu 1.0x0.64x0.66).
+	# h 0.85 karaktere gore buyuk kaciyordu -> 0.6 (genislik ~0.94 hucre).
 	"tezgah": {"model": "res://assets/models/test/workbench.glb",
-			"h": 0.85, "solid": true, "behavior": "station", "max_hp": 120},
+			"h": 0.6, "solid": true, "behavior": "station", "max_hp": 120},
 	"arastirma_masasi": {"model": "res://assets/models/nature/quat_table.glb",
 			"h": 0.8, "solid": true, "long": 1.0,
 			"behavior": "station", "max_hp": 120},
