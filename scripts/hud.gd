@@ -212,6 +212,7 @@ func _ready() -> void:
 	_build_info_strip() # R3: envanter ORTAK alt bilgi bandi (yeniden kullanilir)
 	_style_backpack_sheet() # ENVANTER-MOCKUP: sirt cantasi gorsel dili
 	_style_chest_sheet()    # ENVANTER-MOCKUP: sandik ayni dil (iki sutun)
+	_style_craft_sheet()    # PANEL-MOCKUP: uretim ayni iskelete
 	_build_dock()           # R1: sag kenar dikey dock (canta/uretim/arastirma)
 	_build_settings_menu()  # R1: Ayarlar menusu (Yeni Oyun + Kamera/Gorunum)
 	_style_action_buttons() # R2: ana/saldiri butonlari + baglam etiketi
@@ -293,17 +294,20 @@ func _on_craft_toggled(pressed: bool) -> void:
 		_update_cards()
 	if _craft_tween != null:
 		_craft_tween.kill()
-	craft_root.pivot_offset = craft_root.size / 2.0
+	# PANEL-MOCKUP: uretim de ALTTAN YUKSELIR (0.3sn ease-out, mockup .rise)
 	_craft_tween = create_tween().set_ease(Tween.EASE_OUT).set_trans(Tween.TRANS_CUBIC)
+	var rise := get_viewport().get_visible_rect().size.y
 	if pressed:
 		craft_root.visible = true
-		craft_root.scale = Vector2.ONE * 0.96
-		craft_root.modulate.a = 0.0
-		_craft_tween.tween_property(craft_root, "scale", Vector2.ONE, 0.22)
-		_craft_tween.parallel().tween_property(craft_root, "modulate:a", 1.0, 0.18)
+		craft_root.position.y += rise
+		_craft_tween.tween_property(craft_root, "position:y",
+				craft_root.position.y - rise, 0.3)
 	else:
-		_craft_tween.tween_property(craft_root, "modulate:a", 0.0, 0.15)
-		_craft_tween.tween_callback(func(): craft_root.visible = false)
+		_craft_tween.tween_property(craft_root, "position:y",
+				craft_root.position.y + rise, 0.22)
+		_craft_tween.tween_callback(func():
+			craft_root.visible = false
+			craft_root.position.y -= rise)
 	_update_backdrop()
 
 func _on_research_toggled(pressed: bool) -> void:
@@ -524,35 +528,47 @@ func _style_round_close(btn: Button, root: Control, panel_top: float) -> void:
 	btn.add_theme_stylebox_override("pressed", close_pressed_sb)
 	btn.add_theme_stylebox_override("focus", close_sb)
 
-func _style_backpack_sheet() -> void:
-	# Sayfa: %84 yukseklik, %96 genislik, alta yaslanmis (mockup .sheet)
-	inventory_root.anchor_left = 0.02
-	inventory_root.anchor_right = 0.98
-	inventory_root.anchor_top = 0.16
-	inventory_root.anchor_bottom = 1.0
-	inventory_root.offset_left = 0.0
-	inventory_root.offset_right = 0.0
-	inventory_root.offset_top = 0.0
-	inventory_root.offset_bottom = 0.0
-	var panel: PanelContainer = $InventoryRoot/InventoryPanel
+# PANEL-MOCKUP Asama 1 — ORTAK ISKELET (tek bilesen): alttan yukselen
+# sayfa (%90 boy, %96 en), 24px ust kose, nokta dokusu, dikisli tutamac,
+# tasan koyu sekme, yuvarlak kapat. Envanter/uretim/sandik (ve ileride
+# arastirma) BU fonksiyonla giydirilir. Sekmedeki sag mini etiketi dondurur.
+func _build_sheet_chrome(root: Control, panel: PanelContainer,
+		vbox: Container, title: String) -> Label:
+	root.anchor_left = 0.02
+	root.anchor_right = 0.98
+	root.anchor_top = 0.10   # mockup .sheet: height %90
+	root.anchor_bottom = 1.0
+	root.offset_left = 0.0
+	root.offset_right = 0.0
+	root.offset_top = 0.0
+	root.offset_bottom = 0.0
+	panel.anchor_left = 0.0
+	panel.anchor_top = 0.0
+	panel.anchor_right = 1.0
+	panel.anchor_bottom = 1.0
+	panel.offset_left = 0.0
+	panel.offset_top = 20.0  # sekme bu boslukta panelden yukari tasar
+	panel.offset_right = 0.0
+	panel.offset_bottom = 0.0
 	panel.add_theme_stylebox_override("panel", _make_sheet_style())
-	# Cok soluk nokta dokusu (icerigin altina cizilir)
 	var dots := UiDots.new()
 	panel.add_child(dots)
 	panel.move_child(dots, 0)
-	# Dikisli deri tutamac: ust orta
-	var vbox: VBoxContainer = panel.get_node("VBox")
 	var handle := UiHandle.new()
 	handle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	vbox.add_child(handle)
 	vbox.move_child(handle, 0)
-	# Eski ust satir + kapasite satiri gizlenir (yerlerini sekme/kapat alir)
+	return _make_tab(root, title, panel.offset_top)
+
+func _style_backpack_sheet() -> void:
+	var panel: PanelContainer = $InventoryRoot/InventoryPanel
+	var vbox: VBoxContainer = panel.get_node("VBox")
+	# Eski ust satir + kapasite satiri gizlenir (doluluk YALNIZ sekmede)
 	vbox.get_node("TopRow").visible = false
 	var cap_row: Control = vbox.get_node_or_null("CapacityRow")
 	if cap_row != null:
 		cap_row.visible = false
-	# BASLIK SEKMESI (doluluk SEKMENIN ICINDE) + YUVARLAK KAPAT (sag ust)
-	_tab_cap_label = _make_tab(inventory_root, "Sırt Çantası", panel.offset_top)
+	_tab_cap_label = _build_sheet_chrome(inventory_root, panel, vbox, "Sırt Çantası")
 	_style_round_close(inventory_close, inventory_root, panel.offset_top)
 	# Izgara: 8 sutun SABIT; slot boyu ekran genisligine esner (mockup 1fr
 	# sutunlar; alt sinir 64px dokunma hedefi, ust sinir 104px)
@@ -569,10 +585,6 @@ func _style_chest_sheet() -> void:
 	# Sarmalayici kok: sekme/kapat panelden tasabilsin diye (container degil)
 	_chest_root = Control.new()
 	_chest_root.name = "ChestRoot"
-	_chest_root.anchor_left = 0.02
-	_chest_root.anchor_right = 0.98
-	_chest_root.anchor_top = 0.16
-	_chest_root.anchor_bottom = 1.0
 	_chest_root.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_chest_root.visible = false
 	_chest_root.theme = chest_panel.theme
@@ -582,30 +594,12 @@ func _style_chest_sheet() -> void:
 	chest_panel.get_parent().remove_child(chest_panel)
 	_chest_root.add_child(chest_panel)
 	_chest_root.move_child(chest_panel, 0)
-	chest_panel.anchor_left = 0.0
-	chest_panel.anchor_top = 0.0
-	chest_panel.anchor_right = 1.0
-	chest_panel.anchor_bottom = 1.0
-	chest_panel.offset_left = 0.0
-	chest_panel.offset_top = 20.0
-	chest_panel.offset_right = 0.0
-	chest_panel.offset_bottom = 0.0
-	chest_panel.add_theme_stylebox_override("panel", _make_sheet_style())
 	# Gorunurluk esitleme: mevcut show/close_chest chest_panel.visible'i
 	# degistirir; kok onu izler (oyun mantigina dokunmadan)
 	chest_panel.visibility_changed.connect(_on_chest_panel_visibility)
-	# Nokta dokusu + tutamac
-	var dots := UiDots.new()
-	chest_panel.add_child(dots)
-	chest_panel.move_child(dots, 0)
 	var vbox: VBoxContainer = chest_panel.get_node("VBox")
-	var handle := UiHandle.new()
-	handle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	vbox.add_child(handle)
-	vbox.move_child(handle, 0)
-	# Eski baslik satiri gizlenir; sekme "Sandık" + yuvarlak kapat
 	vbox.get_node("TitleRow").visible = false
-	_make_tab(_chest_root, "Sandık", chest_panel.offset_top)
+	_build_sheet_chrome(_chest_root, chest_panel, vbox, "Sandık")
 	_style_round_close(chest_close_button, _chest_root, chest_panel.offset_top)
 	# IKI KARDES SUTUN: solda sandik icerigi, sagda sirt cantasi
 	var scroll: ScrollContainer = vbox.get_node("Scroll")
@@ -629,6 +623,44 @@ func _style_chest_sheet() -> void:
 func _on_chest_panel_visibility() -> void:
 	if _chest_root != null:
 		_chest_root.visible = chest_panel.visible
+
+# --- PANEL-MOCKUP: Uretim paneli ayni iskelete (crafting mockup'i) --------
+var _craft_outer: VBoxContainer  # dis duzen: [raf+kartlar] [detay] [kuyruk]
+
+func _style_craft_sheet() -> void:
+	# Dikey dis duzen kur: ana satir (raf+kartlar) ustte, detay/kuyruk altta
+	# TAM GENISLIK (mockup .main + .strip). HBox tasinir, referanslar kalir.
+	var hbox: HBoxContainer = $CraftRoot/CraftPanel/HBox
+	craft_panel.remove_child(hbox)
+	_craft_outer = VBoxContainer.new()
+	_craft_outer.add_theme_constant_override("separation", 6)
+	craft_panel.add_child(_craft_outer)
+	_craft_outer.add_child(hbox)
+	hbox.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	hbox.add_theme_constant_override("separation", 10)
+	# Kuyruk satiri dis kutunun en altina (strip _build_craft_detail'de
+	# kuyrugun USTUNE eklenecek). NOT: hbox tasindi, path'ler degisti —
+	# dugumlere hbox uzerinden ulasilir.
+	var rb: VBoxContainer = hbox.get_node("RightBox")
+	rb.remove_child(queue_row)
+	_craft_outer.add_child(queue_row)
+	# Kart alani zemini SEFFAF (mockup: kartlar panel-koyu, zemin krem
+	# sayfa; Body'nin InnerPanel'i kartlarla ayni renkti -> gorunmez kart)
+	var body: PanelContainer = rb.get_node("Body")
+	body.add_theme_stylebox_override("panel", StyleBoxEmpty.new())
+	cards_box.add_theme_constant_override("h_separation", 12)
+	cards_box.add_theme_constant_override("v_separation", 12)
+	# Eski basligi gizle; ARAMA YOK (mockup karari — tarif sayisi 60'i
+	# asarsa geri gelir, RAPOR_PANEL TODO). search_edit gizli ama yasiyor:
+	# _rebuild_cards bos metin okur, davranis degismez.
+	var old_tab: Control = $CraftRoot/TitleTab
+	old_tab.visible = false
+	_style_round_close(craft_close, craft_root, 20.0)
+	rb.get_node("TopRow").visible = false
+	_build_sheet_chrome(craft_root, craft_panel, _craft_outer, "Üretim")
+	# Eski scale-acilisin kalintilarini temizle (artik yukselme animasyonu)
+	craft_root.scale = Vector2.ONE
+	craft_root.modulate.a = 1.0
 
 # --- R1: Sag kenar dikey DOCK (canta / uretim / arastirma) --------------
 # Dagitik beyaz daireler yerine TEK dikey dock: kategori renkli DOLGULU
@@ -1291,7 +1323,22 @@ func _flash_night_pill(text: String) -> void:
 
 # R4: sol dikey 56px kategori sekmeleri — kategori RENKLI dolgulu daire +
 # ikon (etiket KIRPILMAZ; isim tooltip + detay bandinda). "Tümü" ayri durur.
+# PANEL-MOCKUP .rail: 92px dikey raf; renkli daire (60px) + altinda TAM
+# kelime mini etiket (kirpma YASAK); aktif raf 6px SAGA kayar + koyu halka
+# + tam opak; "Tümü" dahil. Pasifler %68 opak (mockup .cat opacity .68).
 func _build_category_buttons() -> void:
+	cat_box.custom_minimum_size = Vector2(92, 0)
+	cat_box.add_theme_constant_override("separation", 10)
+	# Raf tasarsa dikey kaydirma (mockup .rail overflow-y:auto)
+	var rail_scroll := ScrollContainer.new()
+	rail_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	rail_scroll.custom_minimum_size = Vector2(100, 0)
+	var rail_parent := cat_box.get_parent()
+	var rail_at := cat_box.get_index()
+	rail_parent.remove_child(cat_box)
+	rail_parent.add_child(rail_scroll)
+	rail_parent.move_child(rail_scroll, rail_at)
+	rail_scroll.add_child(cat_box)
 	var group := ButtonGroup.new()
 	var cats := {"tumu": "Tümü"}
 	cats.merge(Recipes.CATEGORIES)
@@ -1302,23 +1349,38 @@ func _build_category_buttons() -> void:
 		var button := Button.new()
 		button.toggle_mode = true
 		button.button_group = group
-		button.tooltip_text = String(cats[cat_id])
 		button.icon = _category_icon(cat_id)
 		_style_cat_button(button, color)
+		# Giydirme: Margin (aktifken 6px saga) > VBox > daire + etiket
+		var wrap := MarginContainer.new()
+		wrap.add_theme_constant_override("margin_left", 0)
+		var entry := VBoxContainer.new()
+		entry.add_theme_constant_override("separation", 2)
+		entry.alignment = BoxContainer.ALIGNMENT_CENTER
+		button.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		entry.add_child(button)
+		var lbl := Label.new()
+		lbl.text = String(cats[cat_id])
+		lbl.add_theme_font_size_override("font_size", 13)
+		lbl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		lbl.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		entry.add_child(lbl)
+		wrap.add_child(entry)
+		cat_box.add_child(wrap)
+		_cat_buttons[cat_id] = {"btn": button, "lbl": lbl, "wrap": wrap,
+				"color": color}
 		button.button_pressed = cat_id == _current_cat
-		_apply_cat_state(button, cat_id == _current_cat)
+		_apply_cat_state(cat_id, cat_id == _current_cat)
 		var cid: String = cat_id
 		button.toggled.connect(func(pressed: bool):
-			_apply_cat_state(button, pressed)
+			_apply_cat_state(cid, pressed)
 			if pressed:
 				_current_cat = cid
 				_rebuild_cards())
-		cat_box.add_child(button)
-		_cat_buttons[cat_id] = button
 
-# 56px kategori sekmesi: renkli dolgulu daire + %65+ dolduran koyu kahve ikon.
+# 60px kategori dairesi: renkli dolgu + koyu kahve ikon (%65+ doluluk).
 func _style_cat_button(button: Button, color: Color) -> void:
-	button.custom_minimum_size = Vector2(56, 56)
+	button.custom_minimum_size = Vector2(60, 60)
 	button.expand_icon = true
 	button.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	button.vertical_icon_alignment = VERTICAL_ALIGNMENT_CENTER
@@ -1326,10 +1388,10 @@ func _style_cat_button(button: Button, color: Color) -> void:
 	var sb := StyleBoxFlat.new()
 	sb.bg_color = color
 	sb.set_corner_radius_all(999)
-	sb.content_margin_left = 9
-	sb.content_margin_right = 9
-	sb.content_margin_top = 9
-	sb.content_margin_bottom = 9
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
 	for state in ["normal", "hover", "pressed", "disabled"]:
 		button.add_theme_stylebox_override(state, sb)
 	button.add_theme_stylebox_override("focus", StyleBoxEmpty.new())
@@ -1347,11 +1409,29 @@ func _category_icon(cat_id: String) -> Texture2D:
 					return load(p)
 	return load("res://assets/ui/wrench.png")
 
-# Aktif sekme tam opak + hafif buyuk; pasifler %65 opak (UI_DESIGN 4.3)
-func _apply_cat_state(button: Button, active: bool) -> void:
-	button.modulate.a = 1.0 if active else 0.65
-	button.pivot_offset = button.custom_minimum_size / 2.0
-	button.scale = Vector2.ONE * (1.08 if active else 1.0)
+# Aktif raf: 6px saga + koyu 3px halka + tam opak; pasif %68 + halkasiz.
+func _apply_cat_state(cat_id: String, active: bool) -> void:
+	if not _cat_buttons.has(cat_id):
+		return
+	var refs: Dictionary = _cat_buttons[cat_id]
+	var button: Button = refs["btn"]
+	var wrap: MarginContainer = refs["wrap"]
+	wrap.add_theme_constant_override("margin_left", 6 if active else 0)
+	button.modulate.a = 1.0 if active else 0.68
+	(refs["lbl"] as Label).add_theme_color_override("font_color",
+			UIColors.INK_DARK if active else UIColors.INK_SOFT)
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = refs["color"]
+	sb.set_corner_radius_all(999)
+	sb.content_margin_left = 10
+	sb.content_margin_right = 10
+	sb.content_margin_top = 10
+	sb.content_margin_bottom = 10
+	if active:
+		sb.set_border_width_all(3)
+		sb.border_color = UIColors.INK_DARK
+	for state in ["normal", "hover", "pressed", "disabled"]:
+		button.add_theme_stylebox_override(state, sb)
 
 # R4: kart izgarasi (88px kare kart: ikon %65 + altinda ad). Kart faded
 # durumu + eksik-malzeme rozeti _update_cards'ta tazelenir.
@@ -1374,31 +1454,34 @@ func _rebuild_cards() -> void:
 		_sel_recipe = ""
 	_update_cards()
 
-# 88px kare tarif karti: kategori dairesi + %65 ikon + altinda ad + eksik rozeti.
+# PANEL-MOCKUP .card: ikon-once kart (112px, 16px kose, panel-koyu zemin),
+# 64px kategori dairesi + altinda ad. UC DURUM _update_cards'ta islenir:
+# uretilebilir tam renk / eksik %55 + kirmizi rozet / kilitli %45 gri + kilit.
 func _make_recipe_card(recipe_id: String, recipe: Dictionary) -> PanelContainer:
 	var card := PanelContainer.new()
 	card.theme_type_variation = "CardPanel"
-	card.custom_minimum_size = Vector2(88, 88)
+	card.custom_minimum_size = Vector2(112, 0)
 	var v := VBoxContainer.new()
 	v.alignment = BoxContainer.ALIGNMENT_CENTER
-	v.add_theme_constant_override("separation", 3)
+	v.add_theme_constant_override("separation", 5)
 	card.add_child(v)
 
-	var circle := Panel.new()
-	circle.custom_minimum_size = Vector2(50, 50)
-	circle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
-	var sb := StyleBoxFlat.new()
-	sb.bg_color = UIColors.category_color(
+	var base_color: Color = UIColors.category_color(
 			CAT_COLOR_KEY.get(recipe["category"], "resource"))
-	sb.set_corner_radius_all(999)
-	circle.add_theme_stylebox_override("panel", sb)
+	var circle := Panel.new()
+	circle.custom_minimum_size = Vector2(64, 64)
+	circle.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	var circle_style := StyleBoxFlat.new()
+	circle_style.bg_color = base_color
+	circle_style.set_corner_radius_all(999)
+	circle.add_theme_stylebox_override("panel", circle_style)
 	var icon := TextureRect.new()
 	icon.texture = load(Items.ITEMS[recipe_id]["icon"])
 	icon.set_anchors_preset(Control.PRESET_FULL_RECT)
-	icon.offset_left = 8
-	icon.offset_top = 8
-	icon.offset_right = -8
-	icon.offset_bottom = -8
+	icon.offset_left = 10
+	icon.offset_top = 10
+	icon.offset_right = -10
+	icon.offset_bottom = -10
 	icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1407,14 +1490,14 @@ func _make_recipe_card(recipe_id: String, recipe: Dictionary) -> PanelContainer:
 
 	var name_label := Label.new()
 	name_label.text = Items.display_name(recipe_id)
-	name_label.theme_type_variation = "SubtleLabel"
 	name_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_label.clip_text = true
-	name_label.add_theme_font_size_override("font_size", 13)
-	name_label.custom_minimum_size = Vector2(84, 0)
+	name_label.add_theme_font_size_override("font_size", 14)
+	name_label.add_theme_color_override("font_color", UIColors.INK_DARK)
+	name_label.custom_minimum_size = Vector2(104, 0)
 	v.add_child(name_label)
 
-	# Eksik malzeme sayisi rozeti (sag ust; danger)
+	# Eksik malzeme sayisi rozeti (sag ust; kirmizi kapsul)
 	var badge := PanelContainer.new()
 	var bstyle := StyleBoxFlat.new()
 	bstyle.bg_color = UIColors.DANGER
@@ -1424,8 +1507,10 @@ func _make_recipe_card(recipe_id: String, recipe: Dictionary) -> PanelContainer:
 	bstyle.content_margin_top = 0
 	bstyle.content_margin_bottom = 1
 	badge.add_theme_stylebox_override("panel", bstyle)
-	badge.set_anchors_preset(Control.PRESET_TOP_RIGHT)
-	badge.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	# NOT: kart PanelContainer cocuk anchor'larini ezer; konum size_flags
+	# ile verilir (sag ust = SHRINK_END / SHRINK_BEGIN)
+	badge.size_flags_horizontal = Control.SIZE_SHRINK_END
+	badge.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
 	badge.visible = false
 	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	var badge_label := Label.new()
@@ -1434,15 +1519,39 @@ func _make_recipe_card(recipe_id: String, recipe: Dictionary) -> PanelContainer:
 	badge.add_child(badge_label)
 	card.add_child(badge)
 
-	card.gui_input.connect(func(event: InputEvent):
-		if (event is InputEventMouseButton and event.pressed) \
-				or (event is InputEventScreenTouch and event.pressed):
-			_select_recipe(recipe_id))
-	_recipe_cards[recipe_id] = {"card": card, "badge": badge, "badge_label": badge_label}
+	# Kilit ikonu (sag ust; yalniz arastirilmamis tarifte)
+	var lock_icon := TextureRect.new()
+	lock_icon.texture = load("res://assets/ui/lock.png")
+	lock_icon.custom_minimum_size = Vector2(18, 18)
+	lock_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	lock_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	lock_icon.size_flags_horizontal = Control.SIZE_SHRINK_END
+	lock_icon.size_flags_vertical = Control.SIZE_SHRINK_BEGIN
+	lock_icon.visible = false
+	lock_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	card.add_child(lock_icon)
+
+	card.gui_input.connect(_on_card_input.bind(recipe_id, card))
+	_recipe_cards[recipe_id] = {"card": card, "badge": badge,
+			"badge_label": badge_label, "circle_style": circle_style,
+			"icon": icon, "lock": lock_icon, "color": base_color}
 	return card
+
+# Kart dokunusu: basista %95 kuculme (mockup :active), birakinca sec.
+func _on_card_input(event: InputEvent, recipe_id: String, card: Control) -> void:
+	var is_tap := (event is InputEventMouseButton) or (event is InputEventScreenTouch)
+	if not is_tap:
+		return
+	if event.pressed:
+		card.pivot_offset = card.size / 2.0
+		card.scale = Vector2.ONE * 0.95
+		_select_recipe(recipe_id)
+	else:
+		card.scale = Vector2.ONE
 
 func _select_recipe(recipe_id: String) -> void:
 	_sel_recipe = recipe_id
+	_update_cards()  # secili halka aninda gorunsun
 	_update_craft_detail()
 
 # R4: alt detay bandi (ORTAK bilesen) — buyuk ikon + ad + malzeme cipleri
@@ -1452,11 +1561,13 @@ var _craft_info: UiInfoStrip
 
 func _build_craft_detail() -> void:
 	_craft_info = UiInfoStrip.new()
-	var rightbox: VBoxContainer = $CraftRoot/CraftPanel/HBox/RightBox
-	rightbox.add_child(_craft_info)
-	rightbox.move_child(_craft_info, queue_row.get_index())  # kuyrugun ustune
+	# PANEL-MOCKUP: detay seridi TAM GENISLIK, kuyrugun ustunde (dis kutu)
+	_craft_outer.add_child(_craft_info)
+	_craft_outer.move_child(_craft_info, queue_row.get_index())
 	_update_craft_detail()
 
+# PANEL-MOCKUP detail(): malzeme cipleri (gercek envanterden yesil/kirmizi)
+# + istasyon satiri UC SESTE + TEK Uret (aktif koyu / pasif gri / Kilitli).
 func _update_craft_detail() -> void:
 	if _craft_info == null:
 		return
@@ -1469,6 +1580,15 @@ func _update_craft_detail() -> void:
 			(" ×%d" % out_count if out_count > 1 else "")
 	_craft_info.show_item(load(Items.ITEMS[_sel_recipe]["icon"]), title, "",
 			UIColors.category_color(CAT_COLOR_KEY.get(recipe["category"], "resource")))
+	# Kilitli tarif: cip + durum + "Kilitli" pasif pill (mockup lock dali)
+	var research := get_node_or_null("/root/Research")
+	if research != null and not research.is_recipe_unlocked(_sel_recipe):
+		_craft_info.set_chips([{"text": "Araştırma gerekli",
+				"color": UIColors.DANGER,
+				"icon": load("res://assets/ui/lock.png")}])
+		_craft_info.set_status("Araştırma masasında açılır", UIColors.INK_SOFT)
+		_craft_info.set_pills([{"text": "Kilitli", "disabled": true}])
+		return
 	var chips: Array = []
 	for item_id in recipe["cost"]:
 		var have := Inventory.get_count(item_id)
@@ -1476,16 +1596,27 @@ func _update_craft_detail() -> void:
 		var col: Color = UIColors.SUCCESS.darkened(0.25) if have >= need else UIColors.DANGER
 		chips.append({"text": "%d/%d" % [have, need], "color": col,
 				"icon": load(Items.ITEMS[item_id]["icon"])})
-	if recipe["station"] != "":
+	_craft_info.set_chips(chips)
+	# Istasyon satiri uc seste (mockup .st hand/ok/warn; gercek yakinlik)
+	if recipe["station"] == "":
+		_craft_info.set_status("Elde üretilir", UIColors.INK_SOFT)
+	else:
 		var is_hearth: bool = recipe["station"] == "ocak"
 		var near: bool = Crafting.near_hearth if is_hearth else Crafting.near_station
 		var st_name: String = "Ocak" if is_hearth else "Tezgah"
-		var st_text: String = "%s yanında ✓" % st_name if near \
-				else "%s gerekli — yanında değilsin" % st_name
-		chips.append({"text": st_text, "color": UIColors.SUCCESS.darkened(0.25) if near \
-				else UIColors.WARNING.darkened(0.3)})
-	_craft_info.set_chips(chips)
-	_craft_info.set_pills([{"text": "Üret", "primary": true, "on": _on_detail_craft}])
+		if near:
+			_craft_info.set_status("✓ %s yanında" % st_name,
+					UIColors.SUCCESS.darkened(0.25))
+		else:
+			_craft_info.set_status("⚠ %s gerekli — uzaktasın" % st_name,
+					UIColors.WARNING.darkened(0.3))
+	# TEK Uret: kosullar tamamsa koyu-aktif, degilse gri-pasif
+	var can: bool = Crafting.max_craftable(_sel_recipe) >= 1
+	if can:
+		_craft_info.set_pills([{"text": "Üret", "primary": true,
+				"on": _on_detail_craft}])
+	else:
+		_craft_info.set_pills([{"text": "Üret", "disabled": true}])
 
 func _on_detail_craft() -> void:
 	if _sel_recipe == "":
@@ -1628,20 +1759,51 @@ func _make_vignette_texture() -> ImageTexture:
 	return ImageTexture.create_from_image(img)
 
 # R4: kartlarin faded durumu + eksik malzeme rozeti; detay bandi da tazelenir.
+# PANEL-MOCKUP UC DURUM (mockup calc/draw birebir):
+#  1) uretilebilir: tam renk
+#  2) malzeme eksik: %55 soluk + sag ustte kirmizi "eksik sayisi" rozeti
+#  3) arastirilmamis: %45 soluk + gri daire/ikon + kilit ikonu
+#  + secili kart: 3px koyu halka, tam opak (mockup .sel)
 func _update_cards() -> void:
+	var research := get_node_or_null("/root/Research")
 	for recipe_id in _recipe_cards:
 		var refs: Dictionary = _recipe_cards[recipe_id]
 		var recipe: Dictionary = Recipes.CRAFT_RECIPES[recipe_id]
-		var can := Crafting.max_craftable(recipe_id) >= 1
-		# Craftlanamayan kart %55 soluk (hedef gostermek motivasyondur)
-		refs["card"].modulate.a = 1.0 if can else 0.55
+		var locked: bool = research != null \
+				and not research.is_recipe_unlocked(recipe_id)
 		var missing := 0
 		for item_id in recipe["cost"]:
 			if Inventory.get_count(item_id) < int(recipe["cost"][item_id]):
 				missing += 1
-		refs["badge"].visible = missing > 0
-		if missing > 0:
-			refs["badge_label"].text = str(missing)
+		var card: Control = refs["card"]
+		var cstyle: StyleBoxFlat = refs["circle_style"]
+		var sel: bool = recipe_id == _sel_recipe
+		if locked:
+			card.modulate.a = 1.0 if sel else 0.45
+			cstyle.bg_color = Color(0.72, 0.70, 0.66)  # grileşmiş daire
+			(refs["icon"] as TextureRect).modulate = Color(0.55, 0.55, 0.55)
+			refs["lock"].visible = true
+			refs["badge"].visible = false
+		else:
+			cstyle.bg_color = refs["color"]
+			(refs["icon"] as TextureRect).modulate = Color.WHITE
+			refs["lock"].visible = false
+			refs["badge"].visible = missing > 0
+			if missing > 0:
+				refs["badge_label"].text = str(missing)
+			card.modulate.a = 1.0 if (sel or missing == 0) else 0.55
+		# Secili karta koyu halka (kart koseleriyle ayni yaricap)
+		var card_sb := StyleBoxFlat.new()
+		card_sb.bg_color = UIColors.PANEL_CREAM_DARK
+		card_sb.set_corner_radius_all(16)
+		card_sb.content_margin_left = 6.0
+		card_sb.content_margin_right = 6.0
+		card_sb.content_margin_top = 10.0
+		card_sb.content_margin_bottom = 8.0
+		if sel:
+			card_sb.set_border_width_all(3)
+			card_sb.border_color = UIColors.INK_DARK
+		card.add_theme_stylebox_override("panel", card_sb)
 	if craft_root.visible and _sel_recipe != "":
 		_update_craft_detail()
 
