@@ -22,6 +22,7 @@ SaveManager="*res://scripts/save_manager.gd"
 DayNight="*res://scripts/daynight.gd"
 Health="*res://scripts/health.gd"
 PlayerStats="*res://scripts/player_stats.gd"
+Farming="*res://scripts/farming.gd"
 
 [display]
 

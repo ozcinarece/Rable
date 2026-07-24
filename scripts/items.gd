@@ -39,6 +39,10 @@ const ITEMS: Dictionary = {
 	"zirh": {"name": "Zırh", "icon": "res://assets/items/zirh.png"},
 	"sapka": {"name": "Şapka", "icon": "res://assets/items/sapka.png"},
 	"tohum": {"name": "Tohum", "icon": "res://assets/items/tohum.png"},
+	# TARIM (tarim-3d): ikon PNG yuklenince baglanir (balta akisi gibi);
+	# simdilik 2 harf placeholder kurali devrede.
+	"capa": {"name": "Çapa", "icon": "res://assets/items/capa.png"},
+	"sulama_kabi": {"name": "Sulama Kabı", "icon": "res://assets/items/sulama_kabi.png"},
 	# Yapilar: uretilir, envanterde tasinir, elde tutulup yere konur
 	"ahsap_duvar": {"name": "Ahşap Duvar", "icon": "res://assets/tiles/wood_wall.png"},
 	"tas_duvar": {"name": "Taş Duvar", "icon": "res://assets/tiles/stone_wall.png"},
@@ -181,7 +185,9 @@ const FLAVOR: Dictionary = {
 	"mantar": "Şüpheli görünüyor ama iş görür — doygunluk +10.",
 	"cig_et": "Pişir. Cidden, pişir (%20 mide bulantısı).",
 	"pismis_et": "Ocakta pişti. Tok tutar — doygunluk +40.",
-	"tohum": "Toprağa ek, bekle. Sabrın meyvesi.",
+	"tohum": "Çapalı tarlaya ek, sula. Sabrın meyvesi.",
+	"capa": "Toprağı tarlaya çevirir. Hasadın ilk adımı.",
+	"sulama_kabi": "4 kullanımlık depo. Gölden doldur, tarlana boşalt.",
 	# --- aletler
 	"balta": "Ağaçların korkulu rüyası. Tek vuruş, tek ağaç.",
 	"kazma": "Kayaya inat, iki vuruşta yol açar.",

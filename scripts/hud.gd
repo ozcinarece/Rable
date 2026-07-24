@@ -82,6 +82,11 @@ const ACTION_ICONS := {
 	"attack": preload("res://assets/ui/attack.png"),
 	"spear": preload("res://assets/ui/spear.png"),
 	"fist": preload("res://assets/ui/fist.png"),
+	# TARIM baglamlari (tarim-3d): mevcut ikonlar yeniden kullanilir
+	"till": preload("res://assets/ui/shovel.png"),
+	"plant": preload("res://assets/ui/grab.png"),
+	"water": preload("res://assets/ui/pour.png"),
+	"crop": preload("res://assets/ui/grab.png"),
 }
 
 @onready var action_button: Button = $ActionButton
@@ -842,6 +847,7 @@ const CTX_LABELS := {
 	"chop": "Kes", "mine": "Kaz", "dig": "Kaz", "pile": "Yığ",
 	"fill": "Doldur", "pour": "Dök", "harvest": "Topla", "grab": "Al",
 	"repair": "Onar", "open": "Aç", "attack": "Vur", "spear": "Sapla",
+	"till": "Çapala", "plant": "Ek", "water": "Sula", "crop": "Hasat",
 	"fist": "",
 }
 var _action_label: Label

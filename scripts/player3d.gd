@@ -51,6 +51,7 @@ const TOOL_GLB_OVERRIDE := {
 	"balta": "res://assets/models/test/axe.glb",
 	"kazma": "res://assets/models/test/pickaxe.glb",
 	"kurek": "res://assets/models/test/shovel.glb",
+	"sulama_kabi": "res://assets/models/test/clay_watering_can.glb",
 }
 
 ## ELLE AYARLANAN ALET KAVRAMASI (veri; render'a bakip ayarlanir).
@@ -82,6 +83,16 @@ const TOOL_HOLD := {
 	# derece donus v'yi el ekseni +Y'ye getirir (agiz asagi-on). Tutus
 	# noktasi capraz sapin USTUNDE oldugundan grip_pt ile verildi.
 	# extra: yere giriyordu -> govde-YUKARI 5cm (kullanici: "kolun yukarisina")
+	# clay_watering_can.glb olculdu: emzik -X ucunda (Y 0.14..0.33), KULP +X
+	# yaninda dikey yay (X 0.36..0.50, Y -0.16..0.28), kap ustu +Y. Kullanici:
+	# "kulptan tutsun, agzi yukari gelsin" -> rot_deg attachdbg DUNYA bazindan
+	# HESAPLANDI (oyuncu onu = dunya +Z; ilk deneme -Z sanip ters koymustu):
+	# kap ustu = YUKARI, emzik = ON. grip_pt kulbun dikey kismi ortasi;
+	# el kulbu dogrudan kavradigi icin extra ofset yok.
+	"sulama_kabi": {"axis": 1, "grip": 0.6, "scale": 0.3,
+			"rot_deg": Vector3(24.6, 73.5, -148.1),
+			"grip_pt": Vector3(0.45, 0.06, 0.0),
+			"extra": Vector3.ZERO},
 	"kurek": {"axis": 2, "grip": 0.15, "scale": 0.5, "rot_deg": Vector3(-129.1, 0, 0),
 			"grip_pt": Vector3(0, 0.36, -0.45),
 			"extra": Vector3(-0.011, -0.038, -0.030)},
@@ -336,6 +347,29 @@ func debug_hand_orientation() -> void:
 		f.store_string(line + "\n")
 		f.close()
 
+## TESHIS (yalniz screenshot): alet baglantisinin ve eldeki gorselin DUNYA
+## bazlarini dosyaya yazar. Yakin cekim kameralari dunya ekseninde durdugundan
+## (on=+Z, sag=+X) rot_deg dogrudan dunya hedeflerinden hesaplanabilir —
+## govde cercevesi / poz varsayimi gerekmez.
+func debug_attach_world(path: String) -> void:
+	if _tool_attach == null:
+		return
+	var a := _tool_attach.global_transform.basis.orthonormalized()
+	var line := "attachX=(%.3f,%.3f,%.3f) attachY=(%.3f,%.3f,%.3f) attachZ=(%.3f,%.3f,%.3f)" % [
+		a.x.x, a.x.y, a.x.z, a.y.x, a.y.y, a.y.z, a.z.x, a.z.y, a.z.z]
+	for c in _tool_attach.get_children():
+		if c is Node3D and c.name != "GripMarker":
+			var v := (c as Node3D).global_transform.basis.orthonormalized()
+			line += "\ngorsel(%s)X=(%.3f,%.3f,%.3f) Y=(%.3f,%.3f,%.3f) Z=(%.3f,%.3f,%.3f)" % [
+				c.name, v.x.x, v.x.y, v.x.z, v.y.x, v.y.y, v.y.z, v.z.x, v.z.y, v.z.z]
+	line += "\noyuncuZ=(%.3f,%.3f,%.3f)" % [global_transform.basis.z.x,
+			global_transform.basis.z.y, global_transform.basis.z.z]
+	print("ATTACHDBG: " + line)
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f != null:
+		f.store_string(line + "\n")
+		f.close()
+
 func _sync_attach_mirrors() -> void:
 	if _tool_src != null and _tool_attach != null:
 		var gt := _tool_src.global_transform
@@ -345,6 +379,49 @@ func _sync_attach_mirrors() -> void:
 		_head_attach.global_transform = Transform3D(gt2.basis.orthonormalized(), gt2.origin)
 
 # Dugumun dunya olcegi (aksesuar boylarini normalize etmek icin)
+## Meshy GLB'lerin emissive haritasi parlamaya yol acar; kapat.
+func _tame_meshy_materials(root: Node) -> void:
+	for mi: MeshInstance3D in root.find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh == null:
+			continue
+		for i in mi.mesh.get_surface_count():
+			var mat := mi.get_active_material(i)
+			if mat is StandardMaterial3D:
+				var m: StandardMaterial3D = mat.duplicate()
+				m.emission_enabled = false
+				m.emission_energy_multiplier = 0.0
+				m.metallic = 0.0
+				m.roughness = maxf(m.roughness, 0.75)
+				mi.set_surface_override_material(i, m)
+
+## TESHIS: tutus noktasi isareti — elin aleti TAM nereden kavradigini
+## gosterir (kirmizi top). Ekran goruntusu yakin cekimlerinde acilir;
+## kullanici "isaret sapin ortasina gelsin" diye yon verir, TOOL_HOLD
+## grip/grip_pt sayilari ona gore guncellenir.
+func set_grip_marker(on: bool) -> void:
+	if _tool_attach == null:
+		return
+	var old := _tool_attach.get_node_or_null("GripMarker")
+	if old != null:
+		old.queue_free()
+	if not on:
+		return
+	var mi := MeshInstance3D.new()
+	mi.name = "GripMarker"
+	var sm := SphereMesh.new()
+	sm.radius = 0.035
+	sm.height = 0.07
+	mi.mesh = sm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.95, 0.15, 0.15)
+	mat.emission_enabled = true
+	mat.emission = Color(0.9, 0.1, 0.1)
+	mat.emission_energy_multiplier = 0.6
+	mat.no_depth_test = true  # elin/aletin ICINDEN de gorunsun (teshis)
+	mi.material_override = mat
+	mi.sorting_offset = 10.0
+	_tool_attach.add_child(mi)
+
 func _node_world_scale(n: Node3D) -> float:
 	if n == null or not n.is_inside_tree():
 		return 1.0
@@ -448,6 +525,7 @@ func set_held_tool(model_path: String) -> void:
 		glb = "res://assets/models/tools/%s.glb" % String(TOOL_GLB.get(model_path, model_path))
 	if ResourceLoader.exists(glb):
 		visual = load(glb).instantiate()
+		_tame_meshy_materials(visual)  # Meshy isimasi kapali (parlama fix)
 	else:
 		var kind := String(TOOL_KIND.get(model_path, ""))
 		if kind == "":
