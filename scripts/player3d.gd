@@ -346,6 +346,29 @@ func debug_hand_orientation() -> void:
 		f.store_string(line + "\n")
 		f.close()
 
+## TESHIS (yalniz screenshot): alet baglantisinin ve eldeki gorselin DUNYA
+## bazlarini dosyaya yazar. Yakin cekim kameralari dunya ekseninde durdugundan
+## (on=+Z, sag=+X) rot_deg dogrudan dunya hedeflerinden hesaplanabilir —
+## govde cercevesi / poz varsayimi gerekmez.
+func debug_attach_world(path: String) -> void:
+	if _tool_attach == null:
+		return
+	var a := _tool_attach.global_transform.basis.orthonormalized()
+	var line := "attachX=(%.3f,%.3f,%.3f) attachY=(%.3f,%.3f,%.3f) attachZ=(%.3f,%.3f,%.3f)" % [
+		a.x.x, a.x.y, a.x.z, a.y.x, a.y.y, a.y.z, a.z.x, a.z.y, a.z.z]
+	for c in _tool_attach.get_children():
+		if c is Node3D and c.name != "GripMarker":
+			var v := (c as Node3D).global_transform.basis.orthonormalized()
+			line += "\ngorsel(%s)X=(%.3f,%.3f,%.3f) Y=(%.3f,%.3f,%.3f) Z=(%.3f,%.3f,%.3f)" % [
+				c.name, v.x.x, v.x.y, v.x.z, v.y.x, v.y.y, v.y.z, v.z.x, v.z.y, v.z.z]
+	line += "\noyuncuZ=(%.3f,%.3f,%.3f)" % [global_transform.basis.z.x,
+			global_transform.basis.z.y, global_transform.basis.z.z]
+	print("ATTACHDBG: " + line)
+	var f := FileAccess.open(path, FileAccess.WRITE)
+	if f != null:
+		f.store_string(line + "\n")
+		f.close()
+
 func _sync_attach_mirrors() -> void:
 	if _tool_src != null and _tool_attach != null:
 		var gt := _tool_src.global_transform

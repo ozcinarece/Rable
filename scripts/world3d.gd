@@ -482,6 +482,9 @@ func _setup_screenshot(save_path: String) -> void:
 		camera.position = player.position + Vector3(0, 0.6, 2.3)
 		camera.look_at(_hand_focus)
 		await get_tree().create_timer(0.3).timeout
+		if String(tf[0]) == "sulama_kabi":
+			# tam cekim aninda baglanti bazi (rot_deg dunya hedefinden hesaplanir)
+			player.debug_attach_world("res://docs/screens/attachdbg.txt")
 		_snap(save_path.replace(".png", String(tf[1]) + "_on.png"))
 		camera.position = player.position + Vector3(2.3, 0.6, 0.2)
 		camera.look_at(_hand_focus)
