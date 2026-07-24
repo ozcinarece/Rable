@@ -70,6 +70,8 @@ const STONE_VARIANTS := [
 #   max_hp:   take_hit dayanikligi (13.4)
 #   rotatable:yon 0/90/180/270 (13.2 dondur)
 #   on_water/in_pit: 13.3 gecerlilik istisnalari (varsayilan false)
+const TarimBalance = preload("res://scripts/tarim_balance.gd")
+
 const PLACE_MODELS := {
 	# Kullanicinin Meshy tezgahi (test/workbench.glb; olculdu 1.0x0.64x0.66).
 	# h 0.85 karaktere gore buyuk kaciyordu -> 0.6 (genislik ~0.94 hucre).
@@ -344,6 +346,10 @@ func _ready() -> void:
 	hud.chest_transfer_all_requested.connect(_on_chest_transfer_all)
 	hud.chest_dismantle_requested.connect(_on_chest_dismantle)
 	hud.chest_closed.connect(func(): _open_chest = Vector2i(-999, -999))
+	# TARIM (tarim-3d): veri->gorsel koprusu + gun surucusu (once bitisik-su
+	# otomatigi, sonra buyume tick'i — sira world3d'de, belirsizlik yok)
+	Farming.plot_changed.connect(_on_plot_changed)
+	DayNight.dawn_started.connect(_on_farm_dawn)
 	hud.perf_overlay_toggled.connect(_on_perf_overlay_toggled)
 	hud.quality_changed.connect(_on_quality_changed)
 	_build_camera_ui()
@@ -490,6 +496,45 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(Vector3(float(tzc.x) + 0.5, 0.35, float(tzc.y) + 0.5))
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_tezgah.png"))
+	# FARMTEST (tarim-3d): tarla ac -> ek -> sula -> 2 gun -> olgun ->
+	# hasat -> bos tarla 3 gunde cime doner. Safak dogrudan cagrilir.
+	var fc2 := _player_cell() + Vector2i(-3, 2)
+	var f_till := _till_valid(fc2) and Farming.till_cell(fc2)
+	Inventory.add_item("tohum", 1)
+	_try_plant(fc2)
+	var f_ekildi: bool = String(Farming.plots.get(fc2, {}).get("crop_id", "")) == "berry_bush"
+	Farming.fill_watering_can()
+	Farming.water(fc2)
+	_on_farm_dawn()  # gun 1: evre 0->1
+	Farming.water(fc2)
+	_on_farm_dawn()  # gun 2: evre 1->2 (olgun)
+	var f_olgun: bool = Farming.can_harvest(fc2)
+	_try_crop_harvest(fc2)
+	var f_bos: bool = String(Farming.plots.get(fc2, {}).get("crop_id", "x")) == ""
+	for fdk in 3:
+		_on_farm_dawn()  # bakimsiz tarla cime donsun
+	var f_cim: bool = not Farming.plots.has(fc2)
+	# kayit cifti: to/from sonrasi birebir mi (hizli kontrol)
+	Farming.till_cell(fc2)
+	var f_save := Farming.to_save_data()
+	Farming.from_save_data(f_save)
+	var f_kayit: bool = Farming.plots.has(fc2)
+	print("FARMTEST: till=%s ekildi=%s olgun=%s hasat_bos=%s cim=%s kayit=%s" % [
+		str(f_till), str(f_ekildi), str(f_olgun), str(f_bos), str(f_cim), str(f_kayit)])
+	# Gorsel kare: 3 evre yan yana (_tarim.png)
+	var fbase := _player_cell() + Vector2i(2, 2)
+	for fk in 3:
+		var fcell := fbase + Vector2i(fk, 0)
+		if _till_valid(fcell):
+			Farming.till_cell(fcell)
+			Farming.plant(fcell, "berry_bush")
+			Farming.plots[fcell].stage = fk
+			_on_plot_changed(fcell)
+	Farming.water_free(fbase)  # islak zemin rengi de karede gorunsun
+	camera.position = Vector3(float(fbase.x) + 1.5 - 1.2, 1.7, float(fbase.y) + 0.5 + 2.2)
+	camera.look_at(Vector3(float(fbase.x) + 1.5, 0.15, float(fbase.y) + 0.5))
+	await get_tree().create_timer(0.5).timeout
+	_snap(save_path.replace(".png", "_tarim.png"))
 	hud.visible = true
 	# Ikinci kare: kusbakisi tum ada (teshis icin)
 	# harita-v2: kusbakisi tum 128x128 adayi kapsar (yukseklik boyutla olcekli)
@@ -978,6 +1023,7 @@ func _run_save_load_selftest() -> void:
 	for n in _placed_nodes.values():
 		n.queue_free()
 	_placed_nodes.clear(); _clear_chests(); _objects.clear()
+	Farming.from_save_data({})  # tarim-3d: yeni oyunda tarlalar sifirlanir
 	Inventory.load_save({}); Health.value = 1.0; Hunger.value = 1.0
 	Research.unlocked.erase("stone_tools")
 	# 4) Yukle
@@ -1440,6 +1486,7 @@ func to_save_data() -> Dictionary:
 		"player": [player.position.x, player.position.z],
 		"held": _held_item,
 		"home_bed": [_home_bed.x, _home_bed.y],  # 14.2 aktif dogus noktasi
+		"farming": Farming.to_save_data(),  # tarim-3d: tarla/evre/islaklik/kap
 	}
 
 ## kayit-sistemi: SAHNE durumunu (dünya) geri yükler. SaveManager çağırır;
@@ -1478,6 +1525,7 @@ func from_save_data(data: Dictionary) -> bool:
 	_placed.clear()
 	_placed_nodes.clear()
 	_clear_chests()          # 14.1 depo dugumlerini serbest birak
+	Farming.from_save_data(data.get("farming", {}))  # tarim-3d (yoksa temiz)
 	_platform_cells.clear()  # 14.4 _set_placed yeniden dolduracak
 	_hearth_cell = Vector2i(-999, -999)
 	_hearth_light = null
@@ -2165,6 +2213,13 @@ func _cell_props(cx: int, cy: int) -> Array:
 		else:
 			col = Color(0.47, 0.34, 0.22)   # toprak tumsegi
 		return [roll - float(d) * DigRules.DEPTH_STEP, col]
+	# TARIM: surulu tarla rengi (veri Farming'de; GROUND char EKLENMEDI —
+	# kayit/uretec varsayimlari bozulmasin). Islakken koyulasir.
+	var fplot: Variant = Farming.plots.get(Vector2i(cx, cy))
+	if fplot != null:
+		var fcol: Color = TarimBalance.TILLED_WET_COLOR \
+				if bool(fplot.get("watered_today", false)) else TarimBalance.TILLED_COLOR
+		return [roll + TarimBalance.TILLED_TOP, fcol]
 	return [roll, def["color"]]
 
 # Bir dunya noktasinda yukseklik+renk (4 komsu hucrenin harmani)
@@ -4339,6 +4394,153 @@ func _dig_valid(cell: Vector2i, tool: String) -> bool:
 
 ## Bir hucrenin elde tutulan esyaya gore eylem tanimi (12.1 tablosu).
 ## {type, cell, icon, valid, kind, [placed]}
+# --- TARIM (tarim-3d): dunya tarafi ---------------------------------------
+## Tarla acilabilir mi: duz + kazilmamis + bos + susuz cim/toprak hucresi
+func _till_valid(cell: Vector2i) -> bool:
+	return int(_depth.get(cell, 0)) == 0 \
+			and String(_ground_char.get(cell, "")) in [".", "d"] \
+			and not _objects.has(cell) and not _placed.has(cell) \
+			and not Farming.plots.has(cell) and not is_water_source(cell) \
+			and pool_at(cell) < 0 and _ground_item_at(cell) == -1 \
+			and cell != _player_cell()
+
+func _try_till(cell: Vector2i) -> void:
+	if not _till_valid(cell):
+		_spawn_floating_text(cell, "Buraya tarla olmaz", Color(1, 0.85, 0.6))
+		return
+	if Farming.till_cell(cell):
+		_play_sfx(String(TarimBalance.SFX["till"]))
+		_spawn_floating_text(cell, "Tarla açıldı", Color(0.8, 1.0, 0.8))
+
+func _try_plant(cell: Vector2i) -> void:
+	var check: Dictionary = Farming.can_plant(cell, "berry_bush")
+	if not bool(check.ok):
+		_spawn_floating_text(cell, String(check.reason), Color(1, 0.85, 0.6))
+		return
+	if Inventory.get_count("tohum") <= 0:
+		_spawn_floating_text(cell, "Tohum yok", Color(1, 0.85, 0.6))
+		return
+	if Farming.plant(cell, "berry_bush"):
+		Inventory.remove_item("tohum", 1)
+		_play_sfx(String(TarimBalance.SFX["plant"]))
+		_spawn_floating_text(cell, "Ekildi", Color(0.8, 1.0, 0.8))
+
+func _try_fill_can() -> void:
+	Farming.fill_watering_can()
+	_play_sfx(String(TarimBalance.SFX["fill"]))
+	_spawn_floating_text(_player_cell(), "Kap doldu (%d)" % \
+			TarimBalance.WATERING_CAN_USES, Color(0.6, 0.85, 1.0))
+
+func _try_water_plot(cell: Vector2i) -> void:
+	var check: Dictionary = Farming.can_water(cell)
+	if not bool(check.ok):
+		_spawn_floating_text(cell, String(check.reason), Color(1, 0.85, 0.6))
+		return
+	if Farming.water(cell):
+		_play_sfx(String(TarimBalance.SFX["water"]))
+		_spawn_floating_text(cell, "Sulandı (kap: %d)" % \
+				Farming.watering_can_left, Color(0.6, 0.85, 1.0))
+
+func _try_crop_harvest(cell: Vector2i) -> void:
+	var crop: Dictionary = Farming.harvest_clear(cell)
+	if crop.is_empty():
+		return
+	# Urun YERE SACILIR (loot hissi) + tohum iade sansi
+	var n := randi_range(int(crop.yield_min), int(crop.yield_max))
+	var drops := {String(crop.yield_item): n}
+	if randf() < TarimBalance.SEED_RETURN_CHANCE:
+		drops[String(crop.seed_item)] = int(drops.get(String(crop.seed_item), 0)) + 1
+	_scatter_drops(cell, drops)
+	_play_sfx(String(TarimBalance.SFX["harvest"]))
+	_spawn_floating_text(cell, "Hasat!", Color(0.8, 1.0, 0.8))
+
+## Safak surucusu: ONCE bitisik-su otomatigi (kanal kaz -> tarla kendini
+## sular; 11.7 kancasi BAGLANDI), SONRA buyume tick'i.
+func _on_farm_dawn() -> void:
+	for cell: Vector2i in Farming.plots.keys():
+		if has_adjacent_water(cell):
+			Farming.water_free(cell)
+	Farming.day_tick()
+
+## Veri->gorsel koprusu: zemin parcasi + bitki dugumu yenilenir
+var _crop_nodes: Dictionary = {}  # cell -> Node3D
+
+func _on_plot_changed(cell: Vector2i) -> void:
+	_refresh_terrain_at(cell)
+	_update_crop_node(cell)
+
+func _update_crop_node(cell: Vector2i) -> void:
+	if _crop_nodes.has(cell):
+		_crop_nodes[cell].queue_free()
+		_crop_nodes.erase(cell)
+	var plot: Variant = Farming.plots.get(cell)
+	if plot == null or String(plot.crop_id) == "":
+		return
+	var node := _build_crop_visual(String(plot.crop_id), int(plot.stage))
+	var h := float(_cell_props(cell.x, cell.y)[0])
+	node.position = Vector3(float(cell.x) + 0.5, h, float(cell.y) + 0.5)
+	add_child(node)
+	_crop_nodes[cell] = node
+
+## Evre gorseli: GLB kancasi (assets/models/crops/<crop>_stage<N>.glb)
+## varsa o; yoksa proseduerel placeholder (filiz->fide->meyveli cali).
+func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
+	var root := Node3D.new()
+	var glb := "res://assets/models/crops/%s_stage%d.glb" % [crop_id, stage]
+	if ResourceLoader.exists(glb):
+		var inst: Node3D = load(glb).instantiate()
+		root.add_child(inst)
+	else:
+		var green := Color(0.32, 0.62, 0.28)
+		if stage == 0:
+			root.add_child(_crop_part(_crop_cyl(0.03, 0.12), green,
+					Vector3(0, 0.06, 0)))
+		elif stage == 1:
+			var cone := CylinderMesh.new()
+			cone.top_radius = 0.0
+			cone.bottom_radius = 0.14
+			cone.height = 0.32
+			root.add_child(_crop_part(cone, green.darkened(0.1),
+					Vector3(0, 0.16, 0)))
+		else:
+			var bush := SphereMesh.new()
+			bush.radius = 0.26
+			bush.height = 0.44
+			root.add_child(_crop_part(bush, green.darkened(0.2),
+					Vector3(0, 0.26, 0)))
+			for k in 3:
+				var berry := SphereMesh.new()
+				berry.radius = 0.045
+				berry.height = 0.09
+				var ang := TAU * float(k) / 3.0
+				root.add_child(_crop_part(berry, Color(0.78, 0.20, 0.30),
+						Vector3(cos(ang) * 0.18, 0.30 + float(k % 2) * 0.08,
+						sin(ang) * 0.18)))
+			# Olgun evrede hafif salinim (hasat cagrisi)
+			var tw := create_tween().set_loops()
+			tw.tween_property(root, "rotation:z", 0.05, 1.1) \
+					.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+			tw.tween_property(root, "rotation:z", -0.05, 1.1) \
+					.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	return root
+
+func _crop_cyl(r: float, h: float) -> CylinderMesh:
+	var m := CylinderMesh.new()
+	m.top_radius = r
+	m.bottom_radius = r
+	m.height = h
+	return m
+
+func _crop_part(mesh: Mesh, color: Color, pos: Vector3) -> MeshInstance3D:
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.position = pos
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 0.9
+	mi.material_override = mat
+	return mi
+
 func _describe_target(cell: Vector2i) -> Dictionary:
 	var held := _held_item
 	# Yerdeki esya: elde ne olursa olsun toplanir
@@ -4366,6 +4568,25 @@ func _describe_target(cell: Vector2i) -> Dictionary:
 	if _dummies.has(cell):
 		return {"type": "dummy", "cell": cell, "icon": "attack",
 				"valid": true, "kind": "attack"}
+	# TARIM baglamlari (tarim-3d). Oncelik: olgun hasat (her elde) >
+	# elde-ozel eylemler (capa/tohum/sulama kabi).
+	if Farming.can_harvest(cell) and not ToolProfiles.is_weapon(held):
+		return {"type": "crop", "cell": cell, "icon": "crop",
+				"valid": true, "kind": "crop_harvest"}
+	if held == "capa":
+		return {"type": "till", "cell": cell, "icon": "till",
+				"valid": _till_valid(cell), "kind": "till"}
+	if held == "tohum" and Farming.plots.has(cell):
+		return {"type": "plant", "cell": cell, "icon": "plant",
+				"valid": bool(Farming.can_plant(cell, "berry_bush").ok),
+				"kind": "plant"}
+	if held == "sulama_kabi":
+		if is_water_source(cell) or pool_at(cell) >= 0:
+			return {"type": "fillcan", "cell": cell, "icon": "fill",
+					"valid": true, "kind": "fill_can"}
+		if Farming.plots.has(cell):
+			return {"type": "water", "cell": cell, "icon": "water",
+					"valid": bool(Farming.can_water(cell).ok), "kind": "water"}
 	# Silah elde: dunya nesnesi hedeflenmez (agac kesilmez) — saldiri
 	if ToolProfiles.is_weapon(held):
 		return {"type": "none", "cell": cell, "icon": "attack",
@@ -4454,6 +4675,16 @@ func _apply_strike(kind: String, cell: Vector2i) -> void:
 			_try_harvest(cell)
 		"dig":
 			_try_dig(cell)
+		"till":
+			_try_till(cell)
+		"plant":
+			_try_plant(cell)
+		"fill_can":
+			_try_fill_can()
+		"water":
+			_try_water_plot(cell)
+		"crop_harvest":
+			_try_crop_harvest(cell)
 		"pile":
 			_try_pile(cell)
 		"scoop":

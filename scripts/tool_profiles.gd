@@ -36,6 +36,20 @@ const PROFILES := {
 		"kind": "dig", "reach": 1, "is_weapon": false,
 		"swing_sfx": "swing_soft", "hit_sfx": "dig_dirt", "break_sfx": "",
 	},
+	"capa": {
+		"windup": 0.14, "strike": 0.10, "recover": 0.18,
+		"rest": Vector3(0, 0, 0), "wind": Vector3(-60, 0, 10),
+		"hit": Vector3(50, 0, -8), "push_z": 0.05,
+		"kind": "till", "reach": 1, "is_weapon": false,
+		"swing_sfx": "swing_soft", "hit_sfx": "dig_dirt", "break_sfx": "",
+	},
+	"sulama_kabi": {
+		"windup": 0.10, "strike": 0.12, "recover": 0.16,
+		"rest": Vector3(0, 0, 0), "wind": Vector3(-25, 0, 15),
+		"hit": Vector3(35, 0, -12), "push_z": 0.0,
+		"kind": "water", "reach": 1, "is_weapon": false,
+		"swing_sfx": "swing_soft", "hit_sfx": "water_pour", "break_sfx": "",
+	},
 	"bicak": {
 		"windup": 0.08, "strike": 0.06, "recover": 0.12,
 		"rest": Vector3(0, 0, 0), "wind": Vector3(0, -35, 20),
