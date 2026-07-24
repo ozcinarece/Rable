@@ -1,0 +1,3 @@
+envanter: acildi=true kapandi=true
+uretim: acildi=true kapandi=true
+arastirma: acildi=true kapandi=false

@@ -1,4 +1,4 @@
-handX=(0.876,-0.212,0.433) handY=(-0.424,-0.768,0.480) handZ=(0.231,-0.604,-0.762)
-origin(govde): x=-0.23(sag) y=0.43(yukari) z=0.13(+arka/-on)
+handX=(0.872,-0.186,0.453) handY=(-0.413,-0.777,0.475) handZ=(0.263,-0.601,-0.755)
+origin(govde): x=-0.23(sag) y=0.42(yukari) z=0.12(+arka/-on)
 secili kemik: RightHand
 kemikler: Hips, LeftUpLeg, LeftLeg, LeftFoot, LeftToeBase, RightUpLeg, RightLeg, RightFoot, RightToeBase, Spine02, Spine01, Spine, LeftShoulder, LeftArm, LeftForeArm, LeftHand, RightShoulder, RightArm, RightForeArm, RightHand, neck, Head, head_end, headfront
