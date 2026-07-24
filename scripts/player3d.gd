@@ -388,7 +388,9 @@ func set_grip_marker(on: bool) -> void:
 	mat.emission_enabled = true
 	mat.emission = Color(0.9, 0.1, 0.1)
 	mat.emission_energy_multiplier = 0.6
+	mat.no_depth_test = true  # elin/aletin ICINDEN de gorunsun (teshis)
 	mi.material_override = mat
+	mi.sorting_offset = 10.0
 	_tool_attach.add_child(mi)
 
 func _node_world_scale(n: Node3D) -> float:
