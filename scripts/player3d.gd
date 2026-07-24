@@ -85,11 +85,12 @@ const TOOL_HOLD := {
 	# extra: yere giriyordu -> govde-YUKARI 5cm (kullanici: "kolun yukarisina")
 	# clay_watering_can.glb olculdu: emzik -X ucunda (Y 0.14..0.33), KULP +X
 	# yaninda dikey yay (X 0.36..0.50, Y -0.16..0.28), kap ustu +Y. Kullanici:
-	# "kulptan tutsun, agzi yukari gelsin" -> rot_deg handdbg el bazindan
-	# HESAPLANDI: kap ustu = govde YUKARI, emzik = govde ON. grip_pt kulbun
-	# dikey kismi ortasi; el kulbu dogrudan kavradigi icin extra ofset yok.
+	# "kulptan tutsun, agzi yukari gelsin" -> rot_deg attachdbg DUNYA bazindan
+	# HESAPLANDI (oyuncu onu = dunya +Z; ilk deneme -Z sanip ters koymustu):
+	# kap ustu = YUKARI, emzik = ON. grip_pt kulbun dikey kismi ortasi;
+	# el kulbu dogrudan kavradigi icin extra ofset yok.
 	"sulama_kabi": {"axis": 1, "grip": 0.6, "scale": 0.3,
-			"rot_deg": Vector3(-24.1, -104.9, 147.7),
+			"rot_deg": Vector3(24.6, 73.5, -148.1),
 			"grip_pt": Vector3(0.45, 0.06, 0.0),
 			"extra": Vector3.ZERO},
 	"kurek": {"axis": 2, "grip": 0.15, "scale": 0.5, "rot_deg": Vector3(-129.1, 0, 0),
