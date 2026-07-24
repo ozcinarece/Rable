@@ -5548,7 +5548,9 @@ func _on_grip_reset() -> void:
 	hud.set_grip_status(player.grip_status())
 
 func _on_grip_save() -> void:
-	var line := player.grip_save()
+	# NOT: `:=` KULLANMA — player untyped oldugundan donus tipi cikarilamaz
+	# ve TUM world3d.gd "Parse error" ile yuklenmez (oyun sessizce acilmaz).
+	var line: String = player.grip_save()
 	hud.set_grip_status(player.grip_status())
 	hud.show_grip_code(line)
 
