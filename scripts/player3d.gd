@@ -51,6 +51,7 @@ const TOOL_GLB_OVERRIDE := {
 	"balta": "res://assets/models/test/axe.glb",
 	"kazma": "res://assets/models/test/pickaxe.glb",
 	"kurek": "res://assets/models/test/shovel.glb",
+	"sulama_kabi": "res://assets/models/test/clay_watering_can.glb",
 }
 
 ## ELLE AYARLANAN ALET KAVRAMASI (veri; render'a bakip ayarlanir).
@@ -82,6 +83,10 @@ const TOOL_HOLD := {
 	# derece donus v'yi el ekseni +Y'ye getirir (agiz asagi-on). Tutus
 	# noktasi capraz sapin USTUNDE oldugundan grip_pt ile verildi.
 	# extra: yere giriyordu -> govde-YUKARI 5cm (kullanici: "kolun yukarisina")
+	# clay_watering_can.glb: merkezli kap (~1x0.73x0.7). Ortasindan tutulur,
+	# ~0.3 m boy; el-alti ofseti balta ailesiyle ayni.
+	"sulama_kabi": {"axis": 1, "grip": 0.6, "scale": 0.3, "rot_deg": Vector3(0, 0, 0),
+			"extra": Vector3(0.021, 0.077, 0.060)},
 	"kurek": {"axis": 2, "grip": 0.15, "scale": 0.5, "rot_deg": Vector3(-129.1, 0, 0),
 			"grip_pt": Vector3(0, 0.36, -0.45),
 			"extra": Vector3(-0.011, -0.038, -0.030)},

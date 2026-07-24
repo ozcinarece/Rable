@@ -475,7 +475,7 @@ func _setup_screenshot(save_path: String) -> void:
 	# Yeni GLB aletler: kazma + kurek yakin cekim (on + sag).
 	# HUD (hotbar) alet ucunu kapatiyordu -> cekim boyunca gizle.
 	hud.visible = false
-	for tf in [["kazma", "_kazma"], ["kurek", "_kurek"]]:
+	for tf in [["kazma", "_kazma"], ["kurek", "_kurek"], ["sulama_kabi", "_sulamakabi"]]:
 		player.set_held_tool(String(tf[0]))
 		await get_tree().create_timer(0.4).timeout
 		camera.position = player.position + Vector3(0, 0.6, 2.3)
@@ -4482,14 +4482,29 @@ func _update_crop_node(cell: Vector2i) -> void:
 	add_child(node)
 	_crop_nodes[cell] = node
 
-## Evre gorseli: GLB kancasi (assets/models/crops/<crop>_stage<N>.glb)
-## varsa o; yoksa proseduerel placeholder (filiz->fide->meyveli cali).
+## Evre gorseli: kullanicinin Meshy GLB'leri (CROP_STAGE_GLB) varsa onlar
+## (boy CROP_STAGE_H'ye normalize edilir, zemine oturtulur); yoksa
+## proseduerel placeholder (filiz->fide->meyveli cali).
+const CROP_STAGE_GLB := {
+	"berry_bush": ["res://assets/models/test/tiny_plant.glb",
+			"res://assets/models/test/small_young_berry.glb",
+			"res://assets/models/test/mature_berry.glb"],
+}
+const CROP_STAGE_H := [0.22, 0.40, 0.60]  # hedef boylar (m)
+
 func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 	var root := Node3D.new()
-	var glb := "res://assets/models/crops/%s_stage%d.glb" % [crop_id, stage]
-	if ResourceLoader.exists(glb):
+	var paths: Array = CROP_STAGE_GLB.get(crop_id, [])
+	var glb: String = String(paths[stage]) if stage < paths.size() else ""
+	if glb != "" and ResourceLoader.exists(glb):
 		var inst: Node3D = load(glb).instantiate()
 		root.add_child(inst)
+		var aabb := _scene_aabb(inst)
+		if aabb.size.y > 0.01:
+			var s: float = CROP_STAGE_H[mini(stage, CROP_STAGE_H.size() - 1)] \
+					/ aabb.size.y
+			inst.scale = Vector3(s, s, s)
+			inst.position.y = -aabb.position.y * s  # zemine otur
 	else:
 		var green := Color(0.32, 0.62, 0.28)
 		if stage == 0:
@@ -4516,12 +4531,14 @@ func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 				root.add_child(_crop_part(berry, Color(0.78, 0.20, 0.30),
 						Vector3(cos(ang) * 0.18, 0.30 + float(k % 2) * 0.08,
 						sin(ang) * 0.18)))
-			# Olgun evrede hafif salinim (hasat cagrisi)
-			var tw := create_tween().set_loops()
-			tw.tween_property(root, "rotation:z", 0.05, 1.1) \
-					.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-			tw.tween_property(root, "rotation:z", -0.05, 1.1) \
-					.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	# Olgun evrede hafif salinim (hasat cagrisi) — GLB/proseduerel farketmez
+	var crop_def: Dictionary = TarimBalance.CROPS.get(crop_id, {})
+	if stage >= int(crop_def.get("stages", 3)) - 1:
+		var tw := create_tween().set_loops()
+		tw.tween_property(root, "rotation:z", 0.05, 1.1) \
+				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+		tw.tween_property(root, "rotation:z", -0.05, 1.1) \
+				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	return root
 
 func _crop_cyl(r: float, h: float) -> CylinderMesh:
