@@ -434,6 +434,10 @@ func _setup_screenshot(save_path: String) -> void:
 	player.set_held_tool("balta")  # yeni axe.glb elde gorunsun
 	await get_tree().create_timer(4.0).timeout
 	_snap(save_path)
+	# CLICKTEST EN BASTA (180sn oyun sinirina takilmasin diye): GERCEK
+	# dokunus simulasyonu — "menuler acilmiyor/kapanmiyor" sinifi cihaz
+	# hatalarini CI'da yakalar.
+	await _run_click_tests(save_path)
 	# TESHIS: baltayi elde YAKINDAN gor (kavrama ayari icin). Kamerayi el
 	# hizasina, yandan yaklastir; sonra normal kareler icin geri alinir.
 	_cam_locked = true
@@ -472,10 +476,6 @@ func _setup_screenshot(save_path: String) -> void:
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_tezgah.png"))
 	hud.visible = true
-	# CLICKTEST: GERCEK dokunus simulasyonu (kodla degil!). Cihazdaki
-	# "menuler kapanmiyor" sinifi hatalari CI'da yakalamak icin: dock
-	# butonuna DOKUN -> panel acildi mi; X'e DOKUN -> kapandi mi.
-	await _run_click_tests(save_path)
 	# Ikinci kare: kusbakisi tum ada (teshis icin)
 	# harita-v2: kusbakisi tum 128x128 adayi kapsar (yukseklik boyutla olcekli)
 	camera.position = Vector3(_map_w / 2.0, _map_w * 0.85,
