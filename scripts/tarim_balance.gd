@@ -27,6 +27,10 @@ const TILLED_COLOR := Color(0.36, 0.24, 0.13)      # surulu kuru toprak
 const TILLED_WET_COLOR := Color(0.25, 0.165, 0.10) # sulanmis (koyu/islak)
 const TILLED_TOP := -0.03                          # hafif cukur his
 
+## Meshy bitki dokulari cok ACIK geliyor (albedoya isik pismis gibi);
+## sahne paletine cekmek icin albedo carpani. 1.0 = dokunma.
+const CROP_TINT := Color(0.62, 0.70, 0.56)
+
 ## Ses kancalari (calar HENUZ yok — veri hazir, RAPOR/DURUM notu)
 const SFX := {"till": "dig_dirt", "plant": "plant_seed",
 		"water": "water_pour", "fill": "water_fill", "harvest": "harvest_pop"}

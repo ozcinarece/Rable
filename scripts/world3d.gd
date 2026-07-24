@@ -475,9 +475,9 @@ func _setup_screenshot(save_path: String) -> void:
 	# Yeni GLB aletler: kazma + kurek yakin cekim (on + sag).
 	# HUD (hotbar) alet ucunu kapatiyordu -> cekim boyunca gizle.
 	hud.visible = false
-	player.set_grip_marker(true)  # tutus noktasi isareti (teshis)
 	for tf in [["kazma", "_kazma"], ["kurek", "_kurek"], ["sulama_kabi", "_sulamakabi"]]:
 		player.set_held_tool(String(tf[0]))
+		player.set_grip_marker(true)  # tutus isareti (set_held_tool temizler -> sonra tak)
 		await get_tree().create_timer(0.4).timeout
 		camera.position = player.position + Vector3(0, 0.6, 2.3)
 		camera.look_at(_hand_focus)
@@ -4501,7 +4501,7 @@ func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 	if glb != "" and ResourceLoader.exists(glb):
 		var inst: Node3D = load(glb).instantiate()
 		root.add_child(inst)
-		_tame_meshy_materials(inst)  # Meshy isimasi kapali (parlama fix)
+		_tame_meshy_materials(inst, TarimBalance.CROP_TINT)  # isima kapali + ton
 		var aabb := _scene_aabb(inst)
 		if aabb.size.y > 0.01:
 			var s: float = CROP_STAGE_H[mini(stage, CROP_STAGE_H.size() - 1)] \
@@ -4553,7 +4553,7 @@ func _crop_cyl(r: float, h: float) -> CylinderMesh:
 
 ## Meshy GLB'leri emissive (isima) haritasiyla gelir -> sahne isigini
 ## dinlemeyip PARLAK gorunur. Isima kapatilir, puruzluluk toparlanir.
-func _tame_meshy_materials(root: Node) -> void:
+func _tame_meshy_materials(root: Node, tint: Color = Color.WHITE) -> void:
 	for mi: MeshInstance3D in root.find_children("*", "MeshInstance3D", true, false):
 		if mi.mesh == null:
 			continue
@@ -4565,6 +4565,7 @@ func _tame_meshy_materials(root: Node) -> void:
 				m.emission_energy_multiplier = 0.0
 				m.metallic = 0.0
 				m.roughness = maxf(m.roughness, 0.75)
+				m.albedo_color = m.albedo_color * tint
 				mi.set_surface_override_material(i, m)
 
 func _crop_part(mesh: Mesh, color: Color, pos: Vector3) -> MeshInstance3D:
