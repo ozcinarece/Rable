@@ -4047,8 +4047,12 @@ func _update_station_proximity() -> void:
 	var near_bench := false
 	var near_res := false
 	var near_hearth := false
-	for dy in range(-1, 2):
-		for dx in range(-1, 2):
+	# CIHAZ HATASI ("tezgahin yanindayim ama uzaktasin diyor"): yaricap 3x3
+	# idi. Oyuncu carpisma yaricapi yuzunden tezgaha 1 hucreden fazla
+	# yaklasamiyor; kose/capraz duruslarda hucre farki 2'ye cikip kapi
+	# kapaniyordu. 5x5 (+-2) ile "yanindayim" hissi ile kod ortusuyor.
+	for dy in range(-2, 3):
+		for dx in range(-2, 3):
 			match _placed.get(pc + Vector2i(dx, dy), ""):
 				"tezgah":
 					near_bench = true

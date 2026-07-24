@@ -158,7 +158,11 @@ const CAT_COLOR_KEY := {"malzeme": "resource", "alet": "tool",
 
 func _ready() -> void:
 	Inventory.changed.connect(_refresh)
+	# CIHAZ HATASI: istasyon yakinligi degisince YALNIZ kartlar yenileniyordu;
+	# detay seridindeki "⚠ Tezgah gerekli — uzaktasin" satiri ve Uret butonu
+	# BAYAT kaliyordu (tezgaha yurudugunde uyari silinmiyordu). Ikisi de yenilenir.
 	Crafting.station_changed.connect(_update_cards)
+	Crafting.station_changed.connect(_update_detail)
 	Crafting.queue_changed.connect(_update_cards)
 	Hunger.changed.connect(_update_hunger)
 	Thirst.changed.connect(_update_thirst)
@@ -727,6 +731,11 @@ func _build_dock() -> void:
 
 # 68px kategori renkli dolgulu daire + %68 dolduran koyu kahve ikon.
 func _style_dock_button(btn: Button, color: Color) -> void:
+	# CIHAZ HATASI ("envantere cok zor basiliyor"): varsayilan buton RELEASE
+	# aninda tetiklenir ve parmak 1-2 px kayarsa basis IPTAL olur — dokunmatikte
+	# cogu dokunus boyle kaciyordu. BASIS aninda tetikle (dock butonlari zaten
+	# geri alinabilir panel acar, yanlis basisin bedeli yok).
+	btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 	btn.custom_minimum_size = Vector2(68, 68)
 	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	btn.expand_icon = true
