@@ -43,8 +43,10 @@ jobs:
           RABLE_SCREENSHOT="$GITHUB_WORKSPACE/docs/screens/3d.png" timeout 300 \
             xvfb-run -a -s "-screen 0 1280x720x24" \
             /opt/godot/godot --path "$GITHUB_WORKSPACE" --rendering-driver opengl3 \
-            2>&1 | tail -30 || true
-          ls -la "$GITHUB_WORKSPACE/docs/screens"
+            > /tmp/game.log 2>&1 || true
+          echo "=== OYUN LOGU (script hatalari dahil, son 150 satir) ==="
+          tail -150 /tmp/game.log
+          ls -la "$GITHUB_WORKSPACE/docs/screens" | head -5
 
       - name: Goruntuyu commit'le
         run: |
