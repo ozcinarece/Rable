@@ -334,6 +334,11 @@ func _ready() -> void:
 	hud.place_rotate.connect(_place_rotate)
 	hud.place_cancel.connect(_exit_place_mode)
 	hud.hold_requested.connect(_on_hold_requested)
+	# GRIP AYAR MODU (debug): HUD butonlari -> oyuncunun canli grip ofseti
+	hud.grip_nudge_requested.connect(_on_grip_nudge)
+	hud.grip_rotate_requested.connect(_on_grip_rotate)
+	hud.grip_reset_requested.connect(_on_grip_reset)
+	hud.grip_save_requested.connect(_on_grip_save)
 	hud.settings_toggled.connect(func(o: bool): _cam_layer.visible = o)
 	hud.move_toggled.connect(func(on: bool): _move_mode = on)
 	hud.drop_item_requested.connect(_on_drop_item)
@@ -5527,6 +5532,25 @@ func _tick_regrow(delta: float) -> void:
 		_regrow_type.erase(cell)
 	_rebuild_objects()
 	_dirty = true
+
+## GRIP AYAR MODU (debug): HUD butonlarini oyuncunun canli grip ofsetine
+## baglar; her degisiklikten sonra durum paneline geri yazilir.
+func _on_grip_nudge(axis: int, delta: float) -> void:
+	player.grip_nudge(axis, delta)
+	hud.set_grip_status(player.grip_status())
+
+func _on_grip_rotate(axis: int, deg: float) -> void:
+	player.grip_rotate(axis, deg)
+	hud.set_grip_status(player.grip_status())
+
+func _on_grip_reset() -> void:
+	player.grip_reset()
+	hud.set_grip_status(player.grip_status())
+
+func _on_grip_save() -> void:
+	var line := player.grip_save()
+	hud.set_grip_status(player.grip_status())
+	hud.show_grip_code(line)
 
 func _on_hold_requested(item_id: String) -> void:
 	if item_id != "" and Inventory.get_count(item_id) <= 0:
