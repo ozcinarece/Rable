@@ -10,6 +10,11 @@ name: Web build ve GitHub Pages yayini
 
 # NOT: Pages ortami sadece main dalindan yayina izin verir.
 # Bu daldan yayin, android-build'in son adimiyla main uzerinden tetiklenir.
+#
+# SHIP SIRASI (onemli): once `3d`, SONRA `main` itilmeli.
+# Yayini yapan calistirma main push'uyla baslar ve 3d dalini AYRICA
+# checkout eder. Once main itilirse o checkout, henuz gelmemis 3d
+# commit'ini kacirabilir ve site eski 3d icerigiyle yayinlanir.
 on:
   push:
     branches: [main, 3d]
@@ -28,10 +33,14 @@ permissions:
   pages: write      # Pages'e yayin icin
   id-token: write   # deploy-pages action'inin kimlik dogrulamasi icin
 
-# Ayni anda tek yayin calissin
+# Ayni anda tek yayin calissin. cancel-in-progress KAPALI: ship sirasinda
+# main ve 3d pesi sira itiliyor; acikken 3d'nin calistirmasi main'inkini
+# (yayini YAPAN calistirma) yarida kesiyordu. Bu bayrak "web hep eski"
+# sorunu icin eklenmisti ama o sorunun sebebi docs/** push'lariydi ve
+# onlar zaten paths-ignore'da — yani derdi cozmuyor, uretiyordu.
 concurrency:
   group: pages
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   build-web:
@@ -105,6 +114,12 @@ jobs:
 
   deploy:
     needs: build-web
+    # YALNIZ main'den yayin: github-pages ortami baska dallardan yayina izin
+    # vermiyor, bu yuzden 3d push'unun deploy isi her seferinde 2 saniyede
+    # olup "failure" birakiyordu (is hic baslamadigi icin logu da yoktu).
+    # Kosulla artik "atlandi" olur; gercek bir hata cikarsa gozden kacmaz.
+    # 3d calistirmasi yine de derleme yapar (yedek/dogrulama).
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment:
       name: github-pages
