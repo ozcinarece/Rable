@@ -45,3 +45,50 @@ oyun bunu yüklemez). Çalışan uyarlama: `scripts/farming.gd` (autoload
 | sulama_kabi tarifi | 3 kil, ocak | fırın yok; ocak = pişirme istasyonu |
 
 (Aşama 1-4 uygulama notları ve TEST SENARYOSU aşağıya eklenecek.)
+
+## Aşama 1-3 — Uygulama (tek atomik commit; gerekçe commit mesajında)
+- **Çapa:** `capa` profili (kürekten kısa öne-aşağı çekiş, kind "till");
+  STRIKE → `_try_till` → `_till_valid` (düz+boş+kazısız+susuz çim/toprak)
+  → `Farming.till_cell`. Geçersizse floating text sebep gösterir.
+- **Ekim:** elde tohum + tarla → "Ek" bağlamı → `Farming.plant` + envanterden
+  1 tohum düşer. Tohum flavor metni gerçeğe çevrildi (çelişki kapandı).
+- **Büyüme:** `DayNight.dawn_started` → world3d `_on_farm_dawn`:
+  ÖNCE bitişik-su otomatiği (`has_adjacent_water` → `water_free`),
+  SONRA `Farming.day_tick()` (dün sulanmışsa +1 evre; ışık kuralı yeri boş).
+- **Hasat:** olgun tarla, silahsız her elde "Hasat" → ürün `_scatter_drops`
+  ile YERE SAÇILIR (2-3 meyve) + %60 tohum iadesi; hücre sürülü-boş kalır.
+- **Sulama kabı:** tek item + Farming'de 4'lük depo; su kaynağı/havuz →
+  "Doldur", tarla → "Sula"; ıslak zemin koyulaşır, sabah sıfırlanır.
+- **Görseller:** sürülü/ıslak renk `_cell_props`'ta; bitki: filiz silindir →
+  fide koni → meyveli çalı (+3 kırmızı meyve, hafif salınım); GLB kancası:
+  `assets/models/crops/berry_bush_stage{0,1,2}.glb` varsa otomatik kullanılır.
+
+## Aşama 4 — Kayıt + test
+- Kayıt: dünya sözlüğüne `"farming"` anahtarı; yüklemede
+  `Farming.from_save_data` (eski kayıtta anahtar yoksa temiz başlar);
+  yeni oyunda tarlalar sıfırlanır.
+- **FARMTEST** (CI, her koşuda): tarla aç → ek → sula → 2 şafak → olgun →
+  hasat (saçılım) → 3 şafak bakımsız → çime dönüş → kayıt çifti birebir.
+  Ek görsel kare: `3d_tarim.png` (3 evre yan yana + ıslak zemin).
+
+## TEST SENARYOSU (telefonda sırayla)
+1. Araştırma masasında "Tarım Temelleri"ni aç (4 odun + 2 taş).
+2. Tezgahta çapa üret (2 çubuk + 2 taş + 1 ip); ocakta sulama kabı (3 kil).
+3. Çapayı eline al → düz çimde "Çapala" → 6 hücre tarla aç (koyu toprak).
+4. Tohumu eline al → tarlaya "Ek" → filiz görünmeli, tohum düşmeli.
+5. Sulama kabıyla göl kenarında "Doldur" → tarlada "Sula" ×4 → toprak
+   koyulaşır; 5. denemede "Kap boş" uyarısı.
+6. Yatakta uyu (veya günü bekle) → sulananlar fide; ertesi gün olgun
+   (salınan meyveli çalı).
+7. "Hasat" → meyveler yere saçılır, topla; arada tohum iadesi gör.
+8. Göl kenarına tarla + kürekle kanal → ertesi sabah kendiliğinden ıslak
+   (kap harcamadan) — otomatik sulama.
+9. Bir tarlayı boş bırak → 3 gün sonra çime döner.
+10. Kaydet-çık-yükle → tarla/evre/ıslaklık/kap durumu birebir.
+
+## Bilinen sınırlar
+- Ses çalar yok (SFX adları TarimBalance.SFX'te veri olarak hazır).
+- Sulama borusu tarla ucu KAPSAM DIŞI (boru ağı hazır; sonraki görev).
+- Işık kuralı boş (farming.gd'de işaretli — hikâye fazıyla).
+- Çapa/sulama kabı ikonları 2 harf placeholder (PNG yüklenince balta
+  akışıyla bağlanır).
