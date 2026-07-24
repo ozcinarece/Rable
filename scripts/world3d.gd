@@ -475,6 +475,7 @@ func _setup_screenshot(save_path: String) -> void:
 	# Yeni GLB aletler: kazma + kurek yakin cekim (on + sag).
 	# HUD (hotbar) alet ucunu kapatiyordu -> cekim boyunca gizle.
 	hud.visible = false
+	player.set_grip_marker(true)  # tutus noktasi isareti (teshis)
 	for tf in [["kazma", "_kazma"], ["kurek", "_kurek"], ["sulama_kabi", "_sulamakabi"]]:
 		player.set_held_tool(String(tf[0]))
 		await get_tree().create_timer(0.4).timeout
@@ -496,6 +497,7 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(Vector3(float(tzc.x) + 0.5, 0.35, float(tzc.y) + 0.5))
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_tezgah.png"))
+	player.set_grip_marker(false)
 	# FARMTEST (tarim-3d): tarla ac -> ek -> sula -> 2 gun -> olgun ->
 	# hasat -> bos tarla 3 gunde cime doner. Safak dogrudan cagrilir.
 	var fc2 := _player_cell() + Vector2i(-3, 2)
@@ -4499,6 +4501,7 @@ func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 	if glb != "" and ResourceLoader.exists(glb):
 		var inst: Node3D = load(glb).instantiate()
 		root.add_child(inst)
+		_tame_meshy_materials(inst)  # Meshy isimasi kapali (parlama fix)
 		var aabb := _scene_aabb(inst)
 		if aabb.size.y > 0.01:
 			var s: float = CROP_STAGE_H[mini(stage, CROP_STAGE_H.size() - 1)] \
@@ -4547,6 +4550,22 @@ func _crop_cyl(r: float, h: float) -> CylinderMesh:
 	m.bottom_radius = r
 	m.height = h
 	return m
+
+## Meshy GLB'leri emissive (isima) haritasiyla gelir -> sahne isigini
+## dinlemeyip PARLAK gorunur. Isima kapatilir, puruzluluk toparlanir.
+func _tame_meshy_materials(root: Node) -> void:
+	for mi: MeshInstance3D in root.find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh == null:
+			continue
+		for i in mi.mesh.get_surface_count():
+			var mat := mi.get_active_material(i)
+			if mat is StandardMaterial3D:
+				var m: StandardMaterial3D = mat.duplicate()
+				m.emission_enabled = false
+				m.emission_energy_multiplier = 0.0
+				m.metallic = 0.0
+				m.roughness = maxf(m.roughness, 0.75)
+				mi.set_surface_override_material(i, m)
 
 func _crop_part(mesh: Mesh, color: Color, pos: Vector3) -> MeshInstance3D:
 	var mi := MeshInstance3D.new()

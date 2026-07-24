@@ -350,6 +350,47 @@ func _sync_attach_mirrors() -> void:
 		_head_attach.global_transform = Transform3D(gt2.basis.orthonormalized(), gt2.origin)
 
 # Dugumun dunya olcegi (aksesuar boylarini normalize etmek icin)
+## Meshy GLB'lerin emissive haritasi parlamaya yol acar; kapat.
+func _tame_meshy_materials(root: Node) -> void:
+	for mi: MeshInstance3D in root.find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh == null:
+			continue
+		for i in mi.mesh.get_surface_count():
+			var mat := mi.get_active_material(i)
+			if mat is StandardMaterial3D:
+				var m: StandardMaterial3D = mat.duplicate()
+				m.emission_enabled = false
+				m.emission_energy_multiplier = 0.0
+				m.metallic = 0.0
+				m.roughness = maxf(m.roughness, 0.75)
+				mi.set_surface_override_material(i, m)
+
+## TESHIS: tutus noktasi isareti — elin aleti TAM nereden kavradigini
+## gosterir (kirmizi top). Ekran goruntusu yakin cekimlerinde acilir;
+## kullanici "isaret sapin ortasina gelsin" diye yon verir, TOOL_HOLD
+## grip/grip_pt sayilari ona gore guncellenir.
+func set_grip_marker(on: bool) -> void:
+	if _tool_attach == null:
+		return
+	var old := _tool_attach.get_node_or_null("GripMarker")
+	if old != null:
+		old.queue_free()
+	if not on:
+		return
+	var mi := MeshInstance3D.new()
+	mi.name = "GripMarker"
+	var sm := SphereMesh.new()
+	sm.radius = 0.035
+	sm.height = 0.07
+	mi.mesh = sm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.95, 0.15, 0.15)
+	mat.emission_enabled = true
+	mat.emission = Color(0.9, 0.1, 0.1)
+	mat.emission_energy_multiplier = 0.6
+	mi.material_override = mat
+	_tool_attach.add_child(mi)
+
 func _node_world_scale(n: Node3D) -> float:
 	if n == null or not n.is_inside_tree():
 		return 1.0
@@ -453,6 +494,7 @@ func set_held_tool(model_path: String) -> void:
 		glb = "res://assets/models/tools/%s.glb" % String(TOOL_GLB.get(model_path, model_path))
 	if ResourceLoader.exists(glb):
 		visual = load(glb).instantiate()
+		_tame_meshy_materials(visual)  # Meshy isimasi kapali (parlama fix)
 	else:
 		var kind := String(TOOL_KIND.get(model_path, ""))
 		if kind == "":
