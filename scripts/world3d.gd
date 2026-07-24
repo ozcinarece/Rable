@@ -398,8 +398,8 @@ func _run_click_tests(save_path: String) -> void:
 	await _tap_at(hud.research_button.get_global_rect().get_center())
 	# dock gizliyken ayni noktaya dokunus bosa gider; X uzerinden kapat
 	if hud.research_button.button_pressed:
-		var rx := hud.research_root.find_child("CloseButton", true, false)
-		if rx != null:
+		var rx: Node = hud.research_root.find_child("CloseButton", true, false)
+		if rx != null and rx is Control:
 			await _tap_at((rx as Control).get_global_rect().get_center())
 	var ar_kapandi: bool = not hud.research_button.button_pressed
 	lines.append("arastirma: acildi=%s kapandi=%s" % [ar_acildi, ar_kapandi])
