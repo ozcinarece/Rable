@@ -92,6 +92,7 @@ func _build() -> void:
 	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	top.add_child(spacer)
 	var close_btn := Button.new()
+	close_btn.name = "CloseButton"  # CLICKTEST bu adla bulur
 	close_btn.icon = preload("res://assets/ui/close_x.png")
 	close_btn.custom_minimum_size = Vector2(48, 40)
 	close_btn.pressed.connect(close)

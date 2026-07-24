@@ -403,6 +403,16 @@ func _run_click_tests(save_path: String) -> void:
 			await _tap_at((rx as Control).get_global_rect().get_center())
 	var ar_kapandi: bool = not hud.research_button.button_pressed
 	lines.append("arastirma: acildi=%s kapandi=%s" % [ar_acildi, ar_kapandi])
+	# 4) Ayarlar: ac + panel icindeki "Kapat" ile kapat
+	await _tap_at(hud.reset_button.get_global_rect().get_center())
+	var ay_acildi: bool = hud.reset_button.button_pressed
+	if hud._settings_panel != null:
+		for b in hud._settings_panel.find_children("*", "Button", true, false):
+			if (b as Button).text == "Kapat":
+				await _tap_at((b as Control).get_global_rect().get_center())
+				break
+	var ay_kapandi: bool = not hud.reset_button.button_pressed
+	lines.append("ayarlar: acildi=%s kapandi=%s" % [ay_acildi, ay_kapandi])
 	var out := "\n".join(lines) + "\n"
 	print("CLICKTEST:\n" + out)
 	var f := FileAccess.open("res://docs/screens/clicktest.txt", FileAccess.WRITE)
