@@ -52,6 +52,7 @@ signal place_cancel                       # İPTAL
 signal drop_item_requested(slot_index: int)
 
 const Items = preload("res://scripts/items.gd")
+const TestMode = preload("res://scripts/test_mode.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const UiSlotScript = preload("res://scripts/ui_slot.gd")
 const UIColors = preload("res://scripts/ui_colors.gd")
@@ -396,6 +397,10 @@ var _lock_chip: PanelContainer
 var _lock_chip_label: Label
 
 func _build_lock_chip() -> void:
+	# TEST MODU: kapasite zaten tam acik, kilitli slot kavrami yok. Ayrica
+	# izgara ScrollContainer'a tasindigi icin cip oraya eklenmemeli.
+	if TestMode.ENABLED:
+		return
 	var vbox := inventory_grid.get_parent()
 	_lock_chip = PanelContainer.new()
 	_lock_chip.theme_type_variation = "InnerPanel"
@@ -921,8 +926,24 @@ func _fill_circle_button(btn: Button, bg: Color, icon_col: Color, margin: float)
 # --- Slotlarin kurulumu -------------------------------------------------
 
 func _build_slots() -> void:
-	# Envanter izgarasi: 16 sabit slot (canta yoksa sondakiler kilitli)
-	for i in Inventory.TOTAL_SLOTS:
+	# Envanter izgarasi: 16 sabit slot (canta yoksa sondakiler kilitli).
+	# TEST MODU acikken izgara genisler (Inventory.max_slots) — 8 sutunda
+	# 12 satir eder ve panel yuksekligini tasirdi; bu yuzden yalnizca test
+	# modunda izgara kaydirilabilir bir kutuya alinir (normal modda sahne
+	# yapisi hic degismez).
+	if TestMode.ENABLED:
+		var vbox := inventory_grid.get_parent() as Control
+		var at := inventory_grid.get_index()
+		vbox.remove_child(inventory_grid)
+		var sc := ScrollContainer.new()
+		sc.name = "SlotScroll"
+		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		sc.custom_minimum_size = Vector2(0, 300)
+		vbox.add_child(sc)
+		vbox.move_child(sc, at)
+		sc.add_child(inventory_grid)
+	for i in Inventory.max_slots():
 		var slot := _make_slot("inv", i)
 		inventory_grid.add_child(slot)
 		_inv_slots.append(slot)

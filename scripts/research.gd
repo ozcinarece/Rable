@@ -1,6 +1,8 @@
 extends Node
 ## ARASTIRMA AGACI - autoload (GAME_DESIGN.md Bolum 9).
 ##
+## TEST MODU (scripts/test_mode.gd) acikken TUM dugumler basta acik gelir.
+##
 ## Dugum formati: id -> {branch, prereq, cost {esya: adet}, unlocks [tarif],
 ##                       hidden, reveal_trigger_item}
 ## - branch: "aletler" | "insaat" | "istasyonlar" | "muhendislik"
@@ -20,6 +22,7 @@ extends Node
 signal changed
 
 const SAVE_PATH := "user://research.json"
+const TestMode = preload("res://scripts/test_mode.gd")
 
 ## NOT: research_table kok dugume eklendi (dokumanda yok) - masa
 ## uretilemezse agacin geri kalani acilamazdi (tavuk-yumurta).
@@ -76,20 +79,31 @@ func _ready() -> void:
 	unlocked["research_basics"] = true
 
 ## --- Sorgular -----------------------------------------------------------
+##
+## TEST MODU: kilitler SORGU seviyesinde acilir, `unlocked` sozlugune
+## YAZILMAZ. Boylece kayda gecmez — TestMode.ENABLED=false yapildiginda
+## agac gercek ilerlemeye geri doner (aksi halde test acilislari kayda
+## islenip kalici olurdu).
 
 func is_unlocked(node_id: String) -> bool:
+	if TestMode.ENABLED:
+		return NODES.has(node_id)
 	return unlocked.has(node_id)
 
 ## Dugum agacda su an GORUNUR mu? (gizliyse tetiklenmis olmali)
 func is_visible(node_id: String) -> bool:
 	if not NODES.has(node_id):
 		return false
+	if TestMode.ENABLED:
+		return true
 	if not NODES[node_id].get("hidden", false):
 		return true
 	return revealed.has(node_id) or unlocked.has(node_id)
 
 ## Bu tarif su an craftlanabilir mi (arastirma acisindan)?
 func is_recipe_unlocked(recipe_id: String) -> bool:
+	if TestMode.ENABLED:
+		return true
 	if not _governed.has(recipe_id):
 		return true  # hicbir dugume bagli degil: serbest (eski tarifler)
 	for node_id in _governed[recipe_id]:
