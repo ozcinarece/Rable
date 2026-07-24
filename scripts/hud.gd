@@ -1072,6 +1072,9 @@ func _build_slots() -> void:
 		sc.name = "SlotScroll"
 		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 		sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		# Bilgi seridi de EXPAND_FILL; esit bolusunce izgaraya 2.5 satir
+		# kaliyordu. Oran ile bos alanin cogu izgaraya gitsin.
+		sc.size_flags_stretch_ratio = 3.0
 		sc.custom_minimum_size = Vector2(0, 300)
 		vbox.add_child(sc)
 		vbox.move_child(sc, at)
