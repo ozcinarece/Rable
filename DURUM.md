@@ -59,10 +59,10 @@ Durum değerleri: ÇALIŞIYOR / BRANCH'TE / YARIM / SADECE-PLAN / BOZUK.
 | Yapı/Base | Çatı parçaları + görünürlük fade | BRANCH'TE | ev-cati | world3d.gd (branch) | — | ESKİ tabana dayalı (buggy HUD dönemi) — merge öncesi REBASE ŞART | 5 gerçek commit |
 | Yapı/Base | İç mekan tespiti (flood-fill, is_indoor) | BRANCH'TE | ev-cati | world3d.gd (branch) | çatı | aynı rebase şartı | — |
 | Yapı/Base | Ev hissi (rozet, yatak bonusu, kayıt) | BRANCH'TE | ev-cati | world3d.gd (branch) | iç mekan | aynı rebase şartı | — |
-| Tarım | Tarla açma (çapa) | BRANCH'TE | tarim-3d | farming.gd, world3d.gd (_try_till) | araştırma (farming_basics) | — | tarif: 2 çubuk+2 taş+1 ip |
-| Tarım | Tohum ekme | BRANCH'TE | tarim-3d | farming.gd, world3d.gd (_try_plant) | tarla | — | flavor çelişkisi kapandı |
-| Tarım | Sulama (kap 4 kullanım + bitişik su otomatiği) | BRANCH'TE | tarim-3d | farming.gd, world3d.gd (_on_farm_dawn) | su sistemi | — | 11.7 kancası BAĞLANDI |
-| Tarım | Büyüme tick + hasat (saçılan ürün) | BRANCH'TE | tarim-3d | farming.gd (day_tick), world3d.gd | gün döngüsü | ışık kuralı boş (planlı) | FARMTEST CI'da |
+| Tarım | Tarla açma (çapa) | ÇALIŞIYOR | main | farming.gd, world3d.gd (_try_till) | araştırma (farming_basics) | — | tarif: 2 çubuk+2 taş+1 ip |
+| Tarım | Tohum ekme | ÇALIŞIYOR | main | farming.gd, world3d.gd (_try_plant) | tarla | — | flavor çelişkisi kapandı |
+| Tarım | Sulama (kap 4 kullanım + bitişik su otomatiği) | ÇALIŞIYOR | main | farming.gd, world3d.gd (_on_farm_dawn) | su sistemi | — | 11.7 kancası BAĞLANDI |
+| Tarım | Büyüme tick + hasat (saçılan ürün) | ÇALIŞIYOR | main | farming.gd (day_tick), world3d.gd | gün döngüsü | ışık kuralı boş (planlı) | FARMTEST CI'da |
 | Tarım | Kompost/korkuluk/sulama borusu | SADECE-PLAN | — | item_db.gd'de yalnız isim | — | — | — |
 | Can-Açlık | Can + yenilenme + açlıkla erime | ÇALIŞIYOR | main | health.gd, player_stats.gd | — | — | — |
 | Can-Açlık | Açlık + yeme (meyve/mantar/pişmiş et) | ÇALIŞIYOR | main | hunger.gd, survival_balance.gd | — | — | doyma değerleri UI ile tutarlı |
@@ -114,8 +114,8 @@ Durum değerleri: ÇALIŞIYOR / BRANCH'TE / YARIM / SADECE-PLAN / BOZUK.
 
 | Durum | Adet |
 |---|---|
-| ÇALIŞIYOR | 73 |
-| BRANCH'TE | 9 |
+| ÇALIŞIYOR | 77 |
+| BRANCH'TE | 5 |
 | YARIM | 3 |
 | SADECE-PLAN | 16 |
 | BOZUK | 0 |
