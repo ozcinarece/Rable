@@ -757,7 +757,13 @@ func _build_settings_menu() -> void:
 	reset_button.toggled.connect(_on_settings_toggled)
 	_settings_panel = PanelContainer.new()
 	_settings_panel.theme = load("res://theme_main.tres")
+	# BUGFIX (cihaz: "Ayarlar kapanmiyor"): PRESET_CENTER panelin SOL-UST
+	# kosesini merkeze koyar, icerik ASAGI buyur; kalite satiri eklenince
+	# "Kapat" ekranin altina (y=733>720) tasti ve dokunulamaz oldu. Grow
+	# BOTH ile panel merkez etrafinda esit buyur -> hep ekranda.
 	_settings_panel.set_anchors_preset(Control.PRESET_CENTER)
+	_settings_panel.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	_settings_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
 	_settings_panel.custom_minimum_size = Vector2(360, 0)
 	_settings_panel.visible = false
 	add_child(_settings_panel)
