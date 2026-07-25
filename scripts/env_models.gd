@@ -47,10 +47,12 @@ const PATHS := {
 ## çekilir. 1.0 = dokunma.
 const TINT := {
 	"grass_tuft": Color(0.66, 0.80, 0.52),      # sarıdan yeşile
-	"pebble_cluster": Color(0.72, 0.70, 0.66),  # beyazdan sıcak griye
+	"pebble_cluster": Color(0.58, 0.55, 0.50),  # beyazdan sıcak griye
 	"twig_debris": Color(0.78, 0.66, 0.52),     # ahşap kahveye
-	"path_stone": Color(0.80, 0.78, 0.74),
-	"path_stone_mossy": Color(0.74, 0.78, 0.66),
+	# 4. CI karesinde taslar HALA bembeyaz lekeydi: dokusu neredeyse beyaz,
+	# 0.80 carpani yetmiyor. Sicak griye sert cekildi.
+	"path_stone": Color(0.56, 0.53, 0.49),
+	"path_stone_mossy": Color(0.50, 0.55, 0.42),
 	"planting_mound": Color(0.86, 0.80, 0.72),
 	"ruined_hut": Color(0.86, 0.82, 0.76),
 	"repaired_hut": Color(0.90, 0.86, 0.80),

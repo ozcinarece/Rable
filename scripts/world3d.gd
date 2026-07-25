@@ -30,6 +30,7 @@ const CreatureBalance = preload("res://scripts/creature_balance.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const ChestStore = preload("res://scripts/inventory.gd")  # 14.1 sandik deposu
+const TestMode = preload("res://scripts/test_mode.gd")
 
 ## Zemin turleri: renk + ust yuzey yuksekligi. "speckled": true olan
 ## turler icin benekli doku CALISMA ANINDA kodla uretilir (dosya
@@ -553,6 +554,8 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(Vector3(float(fbase.x) + 1.5, 0.15, float(fbase.y) + 0.5))
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_tarim.png"))
+	await _run_camp_test(save_path)
+	await _run_env_showcase(save_path)
 	await _run_night_test(save_path)
 	hud.visible = true
 	# GRIP PANELI karesi: yeni "ekran yonu" satiri eklendi; panelin ekrandan
@@ -2103,17 +2106,19 @@ func _build_world() -> void:
 		elif h < 7:
 			_objects[cell] = "mantar"
 
+	# YOL IZI + SPAWN KAMPI arazi asamasi. Yollar kamptan tureidigi icin
+	# _path_cells kamptan ONCE temizlenir; kamp kendi seritlerini ekler.
+	# Kamp planlamasi taban anlik goruntusundan ONCE calismali, yoksa kayit
+	# "kamptaki agaclar silinmis" diye delta yazar ve her yuklemede
+	# agaclar kulubenin icinde geri belirirdi.
+	_path_cells.clear()
+	_camp_plan()
+
 	# kayit-sistemi: taban nesne anlik goruntusu (seed'den uretilen ilk durum).
 	# Kayitta yalniz bundan FARKLI hucreler yazilir (dosya kucuk kalir).
 	_base_objects = _objects.duplicate()
 
 	_recompute_water()  # 11.2: haritadaki hazir cukurlar havuz olur (kuru)
-	# YOL IZI (gorsel-tur): spawn'dan IKI yone ornek asinmis serit.
-	# Dunya uretiminde SABIT (her Yeni Oyun'da ayni), terreni kurmadan
-	# once tanimlanir ki renk lekesi ilk chunk'ta gorunsun.
-	_path_cells.clear()
-	_add_path_strip(_spawn_cell, Vector2i(0, 1), 7)   # guneye
-	_add_path_strip(_spawn_cell, Vector2i(1, 0), 6)   # doguya
 	_build_terrain()
 	_build_path_stones()
 	_build_sea()
@@ -2121,6 +2126,7 @@ func _build_world() -> void:
 	_build_sea_rocks()
 	_build_decor(ground_cells["."] + ground_cells["h"])
 	_rebuild_objects()
+	_build_spawn_camp()  # kamp dekoru (nesneler kurulduktan sonra)
 	_build_ground_markers()  # harita-v2: kil işaretleri + yüzey cevher ipuçları
 
 ## harita-v2: kil-işaretli kum hücrelerine kil-rengi yassı yama (kürek ipucu)
@@ -2628,6 +2634,8 @@ func _build_decor(grass_cells: Array) -> void:
 			continue
 		if int(_depth.get(cell, 0)) != 0:
 			continue  # kazilmis/yigilmis hucrede sus otu olmaz
+		if _camp_field.has(cell):
+			continue  # terk edilmis tarlanin sirtlari cimle kaplanmasin
 		var h := absi(cell.x * 92821 + cell.y * 68917) % 100
 		if h >= 20:
 			continue  # ~her 5 hucreden biri suslenir
@@ -2687,6 +2695,413 @@ func _build_path_stones() -> void:
 		add_child(node)
 		_path_nodes.append(node)
 
+# --- SPAWN KAMPI (gorsel-tur / Gorev Eki) --------------------------------
+# Mockup'taki "Duvarli Kamp + Kulube" duzeninin YIPRANMIS hali. Iskelet
+# mockup'la ayni: ocak merkezde, kulube kuzeybatida, tarla doguda, kuyu
+# tarlanin kuzeyinde, uretim kosesi guneybatida, yollar ocaktan dort yone.
+# DUVAR / HENDEK / HUNI YOK — onlar oyuncunun ileride kendi insa hedefi.
+#
+# HEPSI DEKOR: hicbiri _set_placed'den gecmez, _structures'a yazilmaz,
+# kayda girmez, etkilesim vermez (gorevin "MEKANIK YOK" sarti). Ocak sonuk,
+# masa/sandik devrik, mesaleler yanmiyor — oyuncu kampi kendi canlandiracak.
+# Tek fiziksel etki: kulube ve kuyu hucreleri _solid_cells'e girer, yoksa
+# oyuncu duvarin icinden gecerdi (arazi carpismasi, mekanik degil).
+const CAMP_OFF := {
+	"ocak": Vector2i(0, 0),
+	"hut": Vector2i(-5, -4),           # KB kulube (3x3 ayak izi, kapi guneyde)
+	"hut_repaired": Vector2i(-10, -4), # YALNIZ debug: onarilmis kopya
+	"well": Vector2i(5, -3),
+	"field": Vector2i(5, -1),          # 2x2 tarlanin sol-ust hucresi
+	"masa": Vector2i(-5, 3),           # GB uretim kosesi (tezgah YOK)
+	"sandik": Vector2i(-4, 4),
+	"kabak": Vector2i(4, 1),           # tarla kenari tek dekoratif kabak
+}
+## Yol uzunluklari (hucre). Guney yolu kampi ASAR ve yolun ortasinda biter:
+## "buradan bir yere gidiliyordu" hissi (mockup'taki ana giris aksi).
+const CAMP_ROADS := [
+	{"dir": Vector2i(0, -1), "len": 5},
+	{"dir": Vector2i(1, 0), "len": 6},
+	{"dir": Vector2i(-1, 0), "len": 6},
+	{"dir": Vector2i(0, 1), "len": 13},
+]
+## Yol kavsaklarindaki sonuk mesale direkleri (ocak merkezli ofset).
+const CAMP_TORCHES := [Vector2i(0, -3), Vector2i(3, 0), Vector2i(-3, 0), Vector2i(0, 4)]
+const CAMP_RADIUS := 7      # agac/kaya seyreltme + serpinti yogunlastirma yaricapi
+const CAMP_KEEP_TREE := 14  # yaricap icinde agac/kayanin ~%14'u kalir (seyrek)
+const CAMP_SCATTER_BOOST := 2.0  # kamp icinde dal/kuru ot yogunlugu carpani
+
+var _camp_center := Vector2i(-999, -999)
+var _camp_cells: Dictionary = {}   # kamp yaricapi (serpinti yogunlugu icin)
+var _camp_field: Dictionary = {}   # tarla dekor hucreleri -> true
+var _camp_nodes: Array = []        # kamp dekor dugumleri
+## Tarla dekoru hucre basina: oyuncu o hucreyi GERCEKTEN capalarsa dekor
+## silinir, yoksa terk edilmis sirt ile gercek tarla ust uste binerdi.
+var _camp_field_nodes: Dictionary = {}  # cell -> Array[Node3D]
+
+func _camp_register_field_node(cell: Vector2i, node: Node3D) -> void:
+	if not _camp_field_nodes.has(cell):
+		_camp_field_nodes[cell] = []
+	var list: Array = _camp_field_nodes[cell]
+	list.append(node)
+
+func _camp_clear_field_decor(cell: Vector2i) -> void:
+	if not _camp_field_nodes.has(cell):
+		return
+	var list: Array = _camp_field_nodes[cell]
+	for n in list:
+		if is_instance_valid(n):
+			n.queue_free()
+	_camp_field_nodes.erase(cell)
+
+func _camp_at(key: String) -> Vector2i:
+	var off: Vector2i = CAMP_OFF[key]
+	return _camp_center + off
+
+## ARAZI ASAMASI: _build_terrain'den ONCE calisir. Nesne temizligi, yollar,
+## kuru kanal derinligi ve dogus hucresi burada belirlenir.
+func _camp_plan() -> void:
+	_camp_center = _spawn_cell
+	_camp_cells.clear()
+	_camp_field.clear()
+	# 1) Kamp alanini ac: yaricap icindeki agac/kayalarin cogu kaldirilir,
+	#    kucuk bir kismi kalir (mockup'taki "acikligi ceviren seyrek agac").
+	for dy in range(-CAMP_RADIUS, CAMP_RADIUS + 1):
+		for dx in range(-CAMP_RADIUS, CAMP_RADIUS + 1):
+			if dx * dx + dy * dy > CAMP_RADIUS * CAMP_RADIUS:
+				continue
+			var c := _camp_center + Vector2i(dx, dy)
+			_camp_cells[c] = true
+			if not _objects.has(c):
+				continue
+			var keep: bool = int(EnvModels.hash01(c.x, c.y, 401) * 100.0) < CAMP_KEEP_TREE
+			if keep and not _camp_build_footprint(c):
+				continue
+			_objects.erase(c)
+			_solid_cells.erase(c)
+	# 2) Yollar: ocaktan dort yone asinmis serit.
+	var hearth := _camp_at("ocak")
+	for r: Dictionary in CAMP_ROADS:
+		var rd: Vector2i = r["dir"]
+		_add_path_strip(hearth, rd, int(r["len"]))
+	_path_cells[hearth] = true
+	# 3) Tarla (2x2) + bati kenarinda 1 hucrelik KURU kanal (su yok, sadece
+	#    kazilmis iz: "burada sulama vardi").
+	var f := _camp_at("field")
+	for dy in 2:
+		for dx in 2:
+			_camp_field[f + Vector2i(dx, dy)] = true
+	for dy in 2:
+		var ch := f + Vector2i(-1, dy)
+		_depth[ch] = 1
+		_objects.erase(ch)
+	# 4) Dogus: kulubenin ONUNDE (kapi guneye bakiyor).
+	_spawn_cell = _camp_at("hut") + Vector2i(0, 2)
+	_objects.erase(_spawn_cell)
+	_solid_cells.erase(_spawn_cell)
+
+## Kamp yapilarinin ayak izi (agac/kaya kesinlikle temizlenir).
+func _camp_build_footprint(c: Vector2i) -> bool:
+	var hut := _camp_at("hut")
+	if absi(c.x - hut.x) <= 2 and absi(c.y - hut.y) <= 2:
+		return true
+	var f := _camp_at("field")
+	if c.x >= f.x - 1 and c.x <= f.x + 1 and c.y >= f.y - 1 and c.y <= f.y + 2:
+		return true
+	for key: String in ["well", "masa", "sandik", "kabak", "ocak"]:
+		var p := _camp_at(key)
+		if absi(c.x - p.x) <= 1 and absi(c.y - p.y) <= 1:
+			return true
+	return false
+
+## GORSEL ASAMA: _rebuild_objects'ten SONRA calisir (dekor dugumleri).
+func _build_spawn_camp() -> void:
+	for n in _camp_nodes:
+		if is_instance_valid(n):
+			n.queue_free()
+	_camp_nodes.clear()
+	_camp_field_nodes.clear()
+	if _camp_center == Vector2i(-999, -999):
+		return
+	# Ocak — SONUK (ates yok; _activate_hearth cagrilmaz)
+	_camp_prop_structure("ocak", _camp_at("ocak"), 0.0, false)
+	# Yikik kulube: 3x3 ayak izi kati, guney-orta hucre kapi (giris)
+	var hut := _camp_at("hut")
+	_camp_prop_env("ruined_hut", hut, 0.0)
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			if dx == 0 and dy == 1:
+				continue  # kapi
+			_solid_cells[hut + Vector2i(dx, dy)] = true
+	# Onarilmis kopya: YALNIZ debug/test — yan yana karsilastirma icin
+	if OS.is_debug_build() or TestMode.ENABLED:
+		_camp_prop_env("repaired_hut", _camp_at("hut_repaired"), 0.0)
+	# Kuyu
+	var well := _camp_at("well")
+	_camp_prop_env("ruined_well", well, 25.0)
+	_solid_cells[well] = true
+	# Terk edilmis tarla: her hucrede sirt + uzerinde solmus bitki
+	var fi := 0
+	for cell: Vector2i in _camp_field:
+		_camp_prop_mound(cell)
+		if fi % 4 != 3:  # bir hucre bos (bitki tamamen olmus)
+			_camp_prop_withered(cell)
+		fi += 1
+	_camp_prop_pumpkin(_camp_at("kabak"))
+	# Uretim kosesi: solmus/devrik arastirma masasi + devrik bos sandik.
+	# TEZGAH YOK — ilk tezgahi oyuncu kuracak (mockup'taki bosluk kasitli).
+	_camp_prop_structure("arastirma_masasi", _camp_at("masa"), -20.0, true)
+	_camp_prop_structure("sandik", _camp_at("sandik"), 35.0, true)
+	# Sonuk mesale direkleri (isik EKLENMEZ)
+	for off: Vector2i in CAMP_TORCHES:
+		_camp_prop_structure("mesale", _camp_center + off, 0.0, false)
+
+## Mevcut yapi gorselini DEKOR olarak koyar (veri yok, etkilesim yok).
+## tilt=true ise devrik/yipranmis durus (13.4'teki hasarli goruntunun aynisi).
+func _camp_prop_structure(item_id: String, cell: Vector2i, yaw: float,
+		tilt: bool) -> void:
+	if _placed.has(cell):
+		return  # oyuncu oraya bir sey koyduysa dekor cizilmez
+	var holder := _build_structure_visual(item_id)
+	holder.position = _cell_center(cell)
+	holder.rotation_degrees.y = yaw
+	if tilt:
+		holder.rotation_degrees.z = 14.0
+		holder.position.y -= 0.06
+	add_child(holder)
+	_camp_nodes.append(holder)
+
+## GLB propu (kulube/kuyu): olcek KOK dugume verilir (node scale YASAK
+## dersi: ic dugumlere dokunulmaz), hedef YUKSEKLIGE normalize edilir.
+func _camp_prop_env(id: String, cell: Vector2i, yaw: float) -> void:
+	var glb := EnvModels.path_of(id)
+	if not ResourceLoader.exists(glb):
+		return
+	var root := Node3D.new()
+	var inst: Node3D = load(glb).instantiate()
+	root.add_child(inst)
+	_tame_meshy_materials(inst, EnvModels.tint_of(id))
+	var aabb := _scene_aabb(inst)
+	if aabb.size.y > 0.01:
+		var s: float = EnvModels.scale_of(id) / aabb.size.y
+		inst.scale = Vector3(s, s, s)
+		inst.position.y = -aabb.position.y * s
+	root.position = _cell_center(cell)
+	root.rotation_degrees.y = yaw
+	add_child(root)
+	_camp_nodes.append(root)
+
+## Terk edilmis tarlanin sirti (bos surulu tarla gostergesiyle ayni model).
+func _camp_prop_mound(cell: Vector2i) -> void:
+	var node := _build_mound_from(MOUND_EMPTY)
+	if node == null:
+		return
+	node.position = _cell_center(cell)
+	add_child(node)
+	_camp_nodes.append(node)
+	_camp_register_field_node(cell, node)
+
+## Solmus bitki: genc ekin modeli, kurumus tonda ve kucuk.
+const CAMP_WITHER_TINT := Color(0.60, 0.52, 0.34)
+
+func _camp_prop_withered(cell: Vector2i) -> void:
+	var glb := "res://assets/models/test/small_young_berry.glb"
+	if not ResourceLoader.exists(glb):
+		return
+	var root := Node3D.new()
+	var inst: Node3D = load(glb).instantiate()
+	root.add_child(inst)
+	_tame_meshy_materials(inst, CAMP_WITHER_TINT)
+	var aabb := _scene_aabb(inst)
+	if aabb.size.y > 0.01:
+		var s: float = 0.34 / aabb.size.y
+		inst.scale = Vector3(s, s, s)
+		inst.position.y = -aabb.position.y * s
+	root.position = _cell_center(cell) + Vector3(0.0, 0.06, 0.0)
+	root.rotation_degrees = Vector3(0.0, float(cell.x * 47 % 360), 9.0)
+	add_child(root)
+	_camp_nodes.append(root)
+	_camp_register_field_node(cell, root)
+
+## Dekoratif kabak: kabak GLB'si YOK -> proseduerel (yassi kure + sap),
+## duz renk paletiyle uyumlu sicak turuncu.
+func _camp_prop_pumpkin(cell: Vector2i) -> void:
+	var root := Node3D.new()
+	var body := SphereMesh.new()
+	body.radius = 0.22
+	body.height = 0.34
+	body.radial_segments = 10
+	body.rings = 5
+	var bm := StandardMaterial3D.new()
+	bm.albedo_color = Color(0.78, 0.44, 0.18)
+	bm.roughness = 0.9
+	body.material = bm
+	var bi := MeshInstance3D.new()
+	bi.mesh = body
+	bi.position.y = 0.17
+	root.add_child(bi)
+	var stem := CylinderMesh.new()
+	stem.top_radius = 0.03
+	stem.bottom_radius = 0.045
+	stem.height = 0.12
+	var smat := StandardMaterial3D.new()
+	smat.albedo_color = EnvModels.FALLBACK_LEAF
+	smat.roughness = 0.95
+	stem.material = smat
+	var si := MeshInstance3D.new()
+	si.mesh = stem
+	si.position.y = 0.38
+	root.add_child(si)
+	root.position = _cell_center(cell)
+	add_child(root)
+	_camp_nodes.append(root)
+
+
+# --- VITRIN: yeni cevre/yapi modelleri (gorsel-tur Asama 1 dogrulamasi) ---
+# Dokuz model, OYUNDAKI GERCEK olcegiyle (EnvModels.SCALE) yan yana. Amac:
+# "yuklendi mi / dogru boyda mi / dokusu geldi mi" sorularini tek karede
+# gormek. Gunduz + gece iki kare (gece karesinde beyaz cikan model hemen
+# belli olur; ilk turda yol taslari boyle yakalandi).
+const ENV_SHOWCASE := [
+	{"id": "ruined_hut", "x": -9.0},
+	{"id": "repaired_hut", "x": -4.5},
+	{"id": "ruined_well", "x": -0.5},
+	{"id": "planting_mound", "x": 2.0},
+	{"id": "path_stone", "x": 3.6},
+	{"id": "path_stone_mossy", "x": 4.8},
+	{"id": "grass_tuft", "x": 6.0},
+	{"id": "pebble_cluster", "x": 7.0},
+	{"id": "twig_debris", "x": 8.0},
+]
+
+func _run_env_showcase(save_path: String) -> void:
+	var base := Vector3(460.0, 30.0, 0.0)
+	var root := Node3D.new()
+	root.position = base
+	add_child(root)
+	var floor_inst := MeshInstance3D.new()
+	var floor_mesh := PlaneMesh.new()
+	floor_mesh.size = Vector2(34, 18)
+	floor_inst.mesh = floor_mesh
+	var fm := StandardMaterial3D.new()
+	fm.albedo_color = Color(0.32, 0.55, 0.24)
+	fm.roughness = 1.0
+	floor_inst.material_override = fm
+	root.add_child(floor_inst)
+	var eksik: Array[String] = []
+	for entry: Dictionary in ENV_SHOWCASE:
+		var id := String(entry["id"])
+		var glb := EnvModels.path_of(id)
+		if not ResourceLoader.exists(glb):
+			eksik.append(id)
+			continue
+		var holder := Node3D.new()
+		holder.position = Vector3(float(entry["x"]), 0.0, 0.0)
+		root.add_child(holder)
+		var scene: Node3D = load(glb).instantiate()
+		holder.add_child(scene)
+		_tame_meshy_materials(scene, EnvModels.tint_of(id))
+		# KOK olcegi (ic dugume dokunulmaz) — oyundaki ile AYNI hesap
+		var aabb := _scene_aabb(scene)
+		if aabb.size.y > 0.01:
+			var s: float = EnvModels.scale_of(id) / aabb.size.y
+			scene.scale = Vector3(s, s, s)
+			scene.position = Vector3(-aabb.get_center().x * s, -aabb.position.y * s,
+					-aabb.get_center().z * s)
+		var label := Label3D.new()
+		label.text = "%s\n%.2f m" % [id, EnvModels.scale_of(id)]
+		label.font_size = 48
+		label.pixel_size = 0.004
+		label.position = Vector3(0, -0.35, 0.9)
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		holder.add_child(label)
+	camera.position = base + Vector3(-1.0, 3.4, 11.5)
+	camera.rotation_degrees = Vector3(-13, 0, 0)
+	await get_tree().create_timer(1.0).timeout
+	_snap(save_path.replace(".png", "_vitrin_env.png"))
+	# Gece karesi (ayni aci)
+	DayNight.jump_to_night()
+	await get_tree().create_timer(1.0).timeout
+	_snap(save_path.replace(".png", "_vitrin_env_gece.png"))
+	DayNight.jump_to_day()
+	await get_tree().create_timer(0.4).timeout
+	root.queue_free()
+	print("VITRIN_ENV: model=%d eksik=%s" % [ENV_SHOWCASE.size(), str(eksik)])
+
+# --- KAMPTEST: spawn kampi yerlesim dogrulamasi --------------------------
+# Kamp SALT GORSEL oldugu icin test de gorsel/yerlesim dogruluguna bakar:
+# parcalar yerinde mi, dogus kulubenin onunde ve yurunebilir mi, yollar
+# ocaktan cikiyor mu, ates/isik GERCEKTEN sonuk mu (mekanik sizmadi mi).
+func _run_camp_test(save_path: String) -> void:
+	var c := _camp_center
+	var hut := _camp_at("hut")
+	var kapi := hut + Vector2i(0, 1)
+	# 1) Dogus: kulubenin onunde, yurunebilir
+	var dogus_on: bool = _spawn_cell == hut + Vector2i(0, 2)
+	var dogus_bos: bool = not _solid_cells.has(_spawn_cell) \
+			and not _objects.has(_spawn_cell)
+	# 2) Kulube kati, kapi acik
+	var kulube_kati: bool = _solid_cells.has(hut)
+	var kapi_acik: bool = not _solid_cells.has(kapi)
+	# 3) Yollar: dort yonde de yol hucresi var mi
+	var yol_yon := 0
+	for r: Dictionary in CAMP_ROADS:
+		var rd: Vector2i = r["dir"]
+		if _path_cells.has(c + rd * 2):
+			yol_yon += 1
+	# 4) MEKANIK SIZMASI YOK: aktif ocak yok, mesale isigi yok, kamp
+	#    parcalarindan hicbiri _placed/_structures'a yazilmadi
+	var ocak_yanmiyor: bool = get_hearth() == Vector2i(-999, -999)
+	var isik_yok: bool = _torch_lights.is_empty()
+	var veri_temiz := true
+	for key: String in ["ocak", "masa", "sandik", "well"]:
+		if _placed.has(_camp_at(key)):
+			veri_temiz = false
+	for off: Vector2i in CAMP_TORCHES:
+		if _placed.has(c + off):
+			veri_temiz = false
+	# 5) Tarla: 4 hucre dekor + bati kenarinda kuru kanal
+	var tarla := _camp_field.size()
+	var f := _camp_at("field")
+	var kanal: bool = int(_depth.get(f + Vector2i(-1, 0), 0)) == 1
+	# 6) Kamp acikligi: yaricap icinde agac/kaya SEYREK kaldi mi
+	var dolu := 0
+	for cell: Vector2i in _camp_cells:
+		if _objects.has(cell):
+			dolu += 1
+	var doluluk: float = float(dolu) / maxf(1.0, float(_camp_cells.size())) * 100.0
+
+	# Kareler: mockup acisiyla genis kamp + tarla yakin plani
+	var ctr := _cell_center(c)
+	camera.position = ctr + Vector3(0.0, 15.0, 17.0)
+	camera.look_at(ctr)
+	await get_tree().create_timer(0.8).timeout
+	_snap(save_path.replace(".png", "_kamp.png"))
+	var fc := _cell_center(f) + Vector3(0.5, 0.0, 0.5)
+	camera.position = fc + Vector3(-2.6, 2.0, 3.0)
+	camera.look_at(fc + Vector3(0, 0.2, 0))
+	await get_tree().create_timer(0.6).timeout
+	_snap(save_path.replace(".png", "_kamp_tarla.png"))
+	# Gece: sonuk kampin gece hali (mesaleler yanmiyor — kasitli)
+	DayNight.jump_to_night()
+	camera.position = ctr + Vector3(0.0, 15.0, 17.0)
+	camera.look_at(ctr)
+	await get_tree().create_timer(0.8).timeout
+	_snap(save_path.replace(".png", "_kamp_gece.png"))
+	DayNight.jump_to_day()
+	await get_tree().create_timer(0.4).timeout
+
+	var line := ("KAMPTEST: merkez=%s dogus_on=%s dogus_bos=%s kulube_kati=%s "
+			+ "kapi_acik=%s yol_yon=%d/4 ocak_yanmiyor=%s isik_yok=%s "
+			+ "veri_temiz=%s tarla=%d kanal=%s dolu=%%%.0f") % [
+		str(c), str(dogus_on), str(dogus_bos), str(kulube_kati), str(kapi_acik),
+		yol_yon, str(ocak_yanmiyor), str(isik_yok), str(veri_temiz),
+		tarla, str(kanal), doluluk]
+	print(line)
+	var fh := FileAccess.open("res://docs/screens/kamptest.txt", FileAccess.WRITE)
+	if fh != null:
+		fh.store_line(line)
+		fh.close()
+
 # --- CEVRE SERPINTISI (grass_tuft / pebble_cluster / twig_debris) ---------
 # Kullanicinin GLB'leri; TUR BASINA TEK MultiMesh (3 ek cizim cagrisi).
 # Yogunluk KALITE KADEMESINE bagli (dusuk telefonda seyrelir).
@@ -2701,11 +3116,19 @@ func _build_env_scatter(grass_cells: Array) -> void:
 			continue
 		if int(_depth.get(cell, 0)) != 0 or Farming.plots.has(cell):
 			continue
+		if _camp_field.has(cell):
+			continue  # tarla sirtlarinin ustune ot bitmez
 		var id := _scatter_kind_for(cell)
 		if id == "":
 			continue
+		# KAMP ICI: terk edilmislik hissi icin dal/kuru ot YOGUN (mockup'taki
+		# dagilmis cop). Cakil kampta seyrek kalir (temiz zemin havasi olmasin
+		# ama tas coplugu da olmasin).
+		var camp_boost: float = 1.0
+		if _camp_cells.has(cell):
+			camp_boost = CAMP_SCATTER_BOOST if id != "pebble_cluster" else 1.0
 		var roll := int(EnvModels.hash01(cell.x, cell.y, 101) * 100.0)
-		var chance: int = int(float(_scatter_chance(id)) * mult)
+		var chance: int = int(float(_scatter_chance(id)) * mult * camp_boost)
 		if roll >= chance:
 			continue
 		var rr: float = EnvModels.hash01(cell.x, cell.y, 103)
@@ -4712,6 +5135,7 @@ const MOUND_EMPTY := {"path": "res://assets/models/crops/planting_mound.glb",
 const MOUND_FOOTPRINT := 0.92  # hucreye sigacak taban genisligi (m)
 
 func _update_mound_node(cell: Vector2i) -> void:
+	_camp_clear_field_decor(cell)  # kamp dekoru gercek tarlaya yer birakir
 	if _mound_nodes.has(cell):
 		_mound_nodes[cell].queue_free()
 		_mound_nodes.erase(cell)
