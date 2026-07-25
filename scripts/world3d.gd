@@ -4516,6 +4516,11 @@ const MOUND_GLB := [
 	{"path": "res://assets/models/test/planting_mound2.glb",
 			"rot_deg": Vector3.ZERO},
 ]
+## BOS surulu tarla gostergesi (gorsel-tur): ekim yapilmamis hucrede bu
+## model durur, EKILINCE KAYBOLUR, hasattan sonra geri gelir. Ekili
+## hucrede yerini yukaridaki yatak modelleri alir (sira ile).
+const MOUND_EMPTY := {"path": "res://assets/models/crops/planting_mound.glb",
+		"rot_deg": Vector3.ZERO}
 const MOUND_FOOTPRINT := 0.92  # hucreye sigacak taban genisligi (m)
 
 func _update_mound_node(cell: Vector2i) -> void:
@@ -4524,8 +4529,14 @@ func _update_mound_node(cell: Vector2i) -> void:
 		_mound_nodes.erase(cell)
 	if not Farming.plots.has(cell):
 		return
-	var order: int = Farming.plots.keys().find(cell)
-	var node := _build_mound_visual(maxi(0, order) % MOUND_GLB.size())
+	var plot: Variant = Farming.plots.get(cell)
+	var empty: bool = plot == null or String(plot.get("crop_id", "")) == ""
+	var node: Node3D
+	if empty:
+		node = _build_mound_from(MOUND_EMPTY)
+	else:
+		var order: int = Farming.plots.keys().find(cell)
+		node = _build_mound_visual(maxi(0, order) % MOUND_GLB.size())
 	if node == null:
 		return
 	var h := float(_cell_props(cell.x, cell.y)[0])
@@ -4534,7 +4545,11 @@ func _update_mound_node(cell: Vector2i) -> void:
 	_mound_nodes[cell] = node
 
 func _build_mound_visual(variant: int) -> Node3D:
-	var cfg: Dictionary = MOUND_GLB[variant]
+	return _build_mound_from(MOUND_GLB[variant])
+
+## Ortak kurucu: GLB'yi yukler, KOK dugumune olcek verir (ic dugumlere
+## dokunmaz), hucreye sigdirir ve zemine oturtur.
+func _build_mound_from(cfg: Dictionary) -> Node3D:
 	var glb: String = String(cfg["path"])
 	if not ResourceLoader.exists(glb):
 		return null
