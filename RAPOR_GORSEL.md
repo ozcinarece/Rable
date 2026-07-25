@@ -129,7 +129,7 @@ geniş kamp), `3d_kamp_gece.png` (aynı açı, gece — meşaleler yanmıyor),
 main koşusuna gerek kalmıyor — ölçüm aynı donanımda, aynı karede.
 
 ```
-PERFTEST: kamp kamerasi | ONCE draw=154 | SONRA draw=212
+PERFTEST: kamp kamerasi | ONCE draw=155 | SONRA draw=213
           serpinti_dugum=3 yol_dugum=2 kamp_dugum=18
 ```
 
