@@ -986,6 +986,30 @@ func _build_settings_menu() -> void:
 		grip_check.text = "Grip Ayarı (aleti elde hizala)"
 		grip_check.toggled.connect(_on_grip_tuner_toggled)
 		vb.add_child(grip_check)
+		# ZAMAN KONTROLU: bir tam gun 15,5 dk; geceyi denemek icin ~11 dk
+		# beklemek gerekiyordu. Bu iki buton faza ANINDA atlar (gecise bagli
+		# tum sinyaller normal akistaki gibi yayinlanir).
+		var thdr := Label.new()
+		thdr.theme_type_variation = "SubtleLabel"
+		thdr.text = "Zaman (beklemeden geç)"
+		vb.add_child(thdr)
+		var trow := HBoxContainer.new()
+		trow.add_theme_constant_override("separation", 8)
+		vb.add_child(trow)
+		var night_btn := Button.new()
+		night_btn.text = "🌙 Gece"
+		night_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		night_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+		# Pil bildirimini night_started/dawn_started dinleyicileri zaten
+		# yapiyor (_on_night_fx / _on_day_fx) — burada tekrar cagirilmaz.
+		night_btn.pressed.connect(DayNight.jump_to_night)
+		trow.add_child(night_btn)
+		var day_btn := Button.new()
+		day_btn.text = "☀ Gündüz"
+		day_btn.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		day_btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+		day_btn.pressed.connect(DayNight.jump_to_day)
+		trow.add_child(day_btn)
 
 	_newgame_button = Button.new()
 	_newgame_button.theme_type_variation = "PrimaryButton"
