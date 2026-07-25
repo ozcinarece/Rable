@@ -2794,7 +2794,15 @@ func is_road(cell: Vector2i) -> bool:
 func lay_road(cell: Vector2i, age: String = "yeni") -> void:
 	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
 		return
+	# Yol yalniz duz, yurunebilir zemine doseniyor: suya girmez, plato
+	# ustune tirmanmaz (karo yamaca oturmaz, havada kalirdi).
+	if not String(_ground_char.get(cell, "")) in [".", "d", "s"]:
+		return
 	_path_cells[cell] = age
+	# Yolun ORTASINDA agac/kaya duramaz. (Ilk karede kavisli yol ormanin
+	# icinden gectigi icin agaclar karolarin ustunde bitiyordu.)
+	_objects.erase(cell)
+	_solid_cells.erase(cell)
 
 ## Karonun -90 X yatirmasi + Y donusu birlesik temel.
 func _road_basis(yaw_deg: float, scale_v: float) -> Basis:
@@ -2852,7 +2860,7 @@ func _build_road() -> void:
 			moss.append(_road_edge_xform(cell, open_dirs, 313, 0.30))
 		if RoadTiles.hash01(cell.x, cell.y, 317) * 100.0 \
 				< float(RoadTiles.EDGE_TUFT_CHANCE) * mult:
-			tufts.append(_road_edge_xform(cell, open_dirs, 319, 0.34))
+			tufts.append(_road_edge_xform(cell, open_dirs, 319, 0.0))
 
 		# --- 3) Komsu CIM hucrelerine sacilma ---
 		var mossy_pct := RoadTiles.mossy_chance(age)
@@ -2898,7 +2906,8 @@ func _build_road() -> void:
 			add_child(mn)
 			_road_nodes.append(mn)
 	if not tufts.is_empty():
-		var tn := _env_scatter_node("grass_tuft", tufts)
+		# Kenar otu acik cimdekinden KUCUK (taslarin arasindan cikan filiz)
+		var tn := _env_scatter_node("grass_tuft", tufts, RoadTiles.EDGE_TUFT_SPAN)
 		if tn != null:
 			add_child(tn)
 			_road_nodes.append(tn)
@@ -2955,8 +2964,9 @@ func _road_tile_node(id: String, list: Array) -> Node3D:
 	for i in list.size():
 		var t: Transform3D = list[i]
 		var b: Basis = t.basis.scaled(Vector3(k, k, k))
-		# Yatirma sonrasi karo merkezi Y'de; ust yuzu SINK kadar altta
-		var y := -RoadTiles.SINK - thick * 0.5
+		# Yatirma sonrasi kalinlik Y'de ve karo merkezli: govde zemine
+		# gomulur, ust yuzu TOP_ABOVE kadar disarida kalir.
+		var y: float = RoadTiles.TOP_ABOVE - thick * 0.5
 		mm.set_instance_transform(i, Transform3D(b, t.origin + Vector3(0, y, 0)))
 	var mi := MultiMeshInstance3D.new()
 	mi.multimesh = mm
@@ -3009,17 +3019,8 @@ func _road_moss_mesh() -> Mesh:
 						(_moss_mesh as ArrayMesh).surface_set_material(si, sm)
 			break
 		scene.queue_free()
-	if _moss_mesh == null:
-		var disc := CylinderMesh.new()
-		disc.top_radius = RoadTiles.MOSS_SPAN * 0.5
-		disc.bottom_radius = RoadTiles.MOSS_SPAN * 0.5
-		disc.height = RoadTiles.MOSS_HEIGHT
-		disc.radial_segments = 7
-		var mat := StandardMaterial3D.new()
-		mat.albedo_color = RoadTiles.MOSS_FALLBACK
-		mat.roughness = 1.0
-		disc.material = mat
-		_moss_mesh = disc
+	# Fallback KAPALI: duz yesil disk karede nilufer yapragi gibi duruyor.
+	# Gercek moss_patch.glb gelene kadar yosun cizilmez.
 	return _moss_mesh
 
 func _road_moss_node(list: Array) -> Node3D:
@@ -3683,11 +3684,13 @@ func _scatter_chance(id: String) -> int:
 ## Model + olcek onbellegi; GLB yoksa proseduerel fallback (gorev sarti).
 var _env_mesh_cache: Dictionary = {}
 
-func _env_scatter_node(id: String, list: Array) -> Node3D:
+func _env_scatter_node(id: String, list: Array,
+		override_span: float = 0.0) -> Node3D:
 	var mesh := _env_mesh(id)
 	if mesh == null:
 		return null
-	var target: float = EnvModels.scale_of(id)
+	var target: float = override_span if override_span > 0.0 \
+			else EnvModels.scale_of(id)
 	var aabb := mesh.get_aabb()
 	var span: float = maxf(0.001, maxf(aabb.size.x, aabb.size.z))
 	var k: float = target / span            # KOK olcegi (ic dugum yok)

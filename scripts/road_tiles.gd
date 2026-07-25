@@ -25,18 +25,23 @@ const VARIANTS: Array[String] = ["road_tile_a", "road_tile_b", "road_tile_c"]
 ## yoksa aralarindan cim sizar ve izgara gorunur.
 const TILE_SPAN := 1.0
 
-## GOMUK YOL: karo cim seviyesinin bu kadar ALTINA oturur; cim kenarlari
-## yolun ustune tasar ve karo "yere basmis" gorunur (havada duran karo
-## etkisini yok eden sey budur).
-const SINK := 0.025
-
-## Karonun kendi kalinligi kadar da asagi inmemeli; yalnizca ust yuzu
-## SINK kadar altta olsun diye AABB'den telafi edilir (kod yapar).
+## GOMUK YOL. DIKKAT — ilk denemede karonun UST YUZU zeminin 2.5 cm
+## ALTINA konuldu ve karolar TAMAMEN gorunmez oldu: arazi kesintisiz bir
+## yuzey, altina giren hicbir sey cizilmiyor; "cim kenarinin ustune
+## tasmasi" ayri bir geometri degil.
+## Dogrusu: karo govdesi zemine GOMULUR, yalnizca ust yuzu bu kadar
+## DISARIDA kalir. Ince bir dilim gorundugu icin karo yere basmis
+## hissi verir, kaldirim tasi gibi yukselmez.
+const TOP_ABOVE := 0.02
 
 # --- KENAR ERIMESI ------------------------------------------------------
 ## Karo ustune cikan bitki (yol kenari hucrelerinde).
 const EDGE_MOSS_CHANCE := 50    # % moss_patch
 const EDGE_TUFT_CHANCE := 40    # % grass_tuft
+## Yol kenarindaki ot, acik cimdeki serpintiden KUCUK olmali: taslarin
+## arasindan cikan filiz, cim obegi degil (ilk karede kocaman ve neon
+## yesil ciktı).
+const EDGE_TUFT_SPAN := 0.18
 
 ## Komsu CIM hucrelerine sacilma: izgaranin duz sinirini kirar. Kosegen
 ## yollarda merdiven gorunumunu yok eden asil sey bu sacilmadir.
@@ -58,12 +63,13 @@ const MOSS_DENSITY_MIRAS := 1.0
 const MOSS_DENSITY_YENI := 0.15
 
 ## Karo tonu: Meshy dokusu acik geliyor (ayni tuzak), sicak griye cekilir.
-const TILE_TINT := Color(0.74, 0.71, 0.66)
+const TILE_TINT := Color(0.60, 0.57, 0.52)
 const TILE_TINT_MOSSY := Color(0.64, 0.70, 0.56)
-## Proseduerel yosun lekesi rengi (moss_patch GLB'si gelene kadar).
-const MOSS_FALLBACK := Color(0.34, 0.47, 0.28)
-const MOSS_SPAN := 0.55         # yassi leke capi (m)
-const MOSS_HEIGHT := 0.02
+## moss_patch GLB'si repoda YOK. Proseduerel yassi disk denendi ve
+## KARELERDE NILUFER YAPRAGI gibi durdu (duz yesil cokgen, zemine
+## yapistirilmis). Duz renk fallback bu model icin uygun degil ->
+## yosun, GERCEK model gelene kadar hic cizilmiyor.
+const MOSS_FALLBACK_ON := false
 
 static func path_of(id: String) -> String:
 	return String(PATHS.get(id, ""))
