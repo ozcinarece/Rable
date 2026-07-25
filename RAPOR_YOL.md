@@ -1,4 +1,4 @@
-# RAPOR — Taş Yol Sistemi (branch: `tas-yol`)
+# RAPOR — Taş Yol Sistemi (branch: `tas-yol` → `tas-yol-fix`)
 
 Tarih: 2026-07-25 · Kapsam: auto-tiling taş yol + kenar erimesi.
 Yalnız görsel/veri; yolun yürüme, hız veya yol bulma etkisi **yok**.
@@ -129,3 +129,50 @@ kendiliğinden devreye giriyor, kod değişikliği gerekmiyor.
   karoların üstünde** bitiyordu; `lay_road` artık hücreyi boşaltıyor.
 - Karo tonu 0.74 çarpanıyla hâlâ çok açıktı (Meshy'nin bilinen "ışık
   pişmiş" albedo'su) → 0.60.
+
+
+---
+
+## 8. Görsel revizyon turu (`tas-yol-fix`)
+
+İlk hali düz, kalın ve kirli duruyordu. Dört başlıkta düzeltildi.
+
+**Yükseklik ve gölge.** Karonun üst yüzü 2 → **3.5 cm** dışarıda. 2 cm'de
+karolar zemine ezilmiş görünüyordu; levha kabartısı ve derz gölgeleri
+kayboluyordu. Asıl fark ise **gölgeyi açmak** oldu: MultiMesh'te gölge
+mobil bütçesi için kapalıydı, yolda açıldı — derz gölgesi hacmi okutan
+şey. Yol hücre sayısı sınırlı, maliyeti serpintininki gibi değil.
+
+**Genişlik ve form.** Kavisli yol 3 → **2 hücre**. Yol bir hat; kalınlık
+değil kavis okunmalı. Kavis 16 → 18 adım, tek yönlü çeyrek daire.
+
+**Kenar erimesi — yöntem değişti.** Koyu toprak halesi kaldırıldı
+(`_cell_props`'taki yol renk lekesi). Karoların çevresinde kirli, bulanık
+bir leke yapıyor ve "yol dağılmış" görünümünü besliyordu. Yerine:
+
+- Kenar tutamı dışarı 0.38 yerine **0.30** kaydırılıyor; gövdesi karonun
+  **üstünde** kalıyor. Şans %40 → **%60**.
+- **Derz dekoru**: her yol hücresinde karo yüzeyinde %30 ot + %25 yosun
+  (miras yolda yosun yoğunluğu 1.0×, yenide 0.15×).
+- Saçılma **azaltıldı**: yalnız 1 hücre uzağa %20; 2 hücre kapatıldı.
+  İstenen "yol eskimiş", "yol dağılmış" değil.
+
+**Renk.** Karo tonu 0.60 gri-yeşille zemine karışıyordu → **bej-gri 0.78**.
+Çimden ayrışıyor ama parlamıyor.
+
+### Kenar karosu doğrulaması — sonuç: kullanılmıyor
+
+ROADTEST'e `kenar_karo` sayacı eklendi. Son koşu:
+
+```
+ROADTEST: hucre=75 (miras=65 yeni=10) kenar=73 tek_acik=32
+          karo_ornek=142 kenar_karo=0 sacilma=15
+          edge_glb=false moss_glb=false
+```
+
+`kenar_karo=0` çünkü **`road_tile_edge.glb` repoda yok** — main dahil
+hiçbir dalda bulunamadı; yalnız `road_tile_a/b/c` var. Kod dosyayı
+`ResourceLoader` ile arıyor, geldiği an tek taraflı açık hücrelerde
+(`tek_acik=32`) kırık tarafı dışa dönük olarak devreye giriyor; kod
+değişikliği gerekmiyor. **`moss_patch`** de aynı durumda: `%25 derz
+yosunu` kuralı yazılı ve çalışıyor, ama çizecek model yok.
