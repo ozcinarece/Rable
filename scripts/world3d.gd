@@ -5057,7 +5057,9 @@ func _run_night_test(save_path: String) -> void:
 	# Kare: gece yaratiklari sahnede
 	if spawned > 0:
 		var cr0: Node3D = _creatures[0]
-		camera.position = cr0.position + Vector3(2.2, 1.8, 2.2)
+		# Yaratiklar harita KENARINDA doguyor (orman bandi); alcak kamera
+		# calinin icinde kaliyordu. Yuksek acidan bak -> yaprak arasina girme.
+		camera.position = cr0.position + Vector3(0.0, 5.5, 5.0)
 		camera.look_at(cr0.position + Vector3(0, 0.3, 0))
 		await get_tree().create_timer(0.4).timeout
 		_snap(save_path.replace(".png", "_gece_yaratik.png"))
