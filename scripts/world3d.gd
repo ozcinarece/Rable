@@ -2159,6 +2159,7 @@ func _build_world() -> void:
 	_build_sea_rocks()
 	_build_decor(ground_cells["."] + ground_cells["h"])
 	_rebuild_objects()
+	_build_rim_cells()   # A1: kenar yigini (arazi ornegi bunu okur)
 	_build_dig_decor()   # A5 + A6: kazi agzi ve tabani
 	_build_spawn_camp()  # kamp dekoru (nesneler kurulduktan sonra)
 	_build_ground_markers()  # harita-v2: kil işaretleri + yüzey cevher ipuçları
@@ -2280,6 +2281,27 @@ var _edge_blend: Dictionary = {}   # cell -> harmanlanmis Color
 
 ## B6: suya komsu kara hucreleri (islak serit). Bir kez hesaplanir.
 var _wet_cells: Dictionary = {}
+## A1: kazilmis hucrenin KAZILMAMIS komsusu -> kenar yigini yuksekligi.
+## "Toprak nereye gitti" sorusunun gorsel cevabi: cikan toprak cukurun
+## cevresine alcak bir set olarak yigilmis gorunuyor.
+var _rim_cells: Dictionary = {}   # cell -> kabarma (m)
+
+func _build_rim_cells() -> void:
+	_rim_cells.clear()
+	for cell: Vector2i in _depth:
+		if int(_depth[cell]) <= 0:
+			continue
+		for d: Vector2i in EDGE_NB:
+			var nb := cell + d
+			if int(_depth.get(nb, 0)) != 0 or _rim_cells.has(nb):
+				continue
+			if String(_ground_char.get(nb, "")) == "~":
+				continue
+			# Yukseklik hucreye gore deterministik degisir: duz bir set
+			# degil, dogal bir toprak yigini.
+			var t: float = DigWaterVisual.hash01(nb.x, nb.y, 601)
+			_rim_cells[nb] = lerpf(DigWaterVisual.RIM_RISE_MIN,
+					DigWaterVisual.RIM_RISE_MAX, t)
 
 func _build_wet_cells() -> void:
 	_wet_cells.clear()
@@ -2381,6 +2403,9 @@ func _cell_props(cx: int, cy: int) -> Array:
 	# _edge_blend gibi onceden hesaplanmis bir tabloya bakiyor, komsu
 	# taramasi HER ORNEKTE degil bir kez yapiliyor (_cell_props cok
 	# sik cagriliyor).
+	# A1 KENAR YIGINI: cukur kenarindaki kazilmamis hucre hafifce kabarir
+	if _rim_cells.has(Vector2i(cx, cy)):
+		roll += float(_rim_cells[Vector2i(cx, cy)])
 	var gcol := _ground_color(Vector2i(cx, cy), def)
 	if _wet_cells.has(Vector2i(cx, cy)):
 		var w := DigWaterVisual.WET_DARKEN
@@ -2558,6 +2583,7 @@ func _refresh_terrain_at(cell: Vector2i) -> void:
 	for ck in touched:
 		_build_chunk(ck)
 	_build_decor(_decor_cells)
+	_build_rim_cells()   # A1: kenar yigini (arazi ornegi bunu okur)
 	_build_dig_decor()   # A5 + A6: kazi agzi ve tabani
 	_rebuild_objects()
 
@@ -2579,6 +2605,7 @@ func _build_dig_decor() -> void:
 	var mouth: Array = []
 	var soil: Array = []
 	var rock: Array = []
+	var pebble: Array = []
 	for cell: Vector2i in _depth:
 		var d: int = int(_depth[cell])
 		if d <= 0:
@@ -2622,7 +2649,25 @@ func _build_dig_decor() -> void:
 					DigWaterVisual.hash01(nb.x, nb.y, 513) * 0.6)
 			var off := Vector3(float(-dd.x) * 0.34, 0.0, float(-dd.y) * 0.34)
 			mouth.append(Transform3D(eb, _cell_center(nb) + off))
-	for pair in [["soil_clump", soil], ["rock_shard", rock]]:
+	# --- A1 KENAR YIGINI SERPINTISI: setin uzerine toprak/cakil ---
+	# Yiginin kendisi arazi yuksekliginde (_rim_cells); burada uzerine
+	# %40 serpinti biniyor ki kabarma "renk lekesi" degil "yigin" okunsun.
+	for rc: Vector2i in _rim_cells:
+		if DigWaterVisual.hash01(rc.x, rc.y, 621) * 100.0 \
+				>= float(DigWaterVisual.RIM_SCATTER_CHANCE) * mult:
+			continue
+		var rox: float = (DigWaterVisual.hash01(rc.x, rc.y, 623) - 0.5) * 0.5
+		var roz: float = (DigWaterVisual.hash01(rc.x, rc.y, 625) - 0.5) * 0.5
+		var rrr: float = DigWaterVisual.hash01(rc.x, rc.y, 627) * TAU
+		var rsc: float = 0.8 + DigWaterVisual.hash01(rc.x, rc.y, 629) * 0.4
+		var rb := Basis().rotated(Vector3.UP, rrr).scaled(Vector3(rsc, rsc, rsc))
+		var rt := Transform3D(rb, _cell_center(rc) + Vector3(rox, 0.0, roz))
+		if DigWaterVisual.hash01(rc.x, rc.y, 631) < 0.5:
+			soil.append(rt)
+		else:
+			pebble.append(rt)
+	for pair in [["soil_clump", soil], ["rock_shard", rock],
+			["pebble_cluster", pebble]]:
 		var list: Array = pair[1]
 		if list.is_empty():
 			continue
