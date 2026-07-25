@@ -2585,134 +2585,54 @@ func _water_material() -> ShaderMaterial:
 	var shader := Shader.new()
 	shader.code = """
 shader_type spatial;
-// Opak su: seffaflik siralama sorunlari (beyaz ucgen artiklari) olmaz
-uniform vec4 col : source_color = vec4(0.13, 0.36, 0.66, 1.0);
+render_mode blend_mix, depth_draw_opaque, cull_disabled;
+// SAKIN gol. Renk/kopuk/opaklik ARTIK BURADA HESAPLANMIYOR: mesh
+// uretiminde vertex rengine pisiriliyor (bkz. _water_vertex_color).
+// Shader yalniz COLOR'i okur + kalite kademesine gore hafif dalga ve
+// parilti ekler. Fragment basina is minimumda (mobil).
+uniform float wave_amp = 0.018;
+uniform float wave_speed = 0.35;
+uniform float sparkle_amt = 0.0;   // 0 = kapali (Dusuk/Orta kademe)
 void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	VERTEX.y += sin(TIME * 1.6 + wp.x * 0.9 + wp.z * 0.7) * 0.05
-			+ cos(TIME * 1.1 + wp.z * 1.3) * 0.03;
+	// B3: IKI SINUS, dusuk genlik, yavas. "Titresen jole" degil,
+	// "hafif kipirdayan gol". Genlik/hiz kalite kademesinden gelir;
+	// Dusuk'te wave_amp = 0 verilir ve dalga tamamen kapanir.
+	VERTEX.y += (sin(TIME * wave_speed + wp.x * 0.9)
+			+ sin(TIME * wave_speed * 1.7 + wp.z * 1.7)) * wave_amp * 0.5;
 }
 void fragment() {
-	vec3 wp2 = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	// Suda gezinen beyaz isilti seritleri (Longvinter dalgalari)
-	float band = sin(wp2.x * 0.9 + TIME * 0.5) * sin(wp2.z * 1.4 - TIME * 0.35)
-			* sin((wp2.x + wp2.z) * 0.35 + TIME * 0.22);
-	float foam = smoothstep(0.86, 0.97, band);
-	ALBEDO = mix(col.rgb, vec3(0.94, 0.97, 1.0), foam * 0.75);
-	ROUGHNESS = 0.45;
-	SPECULAR = 0.2;
-}
-"""
-	_water_mat = ShaderMaterial.new()
-	_water_mat.shader = shader
-	return _water_mat
-
-# --- Gol yuzeyi ----------------------------------------------------------
-# Deniz duzlemi (-0.17) golleri dolduruyordu ama deniz izgarasi cok seyrek
-# oldugundan kucuk gol alaninda dalga okunmuyordu. Goller icin "~"
-# hucrelerini (kenar payiyla) orten ayri ince izgara kurulur; kendi
-# shader'i daha sik ve hizli dalgalanir. MeshInstance3D oldugu icin
-# shader sorunsuz calisir (MultiMesh kisiti yok).
-const LAKE_Y := -0.15
-
-func _build_lake_surface() -> void:
-	var lake_cells: Dictionary = {}
-	for cell in _ground_char:
-		if _ground_char[cell] == "~":
-			lake_cells[cell] = true
-	if lake_cells.is_empty():
-		return
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var res := 4  # 0.25 m karolar: kiyi kopugu bandi puruzsuz olsun
-	var step := 1.0 / float(res)
-	var quads := 0
-	for j in _map_h * res:
-		for i in _map_w * res:
-			var x0 := float(i) * step
-			var z0 := float(j) * step
-			if not _near_lake(lake_cells, x0 + step * 0.5, z0 + step * 0.5):
-				continue
-			for tri in [[Vector2(x0, z0), Vector2(x0 + step, z0), Vector2(x0, z0 + step)],
-					[Vector2(x0 + step, z0), Vector2(x0 + step, z0 + step), Vector2(x0, z0 + step)]]:
-				for p: Vector2 in tri:
-					st.set_normal(Vector3.UP)
-					# Su derinligi kose rengine islenir: shader bununla
-					# sig/derin rengi ve kiyi kopugunu cizer (derinlik
-					# dokusu gerektirmez - telefon GL'inde garantili).
-					# Derinlik ARAZIDEN olculur: kopuk, su cizgisinin
-					# dogal kavisini izler (hucre zikzaki olmaz)
-					st.set_color(Color(_shore_depth(p.x, p.y), 0, 0))
-					st.add_vertex(Vector3(p.x, LAKE_Y, p.y))
-			quads += 1
-	if quads == 0:
-		return
-	var inst := MeshInstance3D.new()
-	inst.mesh = st.commit()
-	inst.material_override = _lake_material()
-	add_child(inst)
-
-# Noktadaki su derinligi: 0 (su cizgisi) .. 1 (dip). Arazi yuksekliginden
-# hesaplanir, boylece kiyi kopugu gercek kiyi kavisini izler.
-func _shore_depth(x: float, z: float) -> float:
-	return clampf((LAKE_Y - ground_height(x, z)) / 0.22, 0.0, 1.0)
-
-# Nokta bir gol hucresine (kiyi payi dahil) yakin mi? Su yuzeyi kiyida
-# arazinin altina girsin diye karolar hucre sinirindan biraz tasar.
-func _near_lake(lake_cells: Dictionary, x: float, z: float) -> bool:
-	var ci := floori(x)
-	var cj := floori(z)
-	for dj in range(-1, 2):
-		for di in range(-1, 2):
-			var cell := Vector2i(ci + di, cj + dj)
-			if not lake_cells.has(cell):
-				continue
-			var nx := clampf(x, float(cell.x), float(cell.x) + 1.0)
-			var nz := clampf(z, float(cell.y), float(cell.y) + 1.0)
-			# Genis pay: su duzlemi su cizgisini her yerde gecsin (fazlasi
-			# arazinin altinda kalir, gorunmez)
-			if Vector2(x - nx, z - nz).length() <= 0.6:
-				return true
-	return false
-
-var _lake_mat: ShaderMaterial
-
-func _lake_material() -> ShaderMaterial:
-	if _lake_mat != null:
-		return _lake_mat
-	var shader := Shader.new()
-	shader.code = """
-shader_type spatial;
-// SAKIN gol (Longvinter usulu): duz, temiz su malzemesi. Abartili
-// dalga/kopuk yok - sadece kiyida ince bir kopuk cizgisi, cok hafif
-// salinim ve gunes parlamasi icin puruzsuz yuzey. Derinlik COLOR.r'de.
-uniform vec4 deep_col : source_color = vec4(0.15, 0.38, 0.62, 1.0);
-uniform vec4 shallow_col : source_color = vec4(0.25, 0.55, 0.72, 1.0);
-void vertex() {
-	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	// Cok hafif salinim: su oldugu belli olsun, dalga hissi olmasin
-	VERTEX.y += sin(TIME * 1.1 + wp.x * 1.6 + wp.z * 1.2) * 0.008;
-}
-void fragment() {
-	vec3 wp2 = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	float depth = COLOR.r;
-	vec3 col = mix(shallow_col.rgb, deep_col.rgb, smoothstep(0.05, 0.85, depth));
-	// Kiyida INCE, yavas nefes alan kopuk cizgisi
-	float wobble = sin(wp2.x * 3.1 + wp2.z * 2.6 + TIME * 0.7) * 0.02;
-	float foam_edge = smoothstep(0.14, 0.05, depth + wobble);
-	col = mix(col, vec3(0.93, 0.97, 1.0), foam_edge * 0.6);
-	// Gunes yansimasi icin hafif yuzey kirisikligi (gorunmez ama
-	// parlamayi canli tutar)
-	NORMAL = normalize(NORMAL + vec3(sin(wp2.x * 2.2 + TIME * 0.6) * 0.02,
-			0.0, cos(wp2.z * 1.9 + TIME * 0.5) * 0.02));
-	ALBEDO = col;
+	ALBEDO = COLOR.rgb;
+	ALPHA = COLOR.a;
 	ROUGHNESS = 0.12;
 	SPECULAR = 0.65;
+	// B5: seyrek parilti. Yalniz Yuksek kademede (sparkle_amt > 0).
+	if (sparkle_amt > 0.0) {
+		vec3 wp2 = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+		float g = sin(wp2.x * 7.3 + TIME * 0.9) * sin(wp2.z * 6.1 - TIME * 0.7);
+		ALBEDO += vec3(smoothstep(0.93, 1.0, g) * sparkle_amt);
+	}
 }
 """
 	_lake_mat = ShaderMaterial.new()
 	_lake_mat.shader = shader
+	_apply_water_tier()
 	return _lake_mat
+
+## C: kalite kademesi -> su efektleri. Dusuk'te dalga ve parilti KAPALI.
+## Ayarlar'dan kademe degisince de cagrilir (apply_quality).
+func _apply_water_tier() -> void:
+	if _lake_mat == null:
+		return
+	var t := DigWaterVisual.tier_of(_quality_tier)
+	var wave_on: bool = bool(t["wave"])
+	var sparkle_on: bool = bool(t["sparkle"])
+	_lake_mat.set_shader_parameter("wave_amp",
+			DigWaterVisual.WAVE_AMP if wave_on else 0.0)
+	_lake_mat.set_shader_parameter("wave_speed", DigWaterVisual.WAVE_SPEED)
+	# Gece Ocak/mesale isiginda sicak ton, gunduz soguk beyaz (B5)
+	_lake_mat.set_shader_parameter("sparkle_amt",
+			(0.18 if sparkle_on else 0.0))
 
 # Bos cim hucrelerinin bir kismina sus otu serpistirir (toplanmaz).
 var _decor_nodes: Array = []
@@ -6748,6 +6668,7 @@ func apply_quality(tier: String) -> void:
 	RenderingServer.directional_shadow_atlas_set_size(int(t["dir_shadow_size"]), true)
 
 func _on_quality_changed(tier: String) -> void:
+	_apply_water_tier()  # C: Dusuk'te dalga/parilti kapansin
 	apply_quality(tier)
 	_save_quality()
 
