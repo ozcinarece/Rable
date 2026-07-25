@@ -10,11 +10,11 @@ etkileşim ve yeni sistem YOK — bu raporun her satırı bu sınırın içinde.
 | Model | Dosya | Oyundaki yeri | Root Scale (hedef) |
 |---|---|---|---|
 | `planting_mound` | `assets/models/crops/` | Boş sürülü tarla göstergesi + kamptaki terk edilmiş tarla | **0.42 m taban** (yükseklik değil) |
-| `grass_tuft` | `assets/models/env/` | Açık çim serpintisi | 0.33 m |
+| `grass_tuft` | `assets/models/env/` | **Oyundan kaldırıldı** (çime yapıştırılmış duruyordu); vitrinde | 0.33 m |
 | `pebble_cluster` | `assets/models/env/` | Kaya/su kenarı serpintisi | 0.18 m |
 | `twig_debris` | `assets/models/env/` | Ağaç dibi serpintisi | 0.40 m |
-| `path_stone` | `assets/models/env/` | Aşınmış yol taşı | 0.45 m |
-| `path_stone_mossy` | `assets/models/env/` | Yol taşı yosunlu varyantı (%40) | 0.45 m |
+| `path_stone` | `assets/models/env/` | **Oyundan kaldırıldı** (model beğenilmedi); vitrinde | 0.45 m |
+| `path_stone_mossy` | `assets/models/env/` | **Oyundan kaldırıldı**; vitrinde | 0.45 m |
 | `ruined_hut` | `assets/models/structures/` | Spawn kampı, kuzeybatı | 2.80 m |
 | `repaired_hut` | `assets/models/structures/` | **Yalnız vitrin** — oyuna konmadı (yıkığın yeni hali, ikisi yan yana gereksiz) | 2.80 m |
 | `ruined_well` | `assets/models/structures/` | Spawn kampı, tarlanın kuzeyinde | 1.20 m |
@@ -192,13 +192,32 @@ sert bir "ağaç duvarı" çizgisi oluşurdu. KAMPTEST artık `aciklik_bos`
 KAMPTEST: ... veri_temiz=true tarla=4 aciklik_bos=true halka_dolu=%2
 ```
 
+### İkinci düzeltme turu
+
+- **Yol taşları oyundan kaldırıldı** (`PATH_STONES_ON = false`). Yolun
+  kendisi duruyor — o zaten taşla değil, zemin renk lekesiyle çiziliyor.
+  Kod ve `_path_nodes` listesi yerinde bırakıldı ki yeni taş modeli
+  gelince tek satırla geri açılsın.
+- **Açık çimdeki yeşil ot tutamı serpintisi kaldırıldı**: çimin üstüne
+  yapıştırılmış duruyordu. Çakıl (kaya/su kenarı) ve dal (ağaç dibi)
+  bağlam kurallarıyla duruyor.
+- **Kampın dibindeki yüksek plato düzlendi.** Kare kenarlı falez
+  duvarlarıyla kampa bitişikti; kamp halkası içindeki `h` hücreleri düz
+  çime çevriliyor. Kenar harmanı artık kamptan **sonra** kuruluyor ki
+  düzlenen zemini görsün.
+- **Ocak** `h` 0.5 → **0.38** ve koyu yanmış odun tonu. `PLACE_MODELS`'e
+  `tint` alanı eklendi; materyal kopyalandığı için aynı model tekrar
+  kurulduğunda ton birikmesi olmuyor.
+
+Son ölçüm: `draw 152 → 205`, serpinti düğümü 2 (çakıl + dal), yol düğümü 0.
+
 ---
 
 ## 8. Açık kalan / karar bekleyen
 
-- **Yol taşları beğenilmedi** (kullanıcı bildirdi, model değişecek). Ton
-  şu an sıcak griye sert çekilmiş durumda; yeni model gelince
-  `EnvModels.TINT` içindeki iki satır yeniden ayarlanmalı.
+- **Yol taşı ve ot tutamı modelleri oyunda kullanılmıyor** (yukarıdaki
+  karar). Yeni taş modeli gelince `PATH_STONES_ON = true` yeter; ot
+  tutamı için `_scatter_kind_for`'un son satırı geri açılır.
 - **Dekoratif kabak prosedürel:** kabak GLB'si yok, yassı küre + sap ile
   çizildi (paletle uyumlu sıcak turuncu). Model gelirse tek satırda
   değişir.
