@@ -1,0 +1,1 @@
+NIGHTTEST: gece=1 beklenen=2 dogan=2 ocak=true yaklasti=true safak_kalan=0
