@@ -3018,8 +3018,9 @@ func _run_env_showcase(save_path: String) -> void:
 	camera.rotation_degrees = Vector3(-13, 0, 0)
 	await get_tree().create_timer(1.0).timeout
 	_snap(save_path.replace(".png", "_vitrin_env.png"))
-	# Gece karesi (ayni aci)
+	# Gece karesi (ayni aci); dalga vitrin karesinde gereksiz
 	DayNight.jump_to_night()
+	_clear_creatures()
 	await get_tree().create_timer(1.0).timeout
 	_snap(save_path.replace(".png", "_vitrin_env_gece.png"))
 	DayNight.jump_to_day()
@@ -3081,8 +3082,11 @@ func _run_camp_test(save_path: String) -> void:
 	camera.look_at(fc + Vector3(0, 0.2, 0))
 	await get_tree().create_timer(0.6).timeout
 	_snap(save_path.replace(".png", "_kamp_tarla.png"))
-	# Gece: sonuk kampin gece hali (mesaleler yanmiyor — kasitli)
+	# Gece: sonuk kampin gece hali (mesaleler yanmiyor — kasitli).
+	# Dalga hemen temizlenir: bu kare ISIK karesi, yaratik testi degil —
+	# yaratiklarin her karede islemesi CI butcesini yiyordu.
 	DayNight.jump_to_night()
+	_clear_creatures()
 	camera.position = ctr + Vector3(0.0, 15.0, 17.0)
 	camera.look_at(ctr)
 	await get_tree().create_timer(0.8).timeout
