@@ -2309,11 +2309,10 @@ func _cell_props(cx: int, cy: int) -> Array:
 		else:
 			col = Color(0.47, 0.34, 0.22)   # toprak tumsegi
 		return [roll - float(d) * DigRules.DEPTH_STEP, col]
-	# YOL IZI (gorsel-tur): asinmis patika lekesi. GROUND char EKLENMEDI —
-	# yalniz RENK harmani; yurume/mekanik etkisi YOK (patika sistemi degil).
-	if _path_cells.has(Vector2i(cx, cy)):
-		var pc: Color = _ground_color(Vector2i(cx, cy), def)
-		return [roll, pc.lerp(EnvModels.PATH_TINT, 0.75)]
+	# YOL: zemin RENGI DEGISTIRILMIYOR. Once yolun altina koyu bir toprak
+	# halesi konuyordu; karolarin cevresinde kirli/bulanik bir leke
+	# yapiyordu ve "yol dagilmis" gorunumunu besliyordu. Kenar gecisini
+	# artik karonun ustune binen cim sagliyor (bkz. _build_road).
 	# TARIM: surulu tarla rengi (veri Farming'de; GROUND char EKLENMEDI —
 	# kayit/uretec varsayimlari bozulmasin). Islakken koyulasir.
 	var fplot: Variant = Farming.plots.get(Vector2i(cx, cy))
@@ -2785,6 +2784,7 @@ const ROAD_NB: Array[Vector2i] = [Vector2i(0, -1), Vector2i(1, 0),
 		Vector2i(0, 1), Vector2i(-1, 0)]   # K, D, G, B (yaw 0/90/180/270)
 
 var _road_nodes: Array = []        # karo + dekor MultiMesh'leri
+var _road_edge_used := 0           # ROADTEST: kac hucrede kenar karosu
 var _road_spill: Dictionary = {}   # cim hucresi -> true (serpinti cakismasin)
 
 ## Bir hucre yol mu?
@@ -2825,8 +2825,10 @@ func _build_road() -> void:
 	var has_edge: bool = RoadTiles.has_model("road_tile_edge")
 	# tur -> Array[Transform3D]
 	var tiles: Dictionary = {}
+	_road_edge_used = 0
 	var moss: Array = []
 	var tufts: Array = []
+	var joint_tufts: Array = []
 	var spill: Dictionary = {"path_stone": [], "path_stone_mossy": [],
 			"pebble_cluster": []}
 
@@ -2844,6 +2846,7 @@ func _build_road() -> void:
 			# KENAR KAROSU: kirik taraf disa donuk
 			id = "road_tile_edge"
 			yaw = float(open_dirs[0]) * 90.0
+			_road_edge_used += 1
 		else:
 			var vi := int(RoadTiles.hash01(cell.x, cell.y, 301) * 3.0) % 3
 			id = RoadTiles.VARIANTS[vi]
@@ -2853,22 +2856,27 @@ func _build_road() -> void:
 		var pos := _cell_center(cell)
 		tiles[id].append(Transform3D(_road_basis(yaw, 1.0), pos))
 
+		# --- 2a) DERZ ARALIGI: her yol hucresinde karo YUZEYINDE ---
+		if RoadTiles.hash01(cell.x, cell.y, 341) * 100.0 \
+				< float(RoadTiles.JOINT_TUFT_CHANCE) * mult:
+			joint_tufts.append(_road_face_xform(cell, 343))
+		var jm: float = float(RoadTiles.JOINT_MOSS_CHANCE) \
+				* RoadTiles.moss_density(age) * mult
+		if RoadTiles.hash01(cell.x, cell.y, 347) * 100.0 < jm:
+			moss.append(_road_face_xform(cell, 349))
+
 		if open_dirs.is_empty():
 			continue   # ic hucre: kenar dekoru yok
 
-		# --- 2) Kenar hucresi ustune yosun + ot ---
-		var mchance: float = float(RoadTiles.EDGE_MOSS_CHANCE) \
-				* RoadTiles.moss_density(age) * mult
-		if RoadTiles.hash01(cell.x, cell.y, 311) * 100.0 < mchance:
-			moss.append(_road_edge_xform(cell, open_dirs, 313, 0.30))
+		# --- 2b) KENAR: cim karonun USTUNE biner, kenar cizgisini kirar ---
 		if RoadTiles.hash01(cell.x, cell.y, 317) * 100.0 \
-				< float(RoadTiles.EDGE_TUFT_CHANCE) * mult:
+				< float(RoadTiles.EDGE_OVERLAP_CHANCE) * mult:
 			tufts.append(_road_edge_xform(cell, open_dirs, 319, 0.0))
 
 		# --- 3) Komsu CIM hucrelerine sacilma ---
 		var mossy_pct := RoadTiles.mossy_chance(age)
-		for dy in range(-2, 3):
-			for dx in range(-2, 3):
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
 				var d: int = maxi(absi(dx), absi(dy))
 				if d == 0:
 					continue
@@ -2914,6 +2922,12 @@ func _build_road() -> void:
 		if tn != null:
 			add_child(tn)
 			_road_nodes.append(tn)
+	if not joint_tufts.is_empty():
+		var jn := _env_scatter_node("grass_tuft", joint_tufts,
+				RoadTiles.JOINT_TUFT_SPAN)
+		if jn != null:
+			add_child(jn)
+			_road_nodes.append(jn)
 	for sid: String in spill:
 		var list: Array = spill[sid]
 		if list.is_empty():
@@ -2938,14 +2952,29 @@ func _road_edge_xform(cell: Vector2i, open_dirs: Array[int], salt: int,
 	var d: Vector2i = ROAD_NB[open_dirs[int(RoadTiles.hash01(cell.x, cell.y, salt)
 			* float(open_dirs.size())) % open_dirs.size()]]
 	var jitter: float = (RoadTiles.hash01(cell.x, cell.y, salt + 1) - 0.5) * 0.5
-	var off := Vector3(float(d.x) * 0.38 + (0.0 if d.x != 0 else jitter), 0.0,
-			float(d.y) * 0.38 + (0.0 if d.y != 0 else jitter))
+	# 0.38 disariya dogruydu (ot cimde bitiyordu). 0.30: tutam karonun
+	# KENARINDA, govdesi karonun USTUNDE kaliyor — istenen "cim karoya
+	# biniyor" etkisi bu.
+	var off := Vector3(float(d.x) * 0.30 + (0.0 if d.x != 0 else jitter), 0.0,
+			float(d.y) * 0.30 + (0.0 if d.y != 0 else jitter))
 	var sc: float = 0.75 + RoadTiles.hash01(cell.x, cell.y, salt + 2) * 0.5
 	var b := Basis().rotated(Vector3.UP,
 			RoadTiles.hash01(cell.x, cell.y, salt + 3) * TAU)
 	b = b.scaled(Vector3(sc, sc, sc))
 	# Karo ustune otursun: SINK kadar asagi degil, karo yuzeyinde
 	return Transform3D(b, _cell_center(cell) + off + Vector3(0, 0.01, 0))
+
+## Derz dekoru: karonun YUZEYINDE serbest konum (kenara bagli degil).
+func _road_face_xform(cell: Vector2i, salt: int) -> Transform3D:
+	var ox: float = (RoadTiles.hash01(cell.x, cell.y, salt) - 0.5) * 0.7
+	var oz: float = (RoadTiles.hash01(cell.x, cell.y, salt + 1) - 0.5) * 0.7
+	var sc: float = 0.7 + RoadTiles.hash01(cell.x, cell.y, salt + 2) * 0.6
+	var b := Basis().rotated(Vector3.UP,
+			RoadTiles.hash01(cell.x, cell.y, salt + 3) * TAU)
+	b = b.scaled(Vector3(sc, sc, sc))
+	# Karo ust yuzunun uzerinde
+	return Transform3D(b, _cell_center(cell)
+			+ Vector3(ox, RoadTiles.TOP_ABOVE, oz))
 
 ## Karo MultiMesh'i: KOK olcegi hucreye normalize, ust yuzu cim
 ## seviyesinin SINK kadar ALTINA oturur (gomuk yol).
@@ -2973,7 +3002,9 @@ func _road_tile_node(id: String, list: Array) -> Node3D:
 		mm.set_instance_transform(i, Transform3D(b, t.origin + Vector3(0, y, 0)))
 	var mi := MultiMeshInstance3D.new()
 	mi.multimesh = mm
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	# Derz golgeleri hacmi okutan sey: yol karolarinda golge ACIK.
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON \
+			if RoadTiles.TILE_SHADOWS else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	return mi
 
 func _road_mesh(id: String) -> Mesh:
@@ -3154,10 +3185,9 @@ func _camp_plan() -> void:
 	# uzaklasir. Auto-tiling ve kenar erimesi ancak GENIS ve EGRI bir
 	# yolda okunur — dar duz seritte her hucrenin iki yani birden acik
 	# oldugu icin kenar karosu hic devreye girmez (bkz. RAPOR).
-	# Genislik 3: 2 genislikte HER hucrenin en az iki yani acik oluyordu,
-	# yani IC karo (dort komsusu da yol) hic olusmuyordu ve auto-tiling'in
-	# yarisi sinanmiyordu.
-	_add_road_curve(hearth + Vector2i(-1, 6), 16, 3, "miras")
+	# Genislik EN FAZLA 2 (kullanici karari: 3 hucre kalin yama gibi
+	# duruyordu). Yol bir HAT; kalinlik degil kavis okunmali.
+	_add_road_curve(hearth + Vector2i(0, 6), 18, 2, "miras")
 	# OYUNCUNUN DOSEDIGI kisa yeni yol: ayni sistem, yosun neredeyse yok.
 	# Eski/yeni farki tek bir arayuz olmadan gorselden okunur.
 	_add_path_strip(hearth + Vector2i(2, 2), Vector2i(1, 0), 5, "yeni", 2)
@@ -3415,6 +3445,8 @@ func _run_road_test(save_path: String) -> void:
 			continue
 		karo += mm.instance_count
 	dekor = _road_spill.size()
+	# Kenar karosu GERCEKTEN kullanildi mi (yoksa varyanta mi dusuldu)
+	var kenar_karo := _road_edge_used
 	var edge_var: bool = RoadTiles.has_model("road_tile_edge")
 	var moss_var: bool = RoadTiles.has_model("moss_patch")
 	# Kavisli yolun yakin karesi (kenar gecisi gorunsun)
@@ -3431,9 +3463,10 @@ func _run_road_test(save_path: String) -> void:
 	await get_tree().create_timer(0.7).timeout
 	_snap(save_path.replace(".png", "_yol_genis.png"))
 	var line := ("ROADTEST: hucre=%d (miras=%d yeni=%d) kenar=%d tek_acik=%d "
-			+ "karo_ornek=%d sacilma=%d edge_glb=%s moss_glb=%s") % [
-		_path_cells.size(), miras, yeni, kenar, tek_acik, karo, dekor,
-		str(edge_var), str(moss_var)]
+			+ "karo_ornek=%d kenar_karo=%d sacilma=%d edge_glb=%s "
+			+ "moss_glb=%s") % [
+		_path_cells.size(), miras, yeni, kenar, tek_acik, karo, kenar_karo,
+		dekor, str(edge_var), str(moss_var)]
 	print(line)
 	var f := FileAccess.open("res://docs/screens/roadtest.txt", FileAccess.WRITE)
 	if f != null:

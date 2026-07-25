@@ -27,26 +27,37 @@ const TILE_SPAN := 1.0
 
 ## GOMUK YOL. DIKKAT — ilk denemede karonun UST YUZU zeminin 2.5 cm
 ## ALTINA konuldu ve karolar TAMAMEN gorunmez oldu: arazi kesintisiz bir
-## yuzey, altina giren hicbir sey cizilmiyor; "cim kenarinin ustune
-## tasmasi" ayri bir geometri degil.
-## Dogrusu: karo govdesi zemine GOMULUR, yalnizca ust yuzu bu kadar
-## DISARIDA kalir. Ince bir dilim gorundugu icin karo yere basmis
-## hissi verir, kaldirim tasi gibi yukselmez.
-const TOP_ABOVE := 0.02
+## yuzey, altina giren hicbir sey cizilmiyor.
+## Sonra 2 cm'ye cikarildi ama bu sefer karolar zemine EZILMIS gorundu:
+## levha kabartisi ve derz golgeleri kayboldu, yol duz gri lekeye dondu.
+## Simdi karo govdesi gomulu, UST YUZU 3.5 cm disarida — kabarti ve
+## derzler golge aliyor, ama kaldirim tasi gibi de yukselmiyor.
+const TOP_ABOVE := 0.035
+## Karo GOLGE ALIP VERSIN: derz golgeleri hacmi okutan sey. MultiMesh'te
+## golge varsayilan olarak kapaliydi (mobil butcesi); yol icin aciyoruz —
+## yol hucre sayisi sinirli, maliyeti serpintininki gibi degil.
+const TILE_SHADOWS := true
 
 # --- KENAR ERIMESI ------------------------------------------------------
-## Karo ustune cikan bitki (yol kenari hucrelerinde).
-const EDGE_MOSS_CHANCE := 50    # % moss_patch
-const EDGE_TUFT_CHANCE := 40    # % grass_tuft
-## Yol kenarindaki ot, acik cimdeki serpintiden KUCUK olmali: taslarin
-## arasindan cikan filiz, cim obegi degil (ilk karede kocaman ve neon
-## yesil ciktı).
-const EDGE_TUFT_SPAN := 0.18
+# YONTEM DEGISTI. Once kenari koyu bir TOPRAK HALESIYLE yumusatmayi
+# denedik (zemin renk lekesi); yol kirli ve bulanik gorundu, hale
+# kaldirildi. Dogru yontem: cim karonun USTUNE BINSIN — silueti kiran
+# sey golge degil, karonun kenarini ortan gercek bitki.
 
-## Komsu CIM hucrelerine sacilma: izgaranin duz sinirini kirar. Kosegen
-## yollarda merdiven gorunumunu yok eden asil sey bu sacilmadir.
-const SPILL_D1_CHANCE := 35     # 1 hucre uzak
-const SPILL_D2_CHANCE := 12     # 2 hucre uzak
+## Kenar hucresinde cim karonun UZERINE biner (kenar cizgisini kirar).
+const EDGE_OVERLAP_CHANCE := 60   # % grass_tuft, karo kenarinda
+## Derz araligindan cikan bitki — HER yol hucresinde, karo yuzeyinde.
+const JOINT_TUFT_CHANCE := 30     # % grass_tuft
+const JOINT_MOSS_CHANCE := 25     # % moss_patch (miras yolda daha yogun)
+## Yol otu, acik cimdeki serpintiden KUCUK: taslarin arasindan cikan
+## filiz, cim obegi degil (ilk karede kocaman ve neon yesil ciktı).
+const EDGE_TUFT_SPAN := 0.18
+const JOINT_TUFT_SPAN := 0.13
+
+## Komsu CIM hucrelerine sacilma. AZALTILDI: onceki degerler "yol
+## dagilmis" gorunumu veriyordu; istenen "yol eskimis". Yalniz 1 hucre.
+const SPILL_D1_CHANCE := 20     # 1 hucre uzak
+const SPILL_D2_CHANCE := 0      # 2 hucre: kapali
 const SPILL_SCALE_MIN := 0.8
 const SPILL_SCALE_MAX := 1.2
 
@@ -63,7 +74,9 @@ const MOSS_DENSITY_MIRAS := 1.0
 const MOSS_DENSITY_YENI := 0.15
 
 ## Karo tonu: Meshy dokusu acik geliyor (ayni tuzak), sicak griye cekilir.
-const TILE_TINT := Color(0.60, 0.57, 0.52)
+## 0.60 gri-yesil zeminle ayni tona dusuyordu; bej-griye cekildi:
+## cimden ayrisir ama parlamaz.
+const TILE_TINT := Color(0.78, 0.72, 0.62)
 const TILE_TINT_MOSSY := Color(0.64, 0.70, 0.56)
 ## moss_patch GLB'si repoda YOK. Proseduerel yassi disk denendi ve
 ## KARELERDE NILUFER YAPRAGI gibi durdu (duz yesil cokgen, zemine
