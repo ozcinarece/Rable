@@ -17,6 +17,7 @@ const MapBalance = preload("res://scripts/map_balance.gd")
 const TimeBalance = preload("res://scripts/time_balance.gd")  # gunduz/gece
 const Player3DScript = preload("res://scripts/player3d.gd")
 const DigRules = preload("res://scripts/dig_rules.gd")
+const DigVisual = preload("res://scripts/dig_visual.gd")
 const WaterRules = preload("res://scripts/water_rules.gd")
 const WaterSim = preload("res://scripts/water_sim.gd")
 const ToolProfiles = preload("res://scripts/tool_profiles.gd")
@@ -649,6 +650,7 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.rotation_degrees = Vector3(-78, 0, 0)
 	await get_tree().create_timer(0.6).timeout
 	_snap(save_path.replace(".png", "_kazi2.png"))
+	await _run_dig_perf_test()
 	# SU MODELI karesi (11.2): merdiven cukuruna 6 birim su - bilesik
 	# kaplar geregi derin hucreler dolar, sig basamak kuru kalir
 	_recompute_water()
@@ -2316,6 +2318,9 @@ func _build_chunk(ck: Vector2i) -> void:
 	if _terrain_chunks.has(ck):
 		_terrain_chunks[ck].queue_free()
 		_terrain_chunks.erase(ck)
+	if _dig_scatter.has(ck):
+		_dig_scatter[ck].queue_free()
+		_dig_scatter.erase(ck)
 	var x0 := ck.x * CHUNK_CELLS
 	var y0 := ck.y * CHUNK_CELLS
 	var x1 := mini(x0 + CHUNK_CELLS, _map_w)
@@ -2356,12 +2361,23 @@ func _build_chunk(ck: Vector2i) -> void:
 			# cukur duvari katman rengini korur, cevre cimde leke halkasi
 			# olusmaz (okunabilirlik)
 			var dug := false
+			var rim := false  # kazi KOMSUSU ama kendisi kazilmamis (agiz)
 			for ndy in range(-1, 2):
 				for ndx in range(-1, 2):
 					if _depth.get(Vector2i(floori(x) + ndx, floori(z) + ndy), 0) != 0:
 						dug = true
+			if dug and _depth.get(Vector2i(floori(x), floori(z)), 0) == 0:
+				rim = true
 			if dug:
-				pass
+				# KATMANLI DUVAR: renk, noktanin YUZEYIN kac metre altinda
+				# oldugundan gelir -> cukur duvarinda yatay serit olusur
+				# (ust: cim-kok, orta: toprak, derin: tas grisi).
+				c = DigVisual.wall_color(maxf(0.0, -height))
+				# AGIZ PAHI: kenar tepesi biraz asagi cekilir, keskin kose
+				# yumusar. YALNIZ GORSEL — ground_height() degismez, yani
+				# oyuncu/yaratik yuksekligi ve kazi mantigi aynen kalir.
+				if rim:
+					height -= DigVisual.RIM_CHAMFER
 			elif steep > 0.40:
 				# Falez: net yatay katmanlar
 				var layer := int(floorf((height + 8.0) * 5.0))
@@ -2393,6 +2409,129 @@ func _build_chunk(ck: Vector2i) -> void:
 	inst.material_override = _terrain_mat()
 	add_child(inst)
 	_terrain_chunks[ck] = inst
+	_build_dig_scatter(ck, x0, y0, x1, y1)
+
+## KAZITEST (CI): kazi iceren bir chunk'i defalarca yeniden kurup ORTALAMA
+## suresini olcer; icinden serpintiye giden payi ayirir. Boylece "serpinti
+## chunk maliyetini artirdi mi" sorusu SAYIYLA yanitlanir (ONCE = toplam
+## eksi serpinti). Ayrica FPS ornegi alinir.
+func _run_dig_perf_test() -> void:
+	var kc := _player_cell() + Vector2i(-4, 0)
+	var ck := Vector2i(floori(kc.x / float(CHUNK_CELLS)),
+			floori(kc.y / float(CHUNK_CELLS)))
+	var runs := 12
+	_scatter_usec = 0.0
+	var t0 := Time.get_ticks_usec()
+	for r in runs:
+		_build_chunk(ck)
+	var total := float(Time.get_ticks_usec() - t0) / float(runs)
+	var scat := _scatter_usec / float(runs)
+	# FPS ornegi (birkac kare bekleyip oku)
+	var fps_sum := 0.0
+	for f in 20:
+		await get_tree().process_frame
+		fps_sum += Performance.get_monitor(Performance.TIME_FPS)
+	var line := ("KAZITEST: chunk_kurulum=%.0fus serpinti=%.0fus (%%%.1f) " +
+			"serpintisiz=%.0fus fps=%.1f") % [total, scat,
+			(scat / maxf(1.0, total)) * 100.0, total - scat, fps_sum / 20.0]
+	print(line)
+	var f2 := FileAccess.open("res://docs/screens/kazitest.txt", FileAccess.WRITE)
+	if f2 != null:
+		f2.store_string(line + "\n")
+		f2.close()
+
+# --- KAZI SERPINTISI (toprak obegi / tas kiymigi) ------------------------
+# Kazilmis hucrelerin tabanina kucuk parcalar serpilir. PARCA BASINA TEK
+# MultiMesh + TEK cizim cagrisi -> chunk maliyeti pratikte artmaz (yeni
+# dugum sayisi sabit: kazi iceren chunk basina 1).
+# Konum/adet deterministik hash'ten gelir: chunk yeniden kurulunca
+# parcalar YER DEGISTIRMEZ (titreme olmaz).
+var _dig_scatter: Dictionary = {}  # chunk -> MultiMeshInstance3D
+
+## Olcum: serpintinin chunk kurulumuna ekledigi sure (RAPOR icin).
+var _scatter_usec: float = 0.0
+
+func _build_dig_scatter(ck: Vector2i, x0: int, y0: int, x1: int, y1: int) -> void:
+	var _t0 := Time.get_ticks_usec()
+	var xf: Array[Transform3D] = []
+	var shallow := 0
+	for cy in range(y0, y1):
+		for cx in range(x0, x1):
+			var d: int = _depth.get(Vector2i(cx, cy), 0)
+			if d <= 0:
+				continue  # yalniz KAZILMIS hucre (yigin degil)
+			var n: int = int(DigVisual.hash01(cx, cy, 7)
+					* float(DigVisual.SCATTER_MAX_PER_CELL + 1))
+			for k in n:
+				var rx: float = DigVisual.hash01(cx, cy, 11 + k)
+				var rz: float = DigVisual.hash01(cx, cy, 23 + k)
+				var ry: float = DigVisual.hash01(cx, cy, 31 + k)
+				var px := float(cx) + 0.2 + rx * 0.6
+				var pz := float(cy) + 0.2 + rz * 0.6
+				var s: float = DigVisual.SCATTER_SIZE * (1.0
+						+ (ry - 0.5) * 2.0 * DigVisual.SCATTER_SIZE_JITTER)
+				var t := Transform3D(Basis().rotated(Vector3.UP, ry * TAU)
+						.scaled(Vector3(s, s, s)),
+						Vector3(px, ground_height(px, pz) + s * 0.4, pz))
+				xf.append(t)
+				if d < DigVisual.SCATTER_DEEP_FROM:
+					shallow += 1
+	if xf.is_empty():
+		_scatter_usec += float(Time.get_ticks_usec() - _t0)
+		return
+	# Tip: chunk'ta cogunluk sig ise toprak obegi, derinse tas kiymigi.
+	var deep: bool = shallow * 2 < xf.size()
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = _dig_scatter_mesh(deep)
+	mm.instance_count = xf.size()
+	for i in xf.size():
+		mm.set_instance_transform(i, xf[i])
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # ucuz
+	add_child(mi)
+	_dig_scatter[ck] = mi
+	_scatter_usec += float(Time.get_ticks_usec() - _t0)
+
+## Serpinti mesh'i: kullanicinin GLB'si varsa o, yoksa proseduerel.
+var _scatter_mesh_cache: Dictionary = {}
+
+func _dig_scatter_mesh(deep: bool) -> Mesh:
+	if _scatter_mesh_cache.has(deep):
+		return _scatter_mesh_cache[deep]
+	var glb: String = DigVisual.SCATTER_DEEP_GLB if deep \
+			else DigVisual.SCATTER_SHALLOW_GLB
+	var mesh: Mesh = null
+	if ResourceLoader.exists(glb):
+		var scene: Node = load(glb).instantiate()
+		for mi2: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
+			if mi2.mesh != null:
+				mesh = mi2.mesh
+				break
+		scene.queue_free()
+	if mesh == null:
+		# FALLBACK: sig -> kucuk kure (toprak obegi), derin -> kose prizma.
+		# NOT: materyal PrimitiveMesh.material ile verilir; Mesh tabaninda
+		# surface_set_material YOK (statik tip hatasi verirdi).
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = DigVisual.SHARD_COLOR if deep else DigVisual.CLUMP_COLOR
+		mat.roughness = 0.95
+		if deep:
+			var pm := PrismMesh.new()
+			pm.size = Vector3(1.0, 1.2, 0.7)
+			pm.material = mat
+			mesh = pm
+		else:
+			var sm := SphereMesh.new()
+			sm.radius = 0.5
+			sm.height = 0.8
+			sm.radial_segments = 6
+			sm.rings = 3
+			sm.material = mat
+			mesh = sm
+	_scatter_mesh_cache[deep] = mesh
+	return mesh
 
 ## Bir hucre degisince yalnizca etkilenen parcalari yeniden kurar
 ## (harman + diklik ornekleme yaricapi nedeniyle 2 hucre pay birakilir)
@@ -2615,8 +2754,15 @@ func _build_decor(grass_cells: Array) -> void:
 		if int(_depth.get(cell, 0)) != 0:
 			continue  # kazilmis/yigilmis hucrede sus otu olmaz
 		var h := absi(cell.x * 92821 + cell.y * 68917) % 100
-		if h >= 20:
-			continue  # ~her 5 hucreden biri suslenir
+		# KAZI AGIZI: cukur kenarindaki cim hucrelerinde puskul sansi artar
+		# (ag(z)in cevresine seyrek kok ucu/ot -> kesik kenar yumusar).
+		var limit := 20  # ~her 5 hucreden biri suslenir
+		for ndy in range(-1, 2):
+			for ndx in range(-1, 2):
+				if int(_depth.get(cell + Vector2i(ndx, ndy), 0)) > 0:
+					limit = int(DigVisual.RIM_TUFT_CHANCE * 100.0)
+		if h >= limit:
+			continue
 		var idx := h % pool.size()
 		if not groups.has(idx):
 			groups[idx] = []
