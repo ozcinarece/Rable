@@ -651,6 +651,18 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.rotation_degrees = Vector3(-78, 0, 0)
 	await get_tree().create_timer(0.6).timeout
 	_snap(save_path.replace(".png", "_kazi2.png"))
+	# ONCE/SONRA karesi: hendege ALCAK acidan yakin bakis. Tepeden bakista
+	# duvar katmanlari, agiz pahi ve serpinti gorunmuyordu.
+	var dz := []
+	for k in 4:
+		dz.append(int(_depth.get(kc + Vector2i(0, -k), 0)))
+	print("KAZIFRAME: hendek=%s derinlikler=%s" % [str(kc), str(dz)])
+	camera.position = Vector3(float(kc.x) + 0.5, 1.9, float(kc.y) + 2.6)
+	camera.look_at(Vector3(float(kc.x) + 0.5, -0.8, float(kc.y) - 1.5))
+	hud.visible = false
+	await get_tree().create_timer(0.6).timeout
+	_snap(save_path.replace(".png", "_kazi_yakin.png"))
+	hud.visible = true
 	await _run_dig_perf_test()
 	# SU MODELI karesi (11.2): merdiven cukuruna 6 birim su - bilesik
 	# kaplar geregi derin hucreler dolar, sig basamak kuru kalir
