@@ -554,9 +554,9 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(Vector3(float(fbase.x) + 1.5, 0.15, float(fbase.y) + 0.5))
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_tarim.png"))
-	await _run_perf_probe(save_path)
 	await _run_camp_test(save_path)
 	await _run_env_showcase(save_path)
+	await _run_perf_probe(save_path)
 	await _run_night_test(save_path)
 	hud.visible = true
 	# GRIP PANELI karesi: yeni "ekran yonu" satiri eklendi; panelin ekrandan
@@ -2984,10 +2984,14 @@ func _run_perf_probe(save_path: String) -> void:
 	camera.position = ctr + Vector3(0.0, 9.0, 11.0)
 	camera.look_at(ctr)
 	await get_tree().create_timer(0.5).timeout
+	# ORNEK SAYISI KUCUK OLMALI: CI sanal ekranda ~1 FPS ile koser, yani
+	# her ornek ~1 SANIYE. 45+45 ornek tek basina ~90 sn yiyip vitrin
+	# karelerini butce disina itmisti. Cizim cagrisi kare kare sabit
+	# oldugu icin 8 ornek yeterli.
 	_perf_set_visual(false)
-	var before: Dictionary = await _perf_sample(45)
+	var before: Dictionary = await _perf_sample(8)
 	_perf_set_visual(true)
-	var after: Dictionary = await _perf_sample(45)
+	var after: Dictionary = await _perf_sample(8)
 	var line := ("PERFTEST: kamp kamerasi | ONCE fps=%.1f draw=%.0f | "
 			+ "SONRA fps=%.1f draw=%.0f | serpinti_dugum=%d yol_dugum=%d "
 			+ "kamp_dugum=%d") % [

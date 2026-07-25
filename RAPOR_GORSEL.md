@@ -142,6 +142,12 @@ da). Gerçek FPS ancak cihazda anlamlı — Ayarlar'daki FPS overlay'i
 telefonda kamp içinde/dışında karşılaştırılmalı. Çizim çağrısı ise
 donanımdan bağımsız, o yüzden ölçüt olarak o kullanıldı.
 
+Aynı sebep bir tuzak da doğurdu: sonda ilk halinde 45+45 kare örnekliyordu;
+CI'da her kare ~1 saniye sürdüğü için tek başına ~90 sn yiyip vitrin
+karelerini bütçe dışına itti. Çizim çağrısı kare kare sabit olduğundan
+örnek sayısı 8'e indirildi ve sonda vitrinden **sonraya** alındı — bütçe
+kesilirse önce ölçüm düşsün, kareler değil.
+
 ---
 
 ## 7. Açık kalan / karar bekleyen
