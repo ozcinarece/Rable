@@ -85,10 +85,12 @@ const PLACE_MODELS := {
 			"behavior": "station", "max_hp": 120},
 	"sandik": {"model": "res://assets/models/test/storege_box.glb",
 			"h": 0.55, "solid": true, "behavior": "station", "max_hp": 60},
-	# h 0.9 karaktere gore devasa bir odun yiginiydi -> 0.5 (ates cukuru
-	# insanin dizine gelir, gogsune degil).
+	# h 0.9 karaktere gore devasa bir odun yiginiydi -> 0.38 (ates cukuru
+	# insanin dizine gelir, gogsune degil). "tint": Meshy dokusu fazla
+	# aciktı, sonuk bir ocak icin koyu yanmis odun tonuna cekilir.
 	"ocak": {"model": "res://assets/models/tools/campfire-pit.glb",
-			"h": 0.5, "solid": true, "behavior": "hearth", "max_hp": 400},
+			"h": 0.38, "solid": true, "behavior": "hearth", "max_hp": 400,
+			"tint": Color(0.52, 0.42, 0.34)},
 	"platform": {"model": "platform", "h": 1.5, "solid": false,
 			"behavior": "platform", "max_hp": 100, "rotatable": true},
 	"kamp_evi": {"model": "res://assets/models/tools/tent.glb",
@@ -2115,8 +2117,10 @@ func _build_world() -> void:
 	# "kamptaki agaclar silinmis" diye delta yazar ve her yuklemede
 	# agaclar kulubenin icinde geri belirirdi.
 	_path_cells.clear()
-	_build_edge_blend()  # zemin gecis bandi (arazi kurulmadan once hazir)
 	_camp_plan()
+	# Kenar harmani kamptan SONRA: kamp plato hucrelerini duz cime
+	# cevirdigi icin harman guncel zemin karakterlerini gormeli.
+	_build_edge_blend()
 
 	# kayit-sistemi: taban nesne anlik goruntusu (seed'den uretilen ilk durum).
 	# Kayitta yalniz bundan FARKLI hucreler yazilir (dosya kucuk kalir).
@@ -2717,6 +2721,9 @@ func _build_decor(grass_cells: Array) -> void:
 # %30 tas eksik (asinmislik), %40 yosunlu varyant. TEK MultiMesh / varyant.
 var _path_cells: Dictionary = {}   # cell -> true (renk lekesi)
 var _path_nodes: Array = []        # tas MultiMesh dugumleri
+## Yol taslari KAPALI (kullanici: "gonderdigim taslari kaldiralim").
+## Yeni model gelince tek satirla geri acilir.
+const PATH_STONES_ON := false
 
 ## Bir noktadan verilen yonde `len` hucrelik yol seridi tanimlar.
 func _add_path_strip(from: Vector2i, dir: Vector2i, len_cells: int) -> void:
@@ -2726,12 +2733,18 @@ func _add_path_strip(from: Vector2i, dir: Vector2i, len_cells: int) -> void:
 			break
 		_path_cells[c] = true
 
-## Yol taslarini kurar (renk lekesini _cell_props zaten veriyor).
+## YOL TASLARI KALDIRILDI (kullanici karari: tas modeli begenilmedi).
+## Yolun kendisi duruyor — o zaten TASLA DEGIL, zemin renk lekesiyle
+## ciziliyor (_cell_props). Fonksiyon govdesi bosaltildi, cagri yerleri
+## ve _path_nodes listesi (perf sondasi okuyor) yerinde birakildi ki
+## yeni tas modeli gelince tek yerden geri acilabilsin.
 func _build_path_stones() -> void:
 	for n in _path_nodes:
 		if is_instance_valid(n):
 			n.queue_free()
 	_path_nodes.clear()
+	if not PATH_STONES_ON:
+		return
 	var groups := {"path_stone": [], "path_stone_mossy": []}
 	for cell: Vector2i in _path_cells:
 		# %30 TAS EKSIK: asinmis yol hissi
@@ -2849,6 +2862,16 @@ func _camp_plan() -> void:
 					continue
 			_objects.erase(c)
 			_solid_cells.erase(c)
+	# 1b) YUKSELTIYI DUZLE: kampin dibindeki yuksek plato ("h") kare
+	#     kenarli falez duvarlariyla kampa bitisiyordu (kullanici karari:
+	#     "suradaki yukseltiye gerek yok"). Kamp halkasi icindeki plato
+	#     hucreleri duz cime cevrilir; boylece kamp cevresi tek duzlemde
+	#     kalir ve arazi renk harmani da duz zemin uzerinden hesaplanir.
+	for cell: Vector2i in _camp_cells:
+		if String(_ground_char.get(cell, ".")) != "h":
+			continue
+		_ground_char[cell] = "."
+		_solid_cells.erase(cell)
 	# 2) Yollar: ocaktan dort yone asinmis serit.
 	var hearth := _camp_at("ocak")
 	for r: Dictionary in CAMP_ROADS:
@@ -3249,7 +3272,7 @@ var _env_scatter_nodes: Array = []  # gorsel-tur serpintisi (perf olcumu)
 func _build_env_scatter(grass_cells: Array) -> void:
 	_env_scatter_nodes.clear()
 	var mult: float = float(EnvModels.SCATTER_TIER_MULT.get(_quality_tier, 1.0))
-	var groups: Dictionary = {"grass_tuft": [], "pebble_cluster": [], "twig_debris": []}
+	var groups: Dictionary = {"pebble_cluster": [], "twig_debris": []}
 	for cell: Vector2i in grass_cells:
 		if _objects.has(cell) or cell == _spawn_cell:
 			continue
@@ -3307,7 +3330,10 @@ func _scatter_kind_for(cell: Vector2i) -> String:
 				return "pebble_cluster"   # kaya kenari: cakil
 			if is_swimmable(n):
 				return "pebble_cluster"   # su kenari: cakil
-	return "grass_tuft"                   # acik cim: ot tutami
+	# ACIK CIMDE SERPINTI YOK: parlak yesil ot tutami cim uzerinde
+	# "yapistirilmis" duruyordu (kullanici karari, kaldirildi). Cakil ve
+	# dal baglama kurallariyla duruyor; ot tutami modeli vitrinde.
+	return ""
 
 func _scatter_chance(id: String) -> int:
 	match id:
@@ -4438,6 +4464,12 @@ func _build_structure_visual(item_id: String) -> Node3D:
 	bundle.add_child(load(def["model"]).instantiate())
 	if def.has("extra"):
 		bundle.add_child(load(def["extra"]).instantiate())
+	# Yapiya ton verildiyse uygula (ornek: sonuk ocak koyu yanmis odun).
+	# _tame_meshy_materials materyali KOPYALAR -> paylasilan kaynakta ton
+	# birikmesi olmaz, ayni model bir daha kurulunca daha koyu cikmaz.
+	if def.has("tint"):
+		var tint: Color = def["tint"]
+		_tame_meshy_materials(bundle, tint)
 	var aabb := _scene_aabb(bundle)
 	var by_long: bool = def.has("long")
 	var basis_size: float = aabb.get_longest_axis_size() if by_long else aabb.size.y
