@@ -1,1 +1,1 @@
-KAZITEST: chunk_kurulum=662490us serpinti=51us (%0.0) serpintisiz=662440us fps=1.0
+KAZITEST: chunk_kurulum=674842us serpinti=48us (%0.0) serpintisiz=674793us fps=1.0
