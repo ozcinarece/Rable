@@ -949,8 +949,11 @@ func _build_settings_menu() -> void:
 	perf_check.text = "FPS göstergesi"
 	perf_check.toggled.connect(func(on: bool): perf_overlay_toggled.emit(on))
 	vb.add_child(perf_check)
-	# GRIP AYAR MODU: yalnizca debug build'de gorunur (yayin surumunde yok).
-	if OS.is_debug_build():
+	# GRIP AYAR MODU: debug build'de VEYA test modu acikken gorunur.
+	# (Once yalniz is_debug_build() idi; web surumu --export-release ile
+	# derlendiginden tarayicida hic cikmiyordu. TestMode.ENABLED=false
+	# yapilinca yayin surumunden yine kaybolur.)
+	if OS.is_debug_build() or TestMode.ENABLED:
 		var grip_check := CheckButton.new()
 		grip_check.text = "Grip Ayarı (aleti elde hizala)"
 		grip_check.toggled.connect(_on_grip_tuner_toggled)
