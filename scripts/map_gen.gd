@@ -41,6 +41,11 @@ static func generate(seed_val: int) -> Array[String]:
 	forest.seed = seed_val + 23
 	forest.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
 	forest.frequency = B.FOREST_SCALE
+	# Kenar sacagi: leke sinirlarini merdivenden organige cevirir
+	var detail := FastNoiseLite.new()
+	detail.seed = seed_val + 59
+	detail.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	detail.frequency = B.EDGE_DETAIL_SCALE
 	var laken := FastNoiseLite.new()
 	laken.seed = seed_val + 37
 	laken.noise_type = FastNoiseLite.TYPE_SIMPLEX
@@ -66,9 +71,11 @@ static func generate(seed_val: int) -> Array[String]:
 			var k := y * n + x
 			if grid[k] != C_GRASS:
 				continue
-			if _n01(hill.get_noise_2d(x, y)) > B.HILL_THRESHOLD:
+			# Esige ince gurultu: sinir kare kare degil, sacakli cikar
+			var jit := detail.get_noise_2d(x, y) * B.EDGE_JITTER
+			if _n01(hill.get_noise_2d(x, y)) > B.HILL_THRESHOLD + jit:
 				grid[k] = C_HILL
-			elif _n01(terrain.get_noise_2d(x, y)) > B.DIRT_THRESHOLD:
+			elif _n01(terrain.get_noise_2d(x, y)) > B.DIRT_THRESHOLD + jit:
 				grid[k] = C_DIRT
 
 	# 4) KAYA öbekleri (rastgele yürüyüş; çim/toprak üstüne)

@@ -17,6 +17,8 @@ const MapBalance = preload("res://scripts/map_balance.gd")
 const TimeBalance = preload("res://scripts/time_balance.gd")  # gunduz/gece
 const Player3DScript = preload("res://scripts/player3d.gd")
 const DigRules = preload("res://scripts/dig_rules.gd")
+const EnvModels = preload("res://scripts/env_models.gd")
+const DigWaterVisual = preload("res://scripts/dig_water_visual.gd")
 const WaterRules = preload("res://scripts/water_rules.gd")
 const WaterSim = preload("res://scripts/water_sim.gd")
 const ToolProfiles = preload("res://scripts/tool_profiles.gd")
@@ -29,6 +31,7 @@ const CreatureBalance = preload("res://scripts/creature_balance.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const ChestStore = preload("res://scripts/inventory.gd")  # 14.1 sandik deposu
+const TestMode = preload("res://scripts/test_mode.gd")
 
 ## Zemin turleri: renk + ust yuzey yuksekligi. "speckled": true olan
 ## turler icin benekli doku CALISMA ANINDA kodla uretilir (dosya
@@ -83,8 +86,12 @@ const PLACE_MODELS := {
 			"behavior": "station", "max_hp": 120},
 	"sandik": {"model": "res://assets/models/test/storege_box.glb",
 			"h": 0.55, "solid": true, "behavior": "station", "max_hp": 60},
+	# h 0.9 karaktere gore devasa bir odun yiginiydi -> 0.38 (ates cukuru
+	# insanin dizine gelir, gogsune degil). "tint": Meshy dokusu fazla
+	# aciktı, sonuk bir ocak icin koyu yanmis odun tonuna cekilir.
 	"ocak": {"model": "res://assets/models/tools/campfire-pit.glb",
-			"h": 0.9, "solid": true, "behavior": "hearth", "max_hp": 400},
+			"h": 0.38, "solid": true, "behavior": "hearth", "max_hp": 400,
+			"tint": Color(0.52, 0.42, 0.34)},
 	"platform": {"model": "platform", "h": 1.5, "solid": false,
 			"behavior": "platform", "max_hp": 100, "rotatable": true},
 	"kamp_evi": {"model": "res://assets/models/tools/tent.glb",
@@ -460,6 +467,15 @@ func _setup_screenshot(save_path: String) -> void:
 		str(_spawn_cell), _ground_char.get(_spawn_cell, "?")])
 	print("CAMTEST: zoom_var=%.3f min=%.2f max=%.2f" % [
 		cam_distance, CAM_ZOOM_MIN, CAM_ZOOM_MAX])
+	# --- TEST KATMANI ---------------------------------------------------
+	# "hizli": yalniz MANTIK testleri; ekran goruntusu, vitrin, bekleme
+	# YOK. Gercek --headless'te (xvfb'siz, OpenGL'siz) kosar ve saniyeler
+	# icinde biter -> her push'ta calistirilabilir.
+	# "tam" (varsayilan): butun gorsel akis (kareler + vitrin + sondalar).
+	# Ayrim CI is akisinda RABLE_TEST_LEVEL ile veriliyor.
+	if OS.get_environment("RABLE_TEST_LEVEL") == "hizli":
+		_run_fast_tests()
+		return
 	# STIL: animasyonlu Meshy karakteri — skinned olcek fix'i (_fix_skinned_scale)
 	# Armature 0.01 olcegini kemik pozlarindan duzeltir.
 	player.set_character("res://assets/models/test/character_animated_2.glb")
@@ -552,6 +568,10 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(Vector3(float(fbase.x) + 1.5, 0.15, float(fbase.y) + 0.5))
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_tarim.png"))
+	await _run_road_test(save_path)
+	await _run_camp_test(save_path)
+	await _run_env_showcase(save_path)
+	await _run_perf_probe(save_path)
 	await _run_night_test(save_path)
 	hud.visible = true
 	# GRIP PANELI karesi: yeni "ekran yonu" satiri eklendi; panelin ekrandan
@@ -791,6 +811,19 @@ func _setup_screenshot(save_path: String) -> void:
 	_run_muhendislik_selftest()  # MUHENDISLIK: merdiven tirmanma kurali
 	_run_creature_selftest()     # YARATIK: varlik + take_hit + oz + melee
 	_run_save_load_selftest()
+	get_tree().quit()
+
+## HIZLI KATMAN: kare almayan, beklemesiz mantik testleri. Bunlar
+## --headless'te de kosar; agir gorsel akisin hicbir parcasina dokunmaz.
+## Kapsam BILEREK dar: harita uretimi, kamera, zaman, muhendislik,
+## yaratik, kayit/yukleme. Kazi/su/tarim/UI testleri kare alma ve
+## bekleme ile ic ice oldugu icin AGIR katmanda kaldi (bkz. RAPOR_CI).
+func _run_fast_tests() -> void:
+	_run_time_selftest()
+	_run_muhendislik_selftest()
+	_run_creature_selftest()
+	_run_save_load_selftest()
+	print("FASTTESTS: bitti")
 	get_tree().quit()
 
 ## YARATIK self-test (Asama 1): spawn -> take_hit hasar -> melee _apply_hitbox
@@ -2102,17 +2135,33 @@ func _build_world() -> void:
 		elif h < 7:
 			_objects[cell] = "mantar"
 
+	# YOL IZI + SPAWN KAMPI arazi asamasi. Yollar kamptan tureidigi icin
+	# _path_cells kamptan ONCE temizlenir; kamp kendi seritlerini ekler.
+	# Kamp planlamasi taban anlik goruntusundan ONCE calismali, yoksa kayit
+	# "kamptaki agaclar silinmis" diye delta yazar ve her yuklemede
+	# agaclar kulubenin icinde geri belirirdi.
+	_path_cells.clear()
+	_camp_plan()
+	# Kenar harmani kamptan SONRA: kamp plato hucrelerini duz cime
+	# cevirdigi icin harman guncel zemin karakterlerini gormeli.
+	_build_edge_blend()
+	_build_wet_cells()  # B6: islak kiyi seridi (arazi kurulmadan once)
+
 	# kayit-sistemi: taban nesne anlik goruntusu (seed'den uretilen ilk durum).
 	# Kayitta yalniz bundan FARKLI hucreler yazilir (dosya kucuk kalir).
 	_base_objects = _objects.duplicate()
 
 	_recompute_water()  # 11.2: haritadaki hazir cukurlar havuz olur (kuru)
 	_build_terrain()
+	_build_road()
 	_build_sea()
 	_build_lake_surface()
 	_build_sea_rocks()
 	_build_decor(ground_cells["."] + ground_cells["h"])
 	_rebuild_objects()
+	_build_rim_cells()   # A1: kenar yigini (arazi ornegi bunu okur)
+	_build_dig_decor()   # A5 + A6: kazi agzi ve tabani
+	_build_spawn_camp()  # kamp dekoru (nesneler kurulduktan sonra)
 	_build_ground_markers()  # harita-v2: kil işaretleri + yüzey cevher ipuçları
 
 ## harita-v2: kil-işaretli kum hücrelerine kil-rengi yassı yama (kürek ipucu)
@@ -2214,6 +2263,95 @@ func _build_sea_rocks() -> void:
 # su hucreleri cukurlasir, deniz duzlemi iclerini doldurur (kumsal suya
 # egimle iner).
 
+
+# --- ZEMIN GECIS BANDI (kenar harmani) ----------------------------------
+# Toprak/cim/kum yamalarinin sinirlari hucre cozunurlugunde KESKIN KARE
+# cikiyordu. Iki katmanli cozum:
+#   1) map_gen esige ince gurultu ekler -> sinirin SEKLI organik olur.
+#   2) Burada sinir hucrelerinin RENGI komsu ortalamasina cekilir ->
+#      cizgi tek renk atlamasi yerine gecis bandi olur (%30 bir komsu
+#      farkliysa, %60 uc-dort komsu farkliysa).
+# Su ("~") harman disi: cim<->su karisimi camur yesili verir, kiyiyi
+# kum zaten yumusatiyor.
+const EDGE_BLEND_MIN := 0.30
+const EDGE_BLEND_MAX := 0.60
+const EDGE_NB: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0),
+		Vector2i(0, 1), Vector2i(0, -1)]
+var _edge_blend: Dictionary = {}   # cell -> harmanlanmis Color
+
+## B6: suya komsu kara hucreleri (islak serit). Bir kez hesaplanir.
+var _wet_cells: Dictionary = {}
+## A1: kazilmis hucrenin KAZILMAMIS komsusu -> kenar yigini yuksekligi.
+## "Toprak nereye gitti" sorusunun gorsel cevabi: cikan toprak cukurun
+## cevresine alcak bir set olarak yigilmis gorunuyor.
+var _rim_cells: Dictionary = {}   # cell -> kabarma (m)
+
+func _build_rim_cells() -> void:
+	_rim_cells.clear()
+	for cell: Vector2i in _depth:
+		if int(_depth[cell]) <= 0:
+			continue
+		for d: Vector2i in EDGE_NB:
+			var nb := cell + d
+			if int(_depth.get(nb, 0)) != 0 or _rim_cells.has(nb):
+				continue
+			if String(_ground_char.get(nb, "")) == "~":
+				continue
+			# Yukseklik hucreye gore deterministik degisir: duz bir set
+			# degil, dogal bir toprak yigini.
+			var t: float = DigWaterVisual.hash01(nb.x, nb.y, 601)
+			_rim_cells[nb] = lerpf(DigWaterVisual.RIM_RISE_MIN,
+					DigWaterVisual.RIM_RISE_MAX, t)
+
+func _build_wet_cells() -> void:
+	_wet_cells.clear()
+	var r: int = DigWaterVisual.WET_BAND_CELLS
+	for cell: Vector2i in _ground_char:
+		if String(_ground_char[cell]) == "~":
+			continue
+		var wet := false
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if dx == 0 and dy == 0:
+					continue
+				if String(_ground_char.get(cell + Vector2i(dx, dy), "")) == "~":
+					wet = true
+					break
+			if wet:
+				break
+		if wet:
+			_wet_cells[cell] = true
+
+func _build_edge_blend() -> void:
+	_edge_blend.clear()
+	for cell: Vector2i in _ground_char:
+		var ch: String = _ground_char[cell]
+		if ch == "~":
+			continue
+		var base: Color = GROUND_DEFS[ch]["color"]
+		var mix := Color(0, 0, 0)
+		var diff := 0
+		for d: Vector2i in EDGE_NB:
+			var nch: String = String(_ground_char.get(cell + d, ch))
+			if nch == ch or nch == "~":
+				continue
+			mix += Color(GROUND_DEFS[nch]["color"])
+			diff += 1
+		if diff == 0:
+			continue
+		mix = mix / float(diff)
+		var t: float = EDGE_BLEND_MIN + (EDGE_BLEND_MAX - EDGE_BLEND_MIN) \
+				* (float(diff - 1) / 3.0)
+		_edge_blend[cell] = base.lerp(mix, t)
+
+## Hucrenin zemin rengi: sinirdaysa gecis bandi rengi, degilse taban renk.
+func _ground_color(cell: Vector2i, def: Dictionary) -> Color:
+	if _edge_blend.has(cell):
+		var c: Color = _edge_blend[cell]
+		return c
+	var base: Color = def["color"]
+	return base
+
 func _cell_props(cx: int, cy: int) -> Array:
 	if cx < 0 or cy < 0 or cx >= _map_w or cy >= _map_h:
 		return [-1.0, Color(0.72, 0.60, 0.38)]  # harita disi: denize inen yamac
@@ -2223,7 +2361,7 @@ func _cell_props(cx: int, cy: int) -> Array:
 		# Golun dibi kumlu; su yuzeyini deniz duzlemi saglar
 		return [-0.40, Color(0.62, 0.54, 0.36)]
 	if ch == "h":
-		return [1.1, def["color"]]
+		return [1.1, _ground_color(Vector2i(cx, cy), def)]
 	# Duz alanlar hafif dalgali: dogal tepecik hissi (yumusak fonksiyon)
 	var roll := sin(cx * 0.37) * cos(cy * 0.29) * 0.07 \
 			+ sin(cx * 0.15 + cy * 0.42) * 0.05
@@ -2232,14 +2370,26 @@ func _cell_props(cx: int, cy: int) -> Array:
 	# olusur; derin katman kaya rengine doner.
 	var d: int = _depth.get(Vector2i(cx, cy), 0)
 	if d != 0:
-		var col: Color = def["color"]
-		if d >= 3:
-			col = Color(0.42, 0.39, 0.34)   # kaya katmani
-		elif d > 0:
-			col = Color(0.44, 0.31, 0.20)   # kazilmis toprak
-		else:
-			col = Color(0.47, 0.34, 0.22)   # toprak tumsegi
-		return [roll - float(d) * DigRules.DEPTH_STEP, col]
+		# A3 KATMAN RENKLERI + A4 DERINLIK KARARTMASI.
+		# Once uc kaba kademe vardi (>=3 tas, >0 toprak); gecisler
+		# okunmuyordu. Simdi her derinligin kendi rengi var (bitkisel
+		# toprak -> alt toprak -> tas -> kaya) ve uzerine derinlikle
+		# artan bir KARARTMA carpani biniyor.
+		# Karartma vertex renginde, isik hesabi DEGIL: bedava ve mobil
+		# dostu (gorevin "veri tabanli cozum" sarti). depth 4'te 0.42
+		# carpaniyla "dibi gorunmuyor" hissi olusuyor.
+		if d > 0:
+			var col: Color = DigWaterVisual.wall_color(d)
+			var k: float = DigWaterVisual.depth_darken(d)
+			return [roll - float(d) * DigRules.DEPTH_STEP,
+					Color(col.r * k, col.g * k, col.b * k)]
+		# d < 0: kazilan toprak geri yigilmis tumsek (karartma yok)
+		return [roll - float(d) * DigRules.DEPTH_STEP,
+				Color(0.47, 0.34, 0.22)]
+	# YOL: zemin RENGI DEGISTIRILMIYOR. Once yolun altina koyu bir toprak
+	# halesi konuyordu; karolarin cevresinde kirli/bulanik bir leke
+	# yapiyordu ve "yol dagilmis" gorunumunu besliyordu. Kenar gecisini
+	# artik karonun ustune binen cim sagliyor (bkz. _build_road).
 	# TARIM: surulu tarla rengi (veri Farming'de; GROUND char EKLENMEDI —
 	# kayit/uretec varsayimlari bozulmasin). Islakken koyulasir.
 	var fplot: Variant = Farming.plots.get(Vector2i(cx, cy))
@@ -2247,7 +2397,20 @@ func _cell_props(cx: int, cy: int) -> Array:
 		var fcol: Color = TarimBalance.TILLED_WET_COLOR \
 				if bool(fplot.get("watered_today", false)) else TarimBalance.TILLED_COLOR
 		return [roll + TarimBalance.TILLED_TOP, fcol]
-	return [roll, def["color"]]
+	# B6 ISLAK KIYI SERIDI: suya komsu KARA hucresi koyulasir (islak
+	# kum/toprak). Su ile kara arasindaki keskin dikey duvar boylece
+	# yumusuyor — kiyi "kesilmis" degil "islanmis" okunuyor.
+	# _edge_blend gibi onceden hesaplanmis bir tabloya bakiyor, komsu
+	# taramasi HER ORNEKTE degil bir kez yapiliyor (_cell_props cok
+	# sik cagriliyor).
+	# A1 KENAR YIGINI: cukur kenarindaki kazilmamis hucre hafifce kabarir
+	if _rim_cells.has(Vector2i(cx, cy)):
+		roll += float(_rim_cells[Vector2i(cx, cy)])
+	var gcol := _ground_color(Vector2i(cx, cy), def)
+	if _wet_cells.has(Vector2i(cx, cy)):
+		var w := DigWaterVisual.WET_DARKEN
+		gcol = Color(gcol.r * w, gcol.g * w, gcol.b * w)
+	return [roll, gcol]
 
 # Bir dunya noktasinda yukseklik+renk (4 komsu hucrenin harmani)
 func _sample_terrain(x: float, z: float) -> Array:
@@ -2275,10 +2438,34 @@ func _sample_terrain(x: float, z: float) -> Array:
 	# ornekleniyor; smoothstep bandina denk gelen kose %50 karisik deger
 	# alir ve GPU bunu iki quad boyunca dogrusal yayar = bulanik leke.
 	# Sert adimda her kose ya A ya B degerini alir; gecis tek quad'a siner.
-	var hfx := (0.0 if fx < 0.5 else 1.0) if sharp else fx
-	var hfz := (0.0 if fz < 0.5 else 1.0) if sharp else fz
-	var cfx := (0.0 if fx < 0.5 else 1.0) if sharp else smoothstep(0.2, 0.8, fx)
-	var cfz := (0.0 if fz < 0.5 else 1.0) if sharp else smoothstep(0.2, 0.8, fz)
+	# A2 DUVAR EGIMI: duvar tam dikey degil, ustte hafifce disa acilir.
+	# Sert adim (0/1) yerine DAR bir smoothstep bandi kullaniliyor; bandin
+	# genisligi egim aciligindan turuyor. Bant cok genis olursa kazi
+	# okunakliligi bozulur ("bulanik leke" tuzagi, bkz. asagidaki yorum),
+	# o yuzden dar tutuldu.
+	# BASAMAK: derinlik STEP_AT_DEPTH'i gectiginde bandin ortasina kucuk
+	# bir duzluk giriyor -> duvarda bir cikinti olusuyor. Hem dogal
+	# duruyor hem "buradan tirmanilir" okumasi veriyor.
+	var slope_w: float = tan(deg_to_rad(DigWaterVisual.WALL_SLOPE_DEG))
+	var band: float = clampf(slope_w, 0.05, 0.30)
+	var stepped: bool = sharp and dmax >= DigWaterVisual.STEP_AT_DEPTH
+	if stepped:
+		band = clampf(band + DigWaterVisual.STEP_WIDTH, 0.05, 0.45)
+	var hfx := (smoothstep(0.5 - band, 0.5 + band, fx) if sharp else fx)
+	var hfz := (smoothstep(0.5 - band, 0.5 + band, fz) if sharp else fz)
+	# Renk gecisi normalde dar bantta (0.2..0.8) tutuluyor ki dokular
+	# bulanmasin; ama zemin TURU degisen sinirda bu dar bant merdiveni
+	# gorunur birakiyordu -> orada tam hucre genisliginde yumusatilir.
+	var soft := _edge_blend.has(Vector2i(i0, j0)) \
+			or _edge_blend.has(Vector2i(i0 + 1, j0)) \
+			or _edge_blend.has(Vector2i(i0, j0 + 1)) \
+			or _edge_blend.has(Vector2i(i0 + 1, j0 + 1))
+	var cband_lo: float = 0.0 if soft else 0.2
+	var cband_hi: float = 1.0 if soft else 0.8
+	var cfx := (0.0 if fx < 0.5 else 1.0) if sharp \
+			else smoothstep(cband_lo, cband_hi, fx)
+	var cfz := (0.0 if fz < 0.5 else 1.0) if sharp \
+			else smoothstep(cband_lo, cband_hi, fz)
 	for dj in 2:
 		for di in 2:
 			var wgt := (hfx if di == 1 else 1.0 - hfx) * (hfz if dj == 1 else 1.0 - hfz)
@@ -2409,7 +2596,104 @@ func _refresh_terrain_at(cell: Vector2i) -> void:
 	for ck in touched:
 		_build_chunk(ck)
 	_build_decor(_decor_cells)
+	_build_rim_cells()   # A1: kenar yigini (arazi ornegi bunu okur)
+	_build_dig_decor()   # A5 + A6: kazi agzi ve tabani
 	_rebuild_objects()
+
+
+# --- KAZI DEKORU (A5 agiz sarkmasi + A6 taban serpintisi) ---------------
+# Kazi MANTIGINA dokunmuyor: yalnizca _depth verisini okuyup uzerine
+# gorsel koyuyor. Kazi sonrasi chunk yenilemesiyle birlikte yeniden
+# kurulur (deterministik hash -> ayni cukur ayni serpintiyi alir).
+var _dig_decor_nodes: Array = []
+
+func _build_dig_decor() -> void:
+	for n in _dig_decor_nodes:
+		if is_instance_valid(n):
+			n.queue_free()
+	_dig_decor_nodes.clear()
+	if _depth.is_empty():
+		return
+	var mult: float = float(DigWaterVisual.tier_of(_quality_tier)["scatter"])
+	var mouth: Array = []
+	var soil: Array = []
+	var rock: Array = []
+	var pebble: Array = []
+	for cell: Vector2i in _depth:
+		var d: int = int(_depth[cell])
+		if d <= 0:
+			continue
+		# --- A6 TABAN SERPINTISI: hucre basina 0..2 parca ---
+		# Sigda toprak obegi, derinde tas kiymigi.
+		var n_items: int = int(DigWaterVisual.hash01(cell.x, cell.y, 501)
+				* float(DigWaterVisual.FLOOR_SCATTER_MAX + 1) * mult)
+		var deep: bool = d > DigWaterVisual.FLOOR_SHALLOW_MAX_DEPTH
+		for k in n_items:
+			var salt := 503 + k * 7
+			var ox: float = (DigWaterVisual.hash01(cell.x, cell.y, salt) - 0.5) * 0.6
+			var oz: float = (DigWaterVisual.hash01(cell.x, cell.y, salt + 1) - 0.5) * 0.6
+			var rr: float = DigWaterVisual.hash01(cell.x, cell.y, salt + 2) * TAU
+			var sc: float = 0.75 + DigWaterVisual.hash01(cell.x, cell.y, salt + 3) * 0.5
+			var b := Basis().rotated(Vector3.UP, rr).scaled(Vector3(sc, sc, sc))
+			var t := Transform3D(b, _cell_center(cell) + Vector3(ox, 0.0, oz))
+			if deep:
+				rock.append(t)
+			else:
+				soil.append(t)
+		# --- A5 AGIZ SARKMASI: kenar hucrelerine cukura EGIK cim ---
+		# Kenar = kazilmis hucrenin KAZILMAMIS komsusu. Cim cukurun
+		# agzindan iceri sarkar; keskin sinir cizgisini kiran sey bu.
+		for dd: Vector2i in EDGE_NB:
+			var nb := cell + dd
+			if int(_depth.get(nb, 0)) > 0:
+				continue
+			if String(_ground_char.get(nb, "")) == "~" or _objects.has(nb):
+				continue
+			if DigWaterVisual.hash01(nb.x, nb.y, 511) * 100.0 \
+					>= float(DigWaterVisual.MOUTH_TUFT_CHANCE) * mult:
+				continue
+			# Cukura dogru egim: tutam kenardan iceri sarkar
+			var tilt := deg_to_rad(DigWaterVisual.MOUTH_TUFT_TILT_DEG)
+			var axis := Vector3(float(dd.y), 0.0, -float(dd.x))
+			if axis.length() < 0.01:
+				continue
+			var eb := Basis(axis.normalized(), tilt)
+			eb = eb.rotated(Vector3.UP,
+					DigWaterVisual.hash01(nb.x, nb.y, 513) * 0.6)
+			var off := Vector3(float(-dd.x) * 0.34, 0.0, float(-dd.y) * 0.34)
+			mouth.append(Transform3D(eb, _cell_center(nb) + off))
+	# --- A1 KENAR YIGINI SERPINTISI: setin uzerine toprak/cakil ---
+	# Yiginin kendisi arazi yuksekliginde (_rim_cells); burada uzerine
+	# %40 serpinti biniyor ki kabarma "renk lekesi" degil "yigin" okunsun.
+	for rc: Vector2i in _rim_cells:
+		if DigWaterVisual.hash01(rc.x, rc.y, 621) * 100.0 \
+				>= float(DigWaterVisual.RIM_SCATTER_CHANCE) * mult:
+			continue
+		var rox: float = (DigWaterVisual.hash01(rc.x, rc.y, 623) - 0.5) * 0.5
+		var roz: float = (DigWaterVisual.hash01(rc.x, rc.y, 625) - 0.5) * 0.5
+		var rrr: float = DigWaterVisual.hash01(rc.x, rc.y, 627) * TAU
+		var rsc: float = 0.8 + DigWaterVisual.hash01(rc.x, rc.y, 629) * 0.4
+		var rb := Basis().rotated(Vector3.UP, rrr).scaled(Vector3(rsc, rsc, rsc))
+		var rt := Transform3D(rb, _cell_center(rc) + Vector3(rox, 0.0, roz))
+		if DigWaterVisual.hash01(rc.x, rc.y, 631) < 0.5:
+			soil.append(rt)
+		else:
+			pebble.append(rt)
+	for pair in [["soil_clump", soil], ["rock_shard", rock],
+			["pebble_cluster", pebble]]:
+		var list: Array = pair[1]
+		if list.is_empty():
+			continue
+		var node := _env_scatter_node(String(pair[0]), list)
+		if node != null:
+			add_child(node)
+			_dig_decor_nodes.append(node)
+	if not mouth.is_empty():
+		var mn := _env_scatter_node("grass_tuft", mouth,
+				DigWaterVisual.MOUTH_TUFT_SPAN)
+		if mn != null:
+			add_child(mn)
+			_dig_decor_nodes.append(mn)
 
 # Notr benek dokusu: koyu/acik gri noktalar, renkleri carparak dokular
 var _neutral_speckle: ImageTexture
@@ -2568,36 +2852,54 @@ func _lake_material() -> ShaderMaterial:
 	var shader := Shader.new()
 	shader.code = """
 shader_type spatial;
-// SAKIN gol (Longvinter usulu): duz, temiz su malzemesi. Abartili
-// dalga/kopuk yok - sadece kiyida ince bir kopuk cizgisi, cok hafif
-// salinim ve gunes parlamasi icin puruzsuz yuzey. Derinlik COLOR.r'de.
-uniform vec4 deep_col : source_color = vec4(0.15, 0.38, 0.62, 1.0);
-uniform vec4 shallow_col : source_color = vec4(0.25, 0.55, 0.72, 1.0);
+render_mode blend_mix, depth_draw_opaque, cull_disabled;
+// SAKIN gol. Renk/kopuk/opaklik ARTIK BURADA HESAPLANMIYOR: mesh
+// uretiminde vertex rengine pisiriliyor (bkz. _water_vertex_color).
+// Shader yalniz COLOR'i okur + kalite kademesine gore hafif dalga ve
+// parilti ekler. Fragment basina is minimumda (mobil).
+uniform float wave_amp = 0.018;
+uniform float wave_speed = 0.35;
+uniform float sparkle_amt = 0.0;   // 0 = kapali (Dusuk/Orta kademe)
 void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	// Cok hafif salinim: su oldugu belli olsun, dalga hissi olmasin
-	VERTEX.y += sin(TIME * 1.1 + wp.x * 1.6 + wp.z * 1.2) * 0.008;
+	// B3: IKI SINUS, dusuk genlik, yavas. "Titresen jole" degil,
+	// "hafif kipirdayan gol". Genlik/hiz kalite kademesinden gelir;
+	// Dusuk'te wave_amp = 0 verilir ve dalga tamamen kapanir.
+	VERTEX.y += (sin(TIME * wave_speed + wp.x * 0.9)
+			+ sin(TIME * wave_speed * 1.7 + wp.z * 1.7)) * wave_amp * 0.5;
 }
 void fragment() {
-	vec3 wp2 = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	float depth = COLOR.r;
-	vec3 col = mix(shallow_col.rgb, deep_col.rgb, smoothstep(0.05, 0.85, depth));
-	// Kiyida INCE, yavas nefes alan kopuk cizgisi
-	float wobble = sin(wp2.x * 3.1 + wp2.z * 2.6 + TIME * 0.7) * 0.02;
-	float foam_edge = smoothstep(0.14, 0.05, depth + wobble);
-	col = mix(col, vec3(0.93, 0.97, 1.0), foam_edge * 0.6);
-	// Gunes yansimasi icin hafif yuzey kirisikligi (gorunmez ama
-	// parlamayi canli tutar)
-	NORMAL = normalize(NORMAL + vec3(sin(wp2.x * 2.2 + TIME * 0.6) * 0.02,
-			0.0, cos(wp2.z * 1.9 + TIME * 0.5) * 0.02));
-	ALBEDO = col;
+	ALBEDO = COLOR.rgb;
+	ALPHA = COLOR.a;
 	ROUGHNESS = 0.12;
 	SPECULAR = 0.65;
+	// B5: seyrek parilti. Yalniz Yuksek kademede (sparkle_amt > 0).
+	if (sparkle_amt > 0.0) {
+		vec3 wp2 = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
+		float g = sin(wp2.x * 7.3 + TIME * 0.9) * sin(wp2.z * 6.1 - TIME * 0.7);
+		ALBEDO += vec3(smoothstep(0.93, 1.0, g) * sparkle_amt);
+	}
 }
 """
 	_lake_mat = ShaderMaterial.new()
 	_lake_mat.shader = shader
+	_apply_water_tier()
 	return _lake_mat
+
+## C: kalite kademesi -> su efektleri. Dusuk'te dalga ve parilti KAPALI.
+## Ayarlar'dan kademe degisince de cagrilir (apply_quality).
+func _apply_water_tier() -> void:
+	if _lake_mat == null:
+		return
+	var t := DigWaterVisual.tier_of(_quality_tier)
+	var wave_on: bool = bool(t["wave"])
+	var sparkle_on: bool = bool(t["sparkle"])
+	_lake_mat.set_shader_parameter("wave_amp",
+			DigWaterVisual.WAVE_AMP if wave_on else 0.0)
+	_lake_mat.set_shader_parameter("wave_speed", DigWaterVisual.WAVE_SPEED)
+	# Gece Ocak/mesale isiginda sicak ton, gunduz soguk beyaz (B5)
+	_lake_mat.set_shader_parameter("sparkle_amt",
+			(0.18 if sparkle_on else 0.0))
 
 # Bos cim hucrelerinin bir kismina sus otu serpistirir (toplanmaz).
 var _decor_nodes: Array = []
@@ -2615,6 +2917,8 @@ func _build_decor(grass_cells: Array) -> void:
 			continue
 		if int(_depth.get(cell, 0)) != 0:
 			continue  # kazilmis/yigilmis hucrede sus otu olmaz
+		if _camp_field.has(cell):
+			continue  # terk edilmis tarlanin sirtlari cimle kaplanmasin
 		var h := absi(cell.x * 92821 + cell.y * 68917) % 100
 		if h >= 20:
 			continue  # ~her 5 hucreden biri suslenir
@@ -2628,6 +2932,1108 @@ func _build_decor(grass_cells: Array) -> void:
 		var node := _make_mesh_multimesh(pool[idx], groups[idx], false)
 		add_child(node)
 		_decor_nodes.append(node)
+	_build_env_scatter(grass_cells)
+
+# --- YOL HUCRELERI ------------------------------------------------------
+# Yol bir ZEMIN TURU: hucre -> yas ("miras" | "yeni"). Zemin rengini
+# _cell_props okur; uzerine dosenen tas karolari asagidaki yol sistemi
+# kurar (_build_road).
+var _path_cells: Dictionary = {}   # cell -> yas (String)
+var _path_nodes: Array = []        # (eski tas serpintisi; perf sondasi okur)
+
+## KAVISLI yol: guneye ilerlerken sinuzoidal x kaymasi. Kosegen/egri
+## gecislerde izgara merdiveni en cok burada goze batar; kenar erimesinin
+## sinandigi yer de burasi.
+func _add_road_curve(from: Vector2i, steps: int, width: int,
+		age: String) -> void:
+	# TEK YONLU kavis (ceyrek daire). Ilk denemede sin(t*PI*1.4) kullanildi:
+	# egri gidip GERI donunce yol kendi uzerine kivrilip karede catallanmis
+	# bir "lambda" gibi gorundu. Monoton kavis okunakli.
+	for i in steps:
+		var t := float(i) / maxf(1.0, float(steps - 1))
+		var off := int(round(sin(t * PI * 0.5) * 5.0))
+		var c := from + Vector2i(off, i)
+		if c.x < 1 or c.y < 1 or c.x >= _map_w - 1 or c.y >= _map_h - 1:
+			break
+		for w in width:
+			lay_road(c + Vector2i(w, 0), age)
+		# Kaymanin atladigi hucreyi doldur ki yolda delik kalmasin
+		if i > 0:
+			var prev := int(round(sin((float(i - 1) / maxf(1.0, float(steps - 1)))
+					* PI * 0.5) * 5.0))
+			var step := 1 if off > prev else -1
+			var x := prev
+			while x != off:
+				x += step
+				for w in width:
+					lay_road(Vector2i(from.x + x + w, c.y), age)
+
+## Bir noktadan verilen yonde `len` hucrelik yol seridi tanimlar.
+## width: serit genisligi (2+ olunca kenar karolari devreye girer).
+func _add_path_strip(from: Vector2i, dir: Vector2i, len_cells: int,
+		age: String = "miras", width: int = 1) -> void:
+	var perp := Vector2i(-dir.y, dir.x)
+	for i in range(1, len_cells + 1):
+		var c := from + dir * i
+		if c.x < 1 or c.y < 1 or c.x >= _map_w - 1 or c.y >= _map_h - 1:
+			break
+		for w in width:
+			lay_road(c + perp * w, age)
+
+# --- TAS YOL SISTEMI (auto-tiling + kenar erimesi) ----------------------
+# Yol hucresi bir ZEMIN TURUDUR: _path_cells[cell] = yas ("miras"|"yeni").
+# Uzerine 1x1 tas karo doseniyor; karo varyanti (a/b/c) ve 90'lik donusu
+# hucreden deterministik hash ile secilir -> harita yeniden kurulunca
+# desen degismez.
+#
+# KENAR ERIMESI, sistemin can alici yeri. Izgaraya dosenmis kare karolar
+# kenarda MERDIVEN gibi gorunur (ozellikle kosegen yolda). Uc katman:
+#   1) Komsusunda yol OLMAYAN hucre road_tile_edge kullanir, kirik tarafi
+#      disa donuk. (Tam bir tarafi acikken; iki+ tarafi acik dar yolda
+#      tek karoyla iki kenar birden kirilamaz -> normal varyant + agir
+#      dekor. Aciklama RAPOR'da.)
+#   2) Kenar hucrelerinin USTUNE yosun lekesi + ot tutami.
+#   3) KOMSU CIM hucrelerine sacilma (1 hucre %35, 2 hucre %12). Duz
+#      sinir cizgisini asil kiran budur; karo hizasi disina tastigi icin
+#      goz "izgara" gormez.
+const RoadTiles = preload("res://scripts/road_tiles.gd")
+
+const ROAD_NB: Array[Vector2i] = [Vector2i(0, -1), Vector2i(1, 0),
+		Vector2i(0, 1), Vector2i(-1, 0)]   # K, D, G, B (yaw 0/90/180/270)
+
+var _road_nodes: Array = []        # karo + dekor MultiMesh'leri
+var _road_edge_used := 0           # ROADTEST: kac hucrede kenar karosu
+var _road_edge_covered := 0        # ROADTEST: karo kenarina cim BINEN hucre
+var _road_joint_deco := 0          # ROADTEST: derz dekoru alan hucre
+var _road_spill: Dictionary = {}   # cim hucresi -> true (serpinti cakismasin)
+
+## Bir hucre yol mu?
+func is_road(cell: Vector2i) -> bool:
+	return _path_cells.has(cell)
+
+## Yol dose (yas: "miras" = harita mirasi, "yeni" = oyuncunun dosedigi).
+## Gorsel sistem ikisini FARKLI cizer (yosun yogunlugu), boylece eski/yeni
+## ayrimi hicbir arayuz olmadan gorselden okunur.
+func lay_road(cell: Vector2i, age: String = "yeni") -> void:
+	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
+		return
+	# Yol yalniz duz, yurunebilir zemine doseniyor: suya girmez, plato
+	# ustune tirmanmaz (karo yamaca oturmaz, havada kalirdi).
+	if not String(_ground_char.get(cell, "")) in [".", "d", "s"]:
+		return
+	_path_cells[cell] = age
+	# Yolun ORTASINDA agac/kaya duramaz. (Ilk karede kavisli yol ormanin
+	# icinden gectigi icin agaclar karolarin ustunde bitiyordu.)
+	_objects.erase(cell)
+	_solid_cells.erase(cell)
+
+## Karonun -90 X yatirmasi + Y donusu birlesik temel.
+func _road_basis(yaw_deg: float, scale_v: float) -> Basis:
+	var b := Basis().rotated(Vector3.RIGHT, -PI * 0.5)  # XY duzleminden zemine
+	b = Basis().rotated(Vector3.UP, deg_to_rad(yaw_deg)) * b
+	return b.scaled(Vector3(scale_v, scale_v, scale_v))
+
+func _build_road() -> void:
+	for n in _road_nodes:
+		if is_instance_valid(n):
+			n.queue_free()
+	_road_nodes.clear()
+	_road_spill.clear()
+	if _path_cells.is_empty():
+		return
+	var mult: float = float(EnvModels.SCATTER_TIER_MULT.get(_quality_tier, 1.0))
+	var has_edge: bool = RoadTiles.has_model("road_tile_edge")
+	# tur -> Array[Transform3D]
+	var tiles: Dictionary = {}
+	_road_edge_used = 0
+	_road_edge_covered = 0
+	_road_joint_deco = 0
+	var moss: Array = []
+	var tufts: Array = []
+	var joint_tufts: Array = []
+	var spill: Dictionary = {"path_stone": [], "path_stone_mossy": [],
+			"pebble_cluster": []}
+
+	for cell: Vector2i in _path_cells:
+		var age := String(_path_cells[cell])
+		# --- Acik kenarlar (yol OLMAYAN komsular) ---
+		var open_dirs: Array[int] = []
+		for i in ROAD_NB.size():
+			if not _path_cells.has(cell + ROAD_NB[i]):
+				open_dirs.append(i)
+		# --- Karo secimi ---
+		var id: String
+		var yaw: float
+		if open_dirs.size() == 1 and has_edge:
+			# KENAR KAROSU: kirik taraf disa donuk
+			id = "road_tile_edge"
+			yaw = float(open_dirs[0]) * 90.0
+			_road_edge_used += 1
+		else:
+			var vi := int(RoadTiles.hash01(cell.x, cell.y, 301) * 3.0) % 3
+			id = RoadTiles.VARIANTS[vi]
+			yaw = float(int(RoadTiles.hash01(cell.x, cell.y, 307) * 4.0) % 4) * 90.0
+		if not tiles.has(id):
+			tiles[id] = []
+		var pos := _cell_center(cell)
+		tiles[id].append(Transform3D(_road_basis(yaw, 1.0), pos))
+
+		# --- 2a) DERZ ARALIGI: her yol hucresinde karo YUZEYINDE ---
+		if RoadTiles.hash01(cell.x, cell.y, 341) * 100.0 \
+				< float(RoadTiles.JOINT_TUFT_CHANCE) * mult:
+			joint_tufts.append(_road_face_xform(cell, 343))
+			_road_joint_deco += 1
+		var jm: float = float(RoadTiles.JOINT_MOSS_CHANCE) \
+				* RoadTiles.moss_density(age) * mult
+		if RoadTiles.hash01(cell.x, cell.y, 347) * 100.0 < jm:
+			moss.append(_road_face_xform(cell, 349))
+
+		if open_dirs.is_empty():
+			continue   # ic hucre: kenar dekoru yok
+
+		# --- 2b) KENAR: cim karonun USTUNE biner, kenar cizgisini kirar ---
+		# KALITE CARPANI UYGULANMAZ. Bu bir dekor degil, GECISIN KENDISI:
+		# yol-cim sinirindaki net cizgiyi kiran tek sey bu. Kademe carpani
+		# (orta = 0.7) uygulandiginda ortme %60 yerine %47'ye dusuyordu ve
+		# tepeden bakista duz karo kenarlari geri geliyordu. Dusuk
+		# kademede zaten daha az yol hucresi gorunuyor; asil tasarruf
+		# derz dekoru ve sacilmada (onlar mult'a bagli).
+		if RoadTiles.hash01(cell.x, cell.y, 317) * 100.0 \
+				< float(RoadTiles.EDGE_OVERLAP_CHANCE):
+			tufts.append(_road_edge_xform(cell, open_dirs, 319, 0.0))
+			_road_edge_covered += 1
+
+		# --- 3) Komsu CIM hucrelerine sacilma ---
+		var mossy_pct := RoadTiles.mossy_chance(age)
+		for dy in range(-1, 2):
+			for dx in range(-1, 2):
+				var d: int = maxi(absi(dx), absi(dy))
+				if d == 0:
+					continue
+				var g := cell + Vector2i(dx, dy)
+				if _path_cells.has(g) or _road_spill.has(g):
+					continue
+				if not _road_spill_ok(g):
+					continue
+				var chance: float = float(RoadTiles.SPILL_D1_CHANCE if d == 1
+						else RoadTiles.SPILL_D2_CHANCE) * mult
+				if RoadTiles.hash01(g.x, g.y, 401) * 100.0 >= chance:
+					continue
+				_road_spill[g] = true
+				var sid := "pebble_cluster"
+				if RoadTiles.hash01(g.x, g.y, 409) < 0.5:
+					sid = "path_stone_mossy" \
+							if RoadTiles.hash01(g.x, g.y, 411) * 100.0 < float(mossy_pct) \
+							else "path_stone"
+				var rr: float = RoadTiles.hash01(g.x, g.y, 413) * TAU
+				var sc: float = RoadTiles.SPILL_SCALE_MIN \
+						+ RoadTiles.hash01(g.x, g.y, 419) \
+						* (RoadTiles.SPILL_SCALE_MAX - RoadTiles.SPILL_SCALE_MIN)
+				var ox: float = (RoadTiles.hash01(g.x, g.y, 421) - 0.5) * 0.6
+				var oz: float = (RoadTiles.hash01(g.x, g.y, 431) - 0.5) * 0.6
+				var b := Basis().rotated(Vector3.UP, rr).scaled(Vector3(sc, sc, sc))
+				spill[sid].append(Transform3D(b,
+						_cell_center(g) + Vector3(ox, 0.0, oz)))
+
+	# --- Dugumler: tur basina TEK MultiMesh ---
+	for id: String in tiles:
+		var node := _road_tile_node(id, tiles[id])
+		if node != null:
+			add_child(node)
+			_road_nodes.append(node)
+	if not moss.is_empty():
+		var mn := _road_moss_node(moss)
+		if mn != null:
+			add_child(mn)
+			_road_nodes.append(mn)
+	if not tufts.is_empty():
+		# Kenar otu acik cimdekinden KUCUK (taslarin arasindan cikan filiz)
+		var tn := _env_scatter_node("grass_tuft", tufts, RoadTiles.EDGE_TUFT_SPAN)
+		if tn != null:
+			add_child(tn)
+			_road_nodes.append(tn)
+	if not joint_tufts.is_empty():
+		var jn := _env_scatter_node("grass_tuft", joint_tufts,
+				RoadTiles.JOINT_TUFT_SPAN)
+		if jn != null:
+			add_child(jn)
+			_road_nodes.append(jn)
+	for sid: String in spill:
+		var list: Array = spill[sid]
+		if list.is_empty():
+			continue
+		var sn := _env_scatter_node(sid, list)
+		if sn != null:
+			add_child(sn)
+			_road_nodes.append(sn)
+
+## Sacilma yalnizca YURUNEBILIR, bos zemine (cim/toprak/kum) duser.
+func _road_spill_ok(g: Vector2i) -> bool:
+	if _objects.has(g) or _placed.has(g):
+		return false
+	if int(_depth.get(g, 0)) != 0:
+		return false
+	return String(_ground_char.get(g, "")) in [".", "d", "s"]
+
+## Kenar dekorunu hucrenin ACIK tarafina dogru kaydirir (yosun/ot tam
+## kenarda ciksin, ortada degil — "aralardan cikan ot" hissi).
+func _road_edge_xform(cell: Vector2i, open_dirs: Array[int], salt: int,
+		span: float) -> Transform3D:
+	var d: Vector2i = ROAD_NB[open_dirs[int(RoadTiles.hash01(cell.x, cell.y, salt)
+			* float(open_dirs.size())) % open_dirs.size()]]
+	var jitter: float = (RoadTiles.hash01(cell.x, cell.y, salt + 1) - 0.5) * 0.5
+	# 0.38 disariya dogruydu (ot cimde bitiyordu). 0.30: tutam karonun
+	# KENARINDA, govdesi karonun USTUNDE kaliyor — istenen "cim karoya
+	# biniyor" etkisi bu.
+	var off := Vector3(float(d.x) * 0.30 + (0.0 if d.x != 0 else jitter), 0.0,
+			float(d.y) * 0.30 + (0.0 if d.y != 0 else jitter))
+	var sc: float = 0.75 + RoadTiles.hash01(cell.x, cell.y, salt + 2) * 0.5
+	var b := Basis().rotated(Vector3.UP,
+			RoadTiles.hash01(cell.x, cell.y, salt + 3) * TAU)
+	b = b.scaled(Vector3(sc, sc, sc))
+	# Karo ustune otursun: SINK kadar asagi degil, karo yuzeyinde
+	return Transform3D(b, _cell_center(cell) + off + Vector3(0, 0.01, 0))
+
+## Derz dekoru: karonun YUZEYINDE serbest konum (kenara bagli degil).
+func _road_face_xform(cell: Vector2i, salt: int) -> Transform3D:
+	var ox: float = (RoadTiles.hash01(cell.x, cell.y, salt) - 0.5) * 0.7
+	var oz: float = (RoadTiles.hash01(cell.x, cell.y, salt + 1) - 0.5) * 0.7
+	var sc: float = 0.7 + RoadTiles.hash01(cell.x, cell.y, salt + 2) * 0.6
+	var b := Basis().rotated(Vector3.UP,
+			RoadTiles.hash01(cell.x, cell.y, salt + 3) * TAU)
+	b = b.scaled(Vector3(sc, sc, sc))
+	# Karo ust yuzunun uzerinde
+	return Transform3D(b, _cell_center(cell)
+			+ Vector3(ox, RoadTiles.TOP_ABOVE, oz))
+
+## Karo MultiMesh'i: KOK olcegi hucreye normalize, ust yuzu cim
+## seviyesinin SINK kadar ALTINA oturur (gomuk yol).
+var _road_mesh_cache: Dictionary = {}
+
+func _road_tile_node(id: String, list: Array) -> Node3D:
+	var mesh := _road_mesh(id)
+	if mesh == null:
+		return null
+	var aabb := mesh.get_aabb()
+	# Model XY duzleminde: hucre genisligi X, kalinlik Z (yatirma sonrasi Y)
+	var span: float = maxf(0.001, maxf(aabb.size.x, aabb.size.y))
+	var k: float = RoadTiles.TILE_SPAN / span
+	var thick: float = aabb.size.z * k
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = list.size()
+	for i in list.size():
+		var t: Transform3D = list[i]
+		var b: Basis = t.basis.scaled(Vector3(k, k, k))
+		# Yatirma sonrasi kalinlik Y'de ve karo merkezli: govde zemine
+		# gomulur, ust yuzu TOP_ABOVE kadar disarida kalir.
+		var y: float = RoadTiles.TOP_ABOVE - thick * 0.5
+		mm.set_instance_transform(i, Transform3D(b, t.origin + Vector3(0, y, 0)))
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	# Derz golgeleri hacmi okutan sey: yol karolarinda golge ACIK.
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON \
+			if RoadTiles.TILE_SHADOWS else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
+
+func _road_mesh(id: String) -> Mesh:
+	if _road_mesh_cache.has(id):
+		return _road_mesh_cache[id]
+	var glb := RoadTiles.path_of(id)
+	if glb == "" or not ResourceLoader.exists(glb):
+		return null
+	var scene: Node = load(glb).instantiate()
+	_tame_meshy_materials(scene, RoadTiles.TILE_TINT)
+	var mesh: Mesh = null
+	for mi2: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
+		if mi2.mesh == null:
+			continue
+		mesh = mi2.mesh
+		# GLTF materyali cogu zaman surface_override'da durur; MultiMesh
+		# yalniz MESH'i kullanir -> tasinmazsa karo BEMBEYAZ cikar.
+		if mesh is ArrayMesh:
+			for si in mesh.get_surface_count():
+				var sm := mi2.get_active_material(si)
+				if sm != null:
+					(mesh as ArrayMesh).surface_set_material(si, sm)
+		break
+	scene.queue_free()
+	_road_mesh_cache[id] = mesh
+	return mesh
+
+## Yosun lekesi: moss_patch GLB'si repoda YOK -> yassi proseduerel disk
+## (palet: yaprak adacayi). Dosya gelince otomatik ona gecer.
+var _moss_mesh: Mesh = null
+
+func _road_moss_mesh() -> Mesh:
+	if _moss_mesh != null:
+		return _moss_mesh
+	if RoadTiles.has_model("moss_patch"):
+		var scene: Node = load(RoadTiles.path_of("moss_patch")).instantiate()
+		_tame_meshy_materials(scene, Color.WHITE)
+		for mi2: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
+			if mi2.mesh == null:
+				continue
+			_moss_mesh = mi2.mesh
+			if _moss_mesh is ArrayMesh:
+				for si in _moss_mesh.get_surface_count():
+					var sm := mi2.get_active_material(si)
+					if sm != null:
+						(_moss_mesh as ArrayMesh).surface_set_material(si, sm)
+			break
+		scene.queue_free()
+	# Fallback KAPALI: duz yesil disk karede nilufer yapragi gibi duruyor.
+	# Gercek moss_patch.glb gelene kadar yosun cizilmez.
+	return _moss_mesh
+
+func _road_moss_node(list: Array) -> Node3D:
+	var mesh := _road_moss_mesh()
+	if mesh == null:
+		return null
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = list.size()
+	for i in list.size():
+		mm.set_instance_transform(i, list[i])
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
+
+# --- SPAWN KAMPI (gorsel-tur / Gorev Eki) --------------------------------
+# Mockup'taki "Duvarli Kamp + Kulube" duzeninin YIPRANMIS hali. Iskelet
+# mockup'la ayni: ocak merkezde, kulube kuzeybatida, tarla doguda, kuyu
+# tarlanin kuzeyinde, uretim kosesi guneybatida, yollar ocaktan dort yone.
+# DUVAR / HENDEK / HUNI YOK — onlar oyuncunun ileride kendi insa hedefi.
+#
+# HEPSI DEKOR: hicbiri _set_placed'den gecmez, _structures'a yazilmaz,
+# kayda girmez, etkilesim vermez (gorevin "MEKANIK YOK" sarti). Ocak sonuk,
+# masa/sandik devrik, mesaleler yanmiyor — oyuncu kampi kendi canlandiracak.
+# Tek fiziksel etki: kulube ve kuyu hucreleri _solid_cells'e girer, yoksa
+# oyuncu duvarin icinden gecerdi (arazi carpismasi, mekanik degil).
+const CAMP_OFF := {
+	"ocak": Vector2i(0, 0),
+	"hut": Vector2i(-5, -4),           # KB kulube (3x3 ayak izi, kapi guneyde)
+	"well": Vector2i(5, -3),
+	"field": Vector2i(5, -1),          # 2x2 tarlanin sol-ust hucresi
+	"masa": Vector2i(-5, 3),           # GB uretim kosesi (tezgah YOK)
+	"sandik": Vector2i(-4, 4),
+	"kabak": Vector2i(4, 1),           # tarla kenari tek dekoratif kabak
+}
+## Yol uzunluklari (hucre). Guney yolu kampi ASAR ve yolun ortasinda biter:
+## "buradan bir yere gidiliyordu" hissi (mockup'taki ana giris aksi).
+const CAMP_ROADS := [
+	{"dir": Vector2i(0, -1), "len": 5},
+	{"dir": Vector2i(1, 0), "len": 6},
+	{"dir": Vector2i(-1, 0), "len": 6},
+	{"dir": Vector2i(0, 1), "len": 13},
+]
+## Yol kavsaklarindaki sonuk mesale direkleri (ocak merkezli ofset).
+const CAMP_TORCHES := [Vector2i(0, -3), Vector2i(3, 0), Vector2i(-3, 0), Vector2i(0, 4)]
+## KAMP ACIKLIGI (iki kademe): CLEAR_R icinde agac/kaya HIC yok — kamp
+## nefes alsin; CLEAR_R..FADE_R arasi seyrek (ormana yumusak gecis, sert
+## bir "agac duvari" cizgisi olusmasin).
+const CAMP_CLEAR_R := 8     # bu yaricapta agac/kaya SIFIR
+const CAMP_FADE_R := 12     # bu yaricapa kadar seyrek (CLEAR_R'den sonra)
+const CAMP_FADE_KEEP := 45  # gecis halkasinda agac/kayanin ~%45'i kalir
+const CAMP_RADIUS := CAMP_FADE_R  # serpinti yogunlastirma + kamp hucre kumesi
+const CAMP_SCATTER_BOOST := 2.0  # kamp icinde dal/kuru ot yogunlugu carpani
+const EDGE_SCATTER_BOOST := 1.7  # zemin yamasi sinirinda serpinti carpani
+
+var _camp_center := Vector2i(-999, -999)
+var _camp_cells: Dictionary = {}   # kamp yaricapi (serpinti yogunlugu icin)
+var _camp_field: Dictionary = {}   # tarla dekor hucreleri -> true
+var _camp_nodes: Array = []        # kamp dekor dugumleri
+## Tarla dekoru hucre basina: oyuncu o hucreyi GERCEKTEN capalarsa dekor
+## silinir, yoksa terk edilmis sirt ile gercek tarla ust uste binerdi.
+var _camp_field_nodes: Dictionary = {}  # cell -> Array[Node3D]
+
+func _camp_register_field_node(cell: Vector2i, node: Node3D) -> void:
+	if not _camp_field_nodes.has(cell):
+		_camp_field_nodes[cell] = []
+	var list: Array = _camp_field_nodes[cell]
+	list.append(node)
+
+func _camp_clear_field_decor(cell: Vector2i) -> void:
+	if not _camp_field_nodes.has(cell):
+		return
+	var list: Array = _camp_field_nodes[cell]
+	for n in list:
+		if is_instance_valid(n):
+			n.queue_free()
+	_camp_field_nodes.erase(cell)
+
+func _camp_at(key: String) -> Vector2i:
+	var off: Vector2i = CAMP_OFF[key]
+	return _camp_center + off
+
+## ARAZI ASAMASI: _build_terrain'den ONCE calisir. Nesne temizligi, yollar,
+## kuru kanal derinligi ve dogus hucresi burada belirlenir.
+func _camp_plan() -> void:
+	_camp_center = _spawn_cell
+	_camp_cells.clear()
+	_camp_field.clear()
+	# 1) Kamp acikligi. Ic daire (CLEAR_R) tamamen bosaltilir; disindaki
+	#    halkada (FADE_R'ye kadar) agaclarin bir kismi kalir ki ormana
+	#    gecis sert bir cizgi olmasin.
+	for dy in range(-CAMP_FADE_R, CAMP_FADE_R + 1):
+		for dx in range(-CAMP_FADE_R, CAMP_FADE_R + 1):
+			var r2 := dx * dx + dy * dy
+			if r2 > CAMP_FADE_R * CAMP_FADE_R:
+				continue
+			var c := _camp_center + Vector2i(dx, dy)
+			_camp_cells[c] = true
+			if not _objects.has(c):
+				continue
+			if r2 > CAMP_CLEAR_R * CAMP_CLEAR_R:
+				# Gecis halkasi: seyrelt (yapi ayak izinde istisna yok)
+				var keep: bool = int(EnvModels.hash01(c.x, c.y, 401) * 100.0) \
+						< CAMP_FADE_KEEP
+				if keep and not _camp_build_footprint(c):
+					continue
+			_objects.erase(c)
+			_solid_cells.erase(c)
+	# 1b) YUKSELTIYI DUZLE: kampin dibindeki yuksek plato ("h") kare
+	#     kenarli falez duvarlariyla kampa bitisiyordu (kullanici karari:
+	#     "suradaki yukseltiye gerek yok"). Kamp halkasi icindeki plato
+	#     hucreleri duz cime cevrilir; boylece kamp cevresi tek duzlemde
+	#     kalir ve arazi renk harmani da duz zemin uzerinden hesaplanir.
+	for cell: Vector2i in _camp_cells:
+		if String(_ground_char.get(cell, ".")) != "h":
+			continue
+		_ground_char[cell] = "."
+		_solid_cells.erase(cell)
+	# 2) Yollar: ocaktan dort yone asinmis serit.
+	var hearth := _camp_at("ocak")
+	for r: Dictionary in CAMP_ROADS:
+		var rd: Vector2i = r["dir"]
+		_add_path_strip(hearth, rd, int(r["len"]))
+	lay_road(hearth, "miras")
+	# KIVRIMLI ANA YOL: kampin guney aksindan cikip kavis cizerek
+	# uzaklasir. Auto-tiling ve kenar erimesi ancak GENIS ve EGRI bir
+	# yolda okunur — dar duz seritte her hucrenin iki yani birden acik
+	# oldugu icin kenar karosu hic devreye girmez (bkz. RAPOR).
+	# Genislik EN FAZLA 2 (kullanici karari: 3 hucre kalin yama gibi
+	# duruyordu). Yol bir HAT; kalinlik degil kavis okunmali.
+	_add_road_curve(hearth + Vector2i(0, 6), 18, 2, "miras")
+	# OYUNCUNUN DOSEDIGI kisa yeni yol: ayni sistem, yosun neredeyse yok.
+	# Eski/yeni farki tek bir arayuz olmadan gorselden okunur.
+	_add_path_strip(hearth + Vector2i(2, 2), Vector2i(1, 0), 5, "yeni", 2)
+	# 3) Tarla (2x2). Bati kenarindaki "kuru kanal" KALDIRILDI: kazi
+	#    derinligi arazide kare kenarli bir BLOK YUKSELTI uretiyordu
+	#    (kose kose, dogal degil) ve dekoratif degeri yoktu.
+	var f := _camp_at("field")
+	for dy in 2:
+		for dx in 2:
+			_camp_field[f + Vector2i(dx, dy)] = true
+	# 4) Dogus: kulubenin ONUNDE (kapi guneye bakiyor).
+	_spawn_cell = _camp_at("hut") + Vector2i(0, 2)
+	_objects.erase(_spawn_cell)
+	_solid_cells.erase(_spawn_cell)
+
+## Kamp yapilarinin ayak izi (agac/kaya kesinlikle temizlenir).
+func _camp_build_footprint(c: Vector2i) -> bool:
+	var hut := _camp_at("hut")
+	if absi(c.x - hut.x) <= 2 and absi(c.y - hut.y) <= 2:
+		return true
+	var f := _camp_at("field")
+	if c.x >= f.x - 1 and c.x <= f.x + 1 and c.y >= f.y - 1 and c.y <= f.y + 2:
+		return true
+	for key: String in ["well", "masa", "sandik", "kabak", "ocak"]:
+		var p := _camp_at(key)
+		if absi(c.x - p.x) <= 1 and absi(c.y - p.y) <= 1:
+			return true
+	return false
+
+## GORSEL ASAMA: _rebuild_objects'ten SONRA calisir (dekor dugumleri).
+func _build_spawn_camp() -> void:
+	for n in _camp_nodes:
+		if is_instance_valid(n):
+			n.queue_free()
+	_camp_nodes.clear()
+	_camp_field_nodes.clear()
+	if _camp_center == Vector2i(-999, -999):
+		return
+	# Ocak — SONUK (ates yok; _activate_hearth cagrilmaz)
+	_camp_prop_structure("ocak", _camp_at("ocak"), 0.0, false)
+	# Yikik kulube: 3x3 ayak izi kati, guney-orta hucre kapi (giris)
+	var hut := _camp_at("hut")
+	_camp_prop_env("ruined_hut", hut, 0.0)
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			if dx == 0 and dy == 1:
+				continue  # kapi
+			_solid_cells[hut + Vector2i(dx, dy)] = true
+	# Kuyu
+	var well := _camp_at("well")
+	_camp_prop_env("ruined_well", well, 25.0)
+	_solid_cells[well] = true
+	# Terk edilmis tarla: her hucrede sirt + uzerinde solmus bitki
+	var fi := 0
+	for cell: Vector2i in _camp_field:
+		_camp_prop_mound(cell)
+		if fi % 4 != 3:  # bir hucre bos (bitki tamamen olmus)
+			_camp_prop_withered(cell)
+		fi += 1
+	_camp_prop_pumpkin(_camp_at("kabak"))
+	# Uretim kosesi: solmus/devrik arastirma masasi + devrik bos sandik.
+	# TEZGAH YOK — ilk tezgahi oyuncu kuracak (mockup'taki bosluk kasitli).
+	_camp_prop_structure("arastirma_masasi", _camp_at("masa"), -20.0, true)
+	_camp_prop_structure("sandik", _camp_at("sandik"), 35.0, true)
+	# Sonuk mesale direkleri (isik EKLENMEZ)
+	for off: Vector2i in CAMP_TORCHES:
+		_camp_prop_structure("mesale", _camp_center + off, 0.0, false)
+
+## Mevcut yapi gorselini DEKOR olarak koyar (veri yok, etkilesim yok).
+## tilt=true ise devrik/yipranmis durus (13.4'teki hasarli goruntunun aynisi).
+func _camp_prop_structure(item_id: String, cell: Vector2i, yaw: float,
+		tilt: bool) -> void:
+	if _placed.has(cell):
+		return  # oyuncu oraya bir sey koyduysa dekor cizilmez
+	var holder := _build_structure_visual(item_id)
+	holder.position = _cell_center(cell)
+	holder.rotation_degrees.y = yaw
+	if tilt:
+		holder.rotation_degrees.z = 14.0
+		holder.position.y -= 0.06
+	add_child(holder)
+	_camp_nodes.append(holder)
+
+## GLB propu (kulube/kuyu): olcek KOK dugume verilir (node scale YASAK
+## dersi: ic dugumlere dokunulmaz), hedef YUKSEKLIGE normalize edilir.
+func _camp_prop_env(id: String, cell: Vector2i, yaw: float) -> void:
+	var glb := EnvModels.path_of(id)
+	if not ResourceLoader.exists(glb):
+		return
+	var root := Node3D.new()
+	var inst: Node3D = load(glb).instantiate()
+	root.add_child(inst)
+	_tame_meshy_materials(inst, EnvModels.tint_of(id))
+	var aabb := _scene_aabb(inst)
+	if aabb.size.y > 0.01:
+		var s: float = EnvModels.scale_of(id) / aabb.size.y
+		inst.scale = Vector3(s, s, s)
+		inst.position.y = -aabb.position.y * s
+	root.position = _cell_center(cell)
+	root.rotation_degrees.y = yaw
+	add_child(root)
+	_camp_nodes.append(root)
+
+## Terk edilmis tarlanin sirti (bos surulu tarla gostergesiyle ayni model).
+func _camp_prop_mound(cell: Vector2i) -> void:
+	var node := _build_mound_from(MOUND_EMPTY)
+	if node == null:
+		return
+	node.position = _cell_center(cell)
+	add_child(node)
+	_camp_nodes.append(node)
+	_camp_register_field_node(cell, node)
+
+## Solmus bitki: genc ekin modeli, kurumus tonda ve kucuk.
+## Hoyuk 0.42 m'ye inince 26 cm bitki hoyukten BUYUK kaldi ve onu ortuyordu
+## (kamp tarla karesinde hoyuk yerine yesil yumak gorunuyordu) -> 15 cm.
+const CAMP_WITHER_TINT := Color(0.52, 0.44, 0.26)
+const CAMP_WITHER_H := 0.15
+
+func _camp_prop_withered(cell: Vector2i) -> void:
+	var glb := "res://assets/models/test/small_young_berry.glb"
+	if not ResourceLoader.exists(glb):
+		return
+	var root := Node3D.new()
+	var inst: Node3D = load(glb).instantiate()
+	root.add_child(inst)
+	_tame_meshy_materials(inst, CAMP_WITHER_TINT)
+	var aabb := _scene_aabb(inst)
+	if aabb.size.y > 0.01:
+		var s: float = CAMP_WITHER_H / aabb.size.y
+		inst.scale = Vector3(s, s, s)
+		inst.position.y = -aabb.position.y * s
+	root.position = _cell_center(cell) + Vector3(0.0, 0.04, 0.0)
+	root.rotation_degrees = Vector3(0.0, float(cell.x * 47 % 360), 9.0)
+	add_child(root)
+	_camp_nodes.append(root)
+	_camp_register_field_node(cell, root)
+
+## Dekoratif kabak: kabak GLB'si YOK -> proseduerel (yassi kure + sap),
+## duz renk paletiyle uyumlu sicak turuncu.
+func _camp_prop_pumpkin(cell: Vector2i) -> void:
+	var root := Node3D.new()
+	var body := SphereMesh.new()
+	body.radius = 0.22
+	body.height = 0.34
+	body.radial_segments = 10
+	body.rings = 5
+	var bm := StandardMaterial3D.new()
+	bm.albedo_color = Color(0.78, 0.44, 0.18)
+	bm.roughness = 0.9
+	body.material = bm
+	var bi := MeshInstance3D.new()
+	bi.mesh = body
+	bi.position.y = 0.17
+	root.add_child(bi)
+	var stem := CylinderMesh.new()
+	stem.top_radius = 0.03
+	stem.bottom_radius = 0.045
+	stem.height = 0.12
+	var smat := StandardMaterial3D.new()
+	smat.albedo_color = EnvModels.FALLBACK_LEAF
+	smat.roughness = 0.95
+	stem.material = smat
+	var si := MeshInstance3D.new()
+	si.mesh = stem
+	si.position.y = 0.38
+	root.add_child(si)
+	root.position = _cell_center(cell)
+	add_child(root)
+	_camp_nodes.append(root)
+
+
+
+# --- PERF SONDASI (gorsel-tur once/sonra) --------------------------------
+# "Once/sonra FPS" icin AYNI karede iki olcum: bu dalin ekledigi her sey
+# (serpinti + yol taslari + kamp dekoru) ACIK ve KAPALI. Ayri bir main
+# kosusuna gerek kalmiyor, olcum ayni donanim/ayni kare uzerinde.
+func _perf_sample(frames: int) -> Dictionary:
+	var fps_sum := 0.0
+	var draw_sum := 0.0
+	for i in frames:
+		await get_tree().process_frame
+		fps_sum += Performance.get_monitor(Performance.TIME_FPS)
+		draw_sum += Performance.get_monitor(
+				Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+	return {"fps": fps_sum / maxf(1.0, float(frames)),
+			"draw": draw_sum / maxf(1.0, float(frames))}
+
+func _perf_set_visual(on: bool) -> void:
+	for arr: Array in [_env_scatter_nodes, _path_nodes, _road_nodes, _camp_nodes]:
+		for n in arr:
+			if is_instance_valid(n) and n is Node3D:
+				(n as Node3D).visible = on
+
+func _run_perf_probe(save_path: String) -> void:
+	var ctr := _cell_center(_camp_center)
+	camera.position = ctr + Vector3(0.0, 9.0, 11.0)
+	camera.look_at(ctr)
+	await get_tree().create_timer(0.5).timeout
+	# ORNEK SAYISI KUCUK OLMALI: CI sanal ekranda ~1 FPS ile koser, yani
+	# her ornek ~1 SANIYE. 45+45 ornek tek basina ~90 sn yiyip vitrin
+	# karelerini butce disina itmisti. Cizim cagrisi kare kare sabit
+	# oldugu icin 8 ornek yeterli.
+	_perf_set_visual(false)
+	var before: Dictionary = await _perf_sample(8)
+	_perf_set_visual(true)
+	var after: Dictionary = await _perf_sample(8)
+	var line := ("PERFTEST: kamp kamerasi | ONCE fps=%.1f draw=%.0f | "
+			+ "SONRA fps=%.1f draw=%.0f | serpinti_dugum=%d yol_dugum=%d "
+			+ "kamp_dugum=%d yol_karo_dugum=%d") % [
+		float(before["fps"]), float(before["draw"]),
+		float(after["fps"]), float(after["draw"]),
+		_env_scatter_nodes.size(), _path_nodes.size(), _camp_nodes.size(),
+		_road_nodes.size()]
+	print(line)
+	var f := FileAccess.open("res://docs/screens/perftest.txt", FileAccess.WRITE)
+	if f != null:
+		f.store_line(line)
+		f.close()
+
+
+# --- ROADTEST: tas yol sistemi dogrulamasi -------------------------------
+# Sistem SALT GORSEL oldugu icin test de gorsel dogruluga bakar: karolar
+# dosendi mi, kenar erimesinin uc katmani (kenar karosu / karo ustu yosun
+# + ot / komsu cime sacilma) calisti mi, miras ile yeni yol arasinda
+# YOSUN FARKI olustu mu.
+func _run_road_test(save_path: String) -> void:
+	var miras := 0
+	var yeni := 0
+	for cell: Vector2i in _path_cells:
+		if String(_path_cells[cell]) == "yeni":
+			yeni += 1
+		else:
+			miras += 1
+	# Kenar hucreleri (komsusunda yol olmayan) ve ic hucreler
+	var kenar := 0
+	var tek_acik := 0
+	for cell: Vector2i in _path_cells:
+		var open_n := 0
+		for d: Vector2i in ROAD_NB:
+			if not _path_cells.has(cell + d):
+				open_n += 1
+		if open_n > 0:
+			kenar += 1
+		if open_n == 1:
+			tek_acik += 1
+	# Karo/dekor ornek sayilari (MultiMesh instance_count toplami)
+	var karo := 0
+	var dekor := 0
+	for n in _road_nodes:
+		if not is_instance_valid(n) or not (n is MultiMeshInstance3D):
+			continue
+		var mm: MultiMesh = (n as MultiMeshInstance3D).multimesh
+		if mm == null:
+			continue
+		karo += mm.instance_count
+	dekor = _road_spill.size()
+	# Kenar karosu GERCEKTEN kullanildi mi (yoksa varyanta mi dusuldu)
+	var kenar_karo := _road_edge_used
+	var edge_var: bool = RoadTiles.has_model("road_tile_edge")
+	var moss_var: bool = RoadTiles.has_model("moss_patch")
+	# Kavisli yolun yakin karesi (kenar gecisi gorunsun)
+	var focus := _camp_center + Vector2i(2, 12)
+	var fp := _cell_center(focus)
+	_cam_locked = true
+	camera.position = fp + Vector3(-3.2, 2.6, 4.2)
+	camera.look_at(fp + Vector3(0.5, 0.0, 0.0))
+	await get_tree().create_timer(0.7).timeout
+	_snap(save_path.replace(".png", "_yol.png"))
+	# SONUC TESTI (gorev 3b): TAM TEPEDEN bakis. Yol ile cim arasinda net
+	# bir cizgi kalmamali, ama yolun nereye gittigi rahat okunmali. Kare
+	# goz kararina birakiliyor; olcu tarafini asagidaki kenar_ortulu /
+	# derz_ot oranlari veriyor.
+	camera.position = fp + Vector3(0.0, 9.0, 0.01)
+	camera.look_at(fp)
+	await get_tree().create_timer(0.7).timeout
+	_snap(save_path.replace(".png", "_yol_tepe.png"))
+	# Genis kare: kavisin tamami + kampla baglantisi
+	camera.position = _cell_center(_camp_center) + Vector3(2.0, 14.0, 20.0)
+	camera.look_at(_cell_center(_camp_center + Vector2i(1, 9)))
+	await get_tree().create_timer(0.7).timeout
+	_snap(save_path.replace(".png", "_yol_genis.png"))
+	var line := ("ROADTEST: hucre=%d (miras=%d yeni=%d) kenar=%d tek_acik=%d "
+			+ "karo_ornek=%d kenar_karo=%d sacilma=%d "
+			+ "kenar_ortulu=%d/%d (%%%.0f) derz_ot=%d/%d (%%%.0f) "
+			+ "edge_glb=%s moss_glb=%s") % [
+		_path_cells.size(), miras, yeni, kenar, tek_acik, karo, kenar_karo,
+		dekor,
+		_road_edge_covered, kenar,
+		float(_road_edge_covered) / maxf(1.0, float(kenar)) * 100.0,
+		_road_joint_deco, _path_cells.size(),
+		float(_road_joint_deco) / maxf(1.0, float(_path_cells.size())) * 100.0,
+		str(edge_var), str(moss_var)]
+	print(line)
+	var f := FileAccess.open("res://docs/screens/roadtest.txt", FileAccess.WRITE)
+	if f != null:
+		f.store_line(line)
+		f.close()
+
+# --- VITRIN: yeni cevre/yapi modelleri (gorsel-tur Asama 1 dogrulamasi) ---
+# Dokuz model, OYUNDAKI GERCEK olcegiyle (EnvModels.SCALE) yan yana. Amac:
+# "yuklendi mi / dogru boyda mi / dokusu geldi mi" sorularini tek karede
+# gormek. Gunduz + gece iki kare (gece karesinde beyaz cikan model hemen
+# belli olur; ilk turda yol taslari boyle yakalandi).
+const ENV_SHOWCASE := [
+	{"id": "ruined_hut", "x": -9.0},
+	{"id": "repaired_hut", "x": -4.5},
+	{"id": "ruined_well", "x": -0.5},
+	{"id": "planting_mound", "x": 2.0},
+	{"id": "path_stone", "x": 3.6},
+	{"id": "path_stone_mossy", "x": 4.8},
+	{"id": "grass_tuft", "x": 6.0},
+	{"id": "pebble_cluster", "x": 7.0},
+	{"id": "twig_debris", "x": 8.0},
+]
+
+func _run_env_showcase(save_path: String) -> void:
+	var base := Vector3(460.0, 30.0, 0.0)
+	var root := Node3D.new()
+	root.position = base
+	add_child(root)
+	var floor_inst := MeshInstance3D.new()
+	var floor_mesh := PlaneMesh.new()
+	floor_mesh.size = Vector2(34, 18)
+	floor_inst.mesh = floor_mesh
+	var fm := StandardMaterial3D.new()
+	fm.albedo_color = Color(0.32, 0.55, 0.24)
+	fm.roughness = 1.0
+	floor_inst.material_override = fm
+	root.add_child(floor_inst)
+	var eksik: Array[String] = []
+	for entry: Dictionary in ENV_SHOWCASE:
+		var id := String(entry["id"])
+		var glb := EnvModels.path_of(id)
+		if not ResourceLoader.exists(glb):
+			eksik.append(id)
+			continue
+		var holder := Node3D.new()
+		holder.position = Vector3(float(entry["x"]), 0.0, 0.0)
+		root.add_child(holder)
+		var scene: Node3D = load(glb).instantiate()
+		holder.add_child(scene)
+		# Hoyuk oyunda AYRI yoldan kuruluyor (toprak tonu + ezme + taban
+		# genisligine gore olcek). Vitrin de ayni degerleri kullanmali,
+		# yoksa "vitrinde beyaz kubbe, oyunda kahve sirt" gibi yaniltir.
+		var is_mound: bool = id == "planting_mound"
+		_tame_meshy_materials(scene,
+				MOUND_TINT if is_mound else EnvModels.tint_of(id))
+		var aabb := _scene_aabb(scene)
+		var sy := 1.0
+		var s := 1.0
+		if is_mound:
+			var span: float = maxf(aabb.size.x, aabb.size.z)
+			if span > 0.01:
+				s = MOUND_FOOTPRINT / span
+				sy = MOUND_FLATTEN
+		elif aabb.size.y > 0.01:
+			s = EnvModels.scale_of(id) / aabb.size.y
+		# KOK olcegi (ic dugume dokunulmaz) — oyundaki ile AYNI hesap
+		scene.scale = Vector3(s, s * sy, s)
+		scene.position = Vector3(-aabb.get_center().x * s, -aabb.position.y * s * sy,
+				-aabb.get_center().z * s)
+		var label := Label3D.new()
+		label.text = "%s\n%.2f m" % [id, EnvModels.scale_of(id)]
+		label.font_size = 48
+		label.pixel_size = 0.004
+		label.position = Vector3(0, 0.15, 0.9)
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		holder.add_child(label)
+	camera.position = base + Vector3(-1.0, 4.2, 14.5)
+	camera.rotation_degrees = Vector3(-12, 0, 0)
+	await get_tree().create_timer(1.0).timeout
+	_snap(save_path.replace(".png", "_vitrin_env.png"))
+	# Gece karesi (ayni aci); dalga vitrin karesinde gereksiz
+	DayNight.jump_to_night()
+	_clear_creatures()
+	await get_tree().create_timer(1.0).timeout
+	_snap(save_path.replace(".png", "_vitrin_env_gece.png"))
+	DayNight.jump_to_day()
+	await get_tree().create_timer(0.4).timeout
+	root.queue_free()
+	print("VITRIN_ENV: model=%d eksik=%s" % [ENV_SHOWCASE.size(), str(eksik)])
+
+# --- KAMPTEST: spawn kampi yerlesim dogrulamasi --------------------------
+# Kamp SALT GORSEL oldugu icin test de gorsel/yerlesim dogruluguna bakar:
+# parcalar yerinde mi, dogus kulubenin onunde ve yurunebilir mi, yollar
+# ocaktan cikiyor mu, ates/isik GERCEKTEN sonuk mu (mekanik sizmadi mi).
+func _run_camp_test(save_path: String) -> void:
+	var c := _camp_center
+	var hut := _camp_at("hut")
+	var kapi := hut + Vector2i(0, 1)
+	# 1) Dogus: kulubenin onunde, yurunebilir
+	var dogus_on: bool = _spawn_cell == hut + Vector2i(0, 2)
+	var dogus_bos: bool = not _solid_cells.has(_spawn_cell) \
+			and not _objects.has(_spawn_cell)
+	# 2) Kulube kati, kapi acik
+	var kulube_kati: bool = _solid_cells.has(hut)
+	var kapi_acik: bool = not _solid_cells.has(kapi)
+	# 3) Yollar: dort yonde de yol hucresi var mi
+	var yol_yon := 0
+	for r: Dictionary in CAMP_ROADS:
+		var rd: Vector2i = r["dir"]
+		if _path_cells.has(c + rd * 2):
+			yol_yon += 1
+	# 4) MEKANIK SIZMASI YOK: aktif ocak yok, mesale isigi yok, kamp
+	#    parcalarindan hicbiri _placed/_structures'a yazilmadi
+	var ocak_yanmiyor: bool = get_hearth() == Vector2i(-999, -999)
+	var isik_yok: bool = _torch_lights.is_empty()
+	var veri_temiz := true
+	for key: String in ["ocak", "masa", "sandik", "well"]:
+		if _placed.has(_camp_at(key)):
+			veri_temiz = false
+	for off: Vector2i in CAMP_TORCHES:
+		if _placed.has(c + off):
+			veri_temiz = false
+	# 5) Tarla: 4 hucre dekor
+	var tarla := _camp_field.size()
+	var f := _camp_at("field")
+	# 6) Kamp acikligi: IC DAIRE tamamen bos mu, gecis halkasi seyrek mi
+	var ic_dolu := 0
+	var dolu := 0
+	for cell: Vector2i in _camp_cells:
+		if not _objects.has(cell):
+			continue
+		dolu += 1
+		var dc := cell - c
+		if dc.x * dc.x + dc.y * dc.y <= CAMP_CLEAR_R * CAMP_CLEAR_R:
+			ic_dolu += 1
+	var aciklik_bos: bool = ic_dolu == 0
+	var doluluk: float = float(dolu) / maxf(1.0, float(_camp_cells.size())) * 100.0
+
+	# Kareler: mockup acisiyla genis kamp + tarla yakin plani
+	var ctr := _cell_center(c)
+	camera.position = ctr + Vector3(0.0, 15.0, 17.0)
+	camera.look_at(ctr)
+	await get_tree().create_timer(0.8).timeout
+	_snap(save_path.replace(".png", "_kamp.png"))
+	var fc := _cell_center(f) + Vector3(0.5, 0.0, 0.5)
+	camera.position = fc + Vector3(-2.6, 2.0, 3.0)
+	camera.look_at(fc + Vector3(0, 0.2, 0))
+	await get_tree().create_timer(0.6).timeout
+	_snap(save_path.replace(".png", "_kamp_tarla.png"))
+	# Gece: sonuk kampin gece hali (mesaleler yanmiyor — kasitli).
+	# Dalga hemen temizlenir: bu kare ISIK karesi, yaratik testi degil —
+	# yaratiklarin her karede islemesi CI butcesini yiyordu.
+	DayNight.jump_to_night()
+	_clear_creatures()
+	camera.position = ctr + Vector3(0.0, 15.0, 17.0)
+	camera.look_at(ctr)
+	await get_tree().create_timer(0.8).timeout
+	_snap(save_path.replace(".png", "_kamp_gece.png"))
+	DayNight.jump_to_day()
+	await get_tree().create_timer(0.4).timeout
+
+	var line := ("KAMPTEST: merkez=%s dogus_on=%s dogus_bos=%s kulube_kati=%s "
+			+ "kapi_acik=%s yol_yon=%d/4 ocak_yanmiyor=%s isik_yok=%s "
+			+ "veri_temiz=%s tarla=%d aciklik_bos=%s halka_dolu=%%%.0f") % [
+		str(c), str(dogus_on), str(dogus_bos), str(kulube_kati), str(kapi_acik),
+		yol_yon, str(ocak_yanmiyor), str(isik_yok), str(veri_temiz),
+		tarla, str(aciklik_bos), doluluk]
+	print(line)
+	var fh := FileAccess.open("res://docs/screens/kamptest.txt", FileAccess.WRITE)
+	if fh != null:
+		fh.store_line(line)
+		fh.close()
+
+# --- CEVRE SERPINTISI (grass_tuft / pebble_cluster / twig_debris) ---------
+# Kullanicinin GLB'leri; TUR BASINA TEK MultiMesh (3 ek cizim cagrisi).
+# Yogunluk KALITE KADEMESINE bagli (dusuk telefonda seyrelir).
+# Baglam kurali basit: cimde ot tutami, su/kaya kenarinda cakil, agac
+# dibinde dal. Konum/donme/olcek deterministik hash -> yeniden kurulunca
+# ayni yerde kalir.
+var _env_scatter_nodes: Array = []  # gorsel-tur serpintisi (perf olcumu)
+
+func _build_env_scatter(grass_cells: Array) -> void:
+	_env_scatter_nodes.clear()
+	var mult: float = float(EnvModels.SCATTER_TIER_MULT.get(_quality_tier, 1.0))
+	var groups: Dictionary = {"pebble_cluster": [], "twig_debris": []}
+	for cell: Vector2i in grass_cells:
+		if _objects.has(cell) or cell == _spawn_cell:
+			continue
+		if int(_depth.get(cell, 0)) != 0 or Farming.plots.has(cell):
+			continue
+		if _camp_field.has(cell):
+			continue  # tarla sirtlarinin ustune ot bitmez
+		var id := _scatter_kind_for(cell)
+		if id == "":
+			continue
+		# KAMP ICI: terk edilmislik hissi icin dal/kuru ot YOGUN (mockup'taki
+		# dagilmis cop). Cakil kampta seyrek kalir (temiz zemin havasi olmasin
+		# ama tas coplugu da olmasin).
+		var camp_boost: float = 1.0
+		if _camp_cells.has(cell):
+			camp_boost = CAMP_SCATTER_BOOST if id != "pebble_cluster" else 1.0
+		# ZEMIN SINIRI: yama kenarina fazladan serpinti — cizgiyi kirar
+		# (renk harmani sinirin kendisini, serpinti siluetini yumusatir).
+		if _edge_blend.has(cell):
+			camp_boost *= EDGE_SCATTER_BOOST
+		var roll := int(EnvModels.hash01(cell.x, cell.y, 101) * 100.0)
+		var chance: int = int(float(_scatter_chance(id)) * mult * camp_boost)
+		if roll >= chance:
+			continue
+		var rr: float = EnvModels.hash01(cell.x, cell.y, 103)
+		var rs: float = EnvModels.hash01(cell.x, cell.y, 107)
+		var ox: float = (EnvModels.hash01(cell.x, cell.y, 109) - 0.5) * 2.0
+		var oz: float = (EnvModels.hash01(cell.x, cell.y, 113) - 0.5) * 2.0
+		var sc: float = EnvModels.SCATTER_SCALE_MIN + rs \
+				* (EnvModels.SCATTER_SCALE_MAX - EnvModels.SCATTER_SCALE_MIN)
+		var off := Vector3(ox * EnvModels.SCATTER_OFFSET, 0.0,
+				oz * EnvModels.SCATTER_OFFSET)
+		var basis := Basis().rotated(Vector3.UP, rr * TAU).scaled(Vector3(sc, sc, sc))
+		groups[id].append(Transform3D(basis, _cell_center(cell) + off))
+	for id: String in groups:
+		var list: Array = groups[id]
+		if list.is_empty():
+			continue
+		var node := _env_scatter_node(id, list)
+		if node == null:
+			continue
+		add_child(node)
+		_decor_nodes.append(node)  # dekorla ayni omur (yeniden kurulumda silinir)
+		_env_scatter_nodes.append(node)  # perf olcumu icin ayri liste
+
+## Hucre baglamina gore serpinti turu ("" = serpinti yok).
+func _scatter_kind_for(cell: Vector2i) -> String:
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var n := cell + Vector2i(dx, dy)
+			var o := String(_objects.get(n, ""))
+			if o == "T":
+				return "twig_debris"      # agac dibi: dal parcasi
+			if o == "#":
+				return "pebble_cluster"   # kaya kenari: cakil
+			if is_swimmable(n):
+				return "pebble_cluster"   # su kenari: cakil
+	# ACIK CIMDE SERPINTI YOK: parlak yesil ot tutami cim uzerinde
+	# "yapistirilmis" duruyordu (kullanici karari, kaldirildi). Cakil ve
+	# dal baglama kurallariyla duruyor; ot tutami modeli vitrinde.
+	return ""
+
+func _scatter_chance(id: String) -> int:
+	match id:
+		"pebble_cluster": return EnvModels.CHANCE_PEBBLE
+		"twig_debris": return EnvModels.CHANCE_TWIG
+		_: return EnvModels.CHANCE_TUFT
+
+## Model + olcek onbellegi; GLB yoksa proseduerel fallback (gorev sarti).
+var _env_mesh_cache: Dictionary = {}
+
+func _env_scatter_node(id: String, list: Array,
+		override_span: float = 0.0) -> Node3D:
+	var mesh := _env_mesh(id)
+	if mesh == null:
+		return null
+	var target: float = override_span if override_span > 0.0 \
+			else EnvModels.scale_of(id)
+	var aabb := mesh.get_aabb()
+	var span: float = maxf(0.001, maxf(aabb.size.x, aabb.size.z))
+	var k: float = target / span            # KOK olcegi (ic dugum yok)
+	var bottom: float = aabb.position.y     # zemine oturma telafisi
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = list.size()
+	for i in list.size():
+		var t: Transform3D = list[i]
+		var s := t.basis.get_scale().x * k
+		var b := Basis().rotated(Vector3.UP, t.basis.get_euler().y).scaled(
+				Vector3(s, s, s))
+		mm.set_instance_transform(i, Transform3D(b,
+				t.origin + Vector3(0.0, -bottom * s, 0.0)))
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
+
+func _env_mesh(id: String) -> Mesh:
+	if _env_mesh_cache.has(id):
+		return _env_mesh_cache[id]
+	var mesh: Mesh = null
+	var glb := EnvModels.path_of(id)
+	if glb != "" and ResourceLoader.exists(glb):
+		var scene: Node = load(glb).instantiate()
+		_tame_meshy_materials(scene, EnvModels.tint_of(id))  # isima kapali + ton
+		for mi2: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
+			if mi2.mesh == null:
+				continue
+			mesh = mi2.mesh
+			# ONEMLI: GLTF import'u materyali cogu zaman MeshInstance3D'nin
+			# surface_override'ina koyuyor. MultiMesh yalniz MESH'i kullanir;
+			# materyali mesh'e TASIMAZSAK model BEMBEYAZ cikar (ilk CI
+			# karesinde yol taslari boyle ciktı). Aktif materyali mesh'e yaz.
+			if mesh is ArrayMesh:
+				for si in mesh.get_surface_count():
+					var sm2 := mi2.get_active_material(si)
+					if sm2 != null:
+						(mesh as ArrayMesh).surface_set_material(si, sm2)
+			break
+		scene.queue_free()
+	if mesh == null:
+		# FALLBACK (doku/model yoksa): duz renk basit sekil
+		var mat := StandardMaterial3D.new()
+		mat.roughness = 0.95
+		var sm := SphereMesh.new()
+		sm.radial_segments = 6
+		sm.rings = 3
+		sm.radius = 0.5
+		sm.height = 1.0
+		match id:
+			"pebble_cluster": mat.albedo_color = EnvModels.FALLBACK_STONE
+			"twig_debris": mat.albedo_color = EnvModels.FALLBACK_WOOD
+			_: mat.albedo_color = EnvModels.FALLBACK_LEAF
+		sm.material = mat
+		mesh = sm
+	_env_mesh_cache[id] = mesh
+	return mesh
 
 ## Bir dunya noktasindaki arazi yuksekligi (oyuncu ve nesneler icin).
 ## 14.4: platform hucresinde deck ust yuzu (arazi + PLATFORM_HEIGHT) doner —
@@ -3683,6 +5089,12 @@ func _build_structure_visual(item_id: String) -> Node3D:
 	bundle.add_child(load(def["model"]).instantiate())
 	if def.has("extra"):
 		bundle.add_child(load(def["extra"]).instantiate())
+	# Yapiya ton verildiyse uygula (ornek: sonuk ocak koyu yanmis odun).
+	# _tame_meshy_materials materyali KOPYALAR -> paylasilan kaynakta ton
+	# birikmesi olmaz, ayni model bir daha kurulunca daha koyu cikmaz.
+	if def.has("tint"):
+		var tint: Color = def["tint"]
+		_tame_meshy_materials(bundle, tint)
 	var aabb := _scene_aabb(bundle)
 	var by_long: bool = def.has("long")
 	var basis_size: float = aabb.get_longest_axis_size() if by_long else aabb.size.y
@@ -4516,16 +5928,39 @@ const MOUND_GLB := [
 	{"path": "res://assets/models/test/planting_mound2.glb",
 			"rot_deg": Vector3.ZERO},
 ]
-const MOUND_FOOTPRINT := 0.92  # hucreye sigacak taban genisligi (m)
+## BOS surulu tarla gostergesi (gorsel-tur): ekim yapilmamis hucrede bu
+## model durur, EKILINCE KAYBOLUR, hasattan sonra geri gelir. Ekili
+## hucrede yerini yukaridaki yatak modelleri alir (sira ile).
+const MOUND_EMPTY := {"path": "res://assets/models/crops/planting_mound.glb",
+		"rot_deg": Vector3.ZERO}
+## Hoyuk hucrenin TAMAMINI kaplamamali: "icine tohum ekilecek" olcekte
+## kucuk bir toprak yuvasi (0.92 -> 0.42; hucrenin ~%42'si).
+const MOUND_FOOTPRINT := 0.42  # taban genisligi (m)
+## Meshy hoyugu neredeyse BEYAZ geliyordu (kamp karesinde 4 beyaz kubbe).
+## Toprak tonuna cekilir.
+## (0.50/0.39/0.29 pembeye caliyordu; toprak kahvesine cekildi.)
+const MOUND_TINT := Color(0.44, 0.34, 0.23)
+## Model kubbe gibi sisman; 0.92 m tabanda ~45 cm boy cikiyor — surulmus
+## bir sirt icin cok yuksek. Kok dugumde Y ezilir.
+## (Karakterdeki "node scale yasak" dersi SKINNED modellerin IC dugumleri
+## icindi; bu prop skinned degil, ezme guvenli.)
+const MOUND_FLATTEN := 0.55
 
 func _update_mound_node(cell: Vector2i) -> void:
+	_camp_clear_field_decor(cell)  # kamp dekoru gercek tarlaya yer birakir
 	if _mound_nodes.has(cell):
 		_mound_nodes[cell].queue_free()
 		_mound_nodes.erase(cell)
 	if not Farming.plots.has(cell):
 		return
-	var order: int = Farming.plots.keys().find(cell)
-	var node := _build_mound_visual(maxi(0, order) % MOUND_GLB.size())
+	var plot: Variant = Farming.plots.get(cell)
+	var empty: bool = plot == null or String(plot.get("crop_id", "")) == ""
+	var node: Node3D
+	if empty:
+		node = _build_mound_from(MOUND_EMPTY)
+	else:
+		var order: int = Farming.plots.keys().find(cell)
+		node = _build_mound_visual(maxi(0, order) % MOUND_GLB.size())
 	if node == null:
 		return
 	var h := float(_cell_props(cell.x, cell.y)[0])
@@ -4534,7 +5969,11 @@ func _update_mound_node(cell: Vector2i) -> void:
 	_mound_nodes[cell] = node
 
 func _build_mound_visual(variant: int) -> Node3D:
-	var cfg: Dictionary = MOUND_GLB[variant]
+	return _build_mound_from(MOUND_GLB[variant])
+
+## Ortak kurucu: GLB'yi yukler, KOK dugumune olcek verir (ic dugumlere
+## dokunmaz), hucreye sigdirir ve zemine oturtur.
+func _build_mound_from(cfg: Dictionary) -> Node3D:
 	var glb: String = String(cfg["path"])
 	if not ResourceLoader.exists(glb):
 		return null
@@ -4542,14 +5981,14 @@ func _build_mound_visual(variant: int) -> Node3D:
 	var inst: Node3D = load(glb).instantiate()
 	inst.rotation_degrees = cfg.get("rot_deg", Vector3.ZERO)
 	root.add_child(inst)
-	_tame_meshy_materials(inst)  # Meshy isimasi kapali (toprak parlamasin)
+	_tame_meshy_materials(inst, MOUND_TINT)  # isima kapali + toprak tonu
 	# Tabani hucreye sigdir + zemine otur (donme SONRASI olculur)
 	var aabb := _scene_aabb(inst)
 	var span: float = maxf(aabb.size.x, aabb.size.z)
 	if span > 0.01:
 		var s: float = MOUND_FOOTPRINT / span
-		inst.scale = Vector3(s, s, s)
-		inst.position.y = -aabb.position.y * s
+		inst.scale = Vector3(s, s * MOUND_FLATTEN, s)
+		inst.position.y = -aabb.position.y * s * MOUND_FLATTEN
 	return root
 
 func _update_crop_node(cell: Vector2i) -> void:
@@ -5496,6 +6935,7 @@ func apply_quality(tier: String) -> void:
 	RenderingServer.directional_shadow_atlas_set_size(int(t["dir_shadow_size"]), true)
 
 func _on_quality_changed(tier: String) -> void:
+	_apply_water_tier()  # C: Dusuk'te dalga/parilti kapansin
 	apply_quality(tier)
 	_save_quality()
 

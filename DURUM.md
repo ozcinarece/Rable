@@ -1,6 +1,6 @@
 # DURUM — Proje Envanteri (Mevcut Fonksiyonalite Denetimi)
 
-Tarih: 2026-07-24 · Kaynak: KOD (origin/main @ CLICKTEST-fix sonrası) ·
+Tarih: 2026-07-25 · Kaynak: KOD (origin/main + gorsel-tur dalı) ·
 Kural: bir özellik ancak kodda çalışır halde varsa VAR sayıldı.
 Durum değerleri: ÇALIŞIYOR / BRANCH'TE / YARIM / SADECE-PLAN / BOZUK.
 
@@ -11,6 +11,12 @@ Durum değerleri: ÇALIŞIYOR / BRANCH'TE / YARIM / SADECE-PLAN / BOZUK.
 | Dünya | 128×128 prosedürel ada (FastNoiseLite, seed) | ÇALIŞIYOR | main | map_gen.gd, world3d.gd | — | — | MAPTEST CI'da her koşuda |
 | Dünya | Zemin türleri (çim/toprak/kum/su/kil) | ÇALIŞIYOR | main | world3d.gd (_ground_char) | harita | — | — |
 | Dünya | Dekor (çiçek/mantar/çalı, GLB ağaçlar) | ÇALIŞIYOR | main | world3d.gd (_build_decor) | stil-vitrin (merged) | — | pine_tree GLB bağlı |
+| Dünya | Çevre serpintisi (çakıl/dal, MultiMesh) | BRANCH'TE | gorsel-tur | world3d.gd (_build_env_scatter), env_models.gd | — | — | ot tutamı kaldırıldı; tür başına tek MultiMesh |
+| Dünya | Aşınmış yol izi (zemin renk lekesi) | BRANCH'TE | gorsel-tur | world3d.gd (_cell_props, _add_path_strip) | — | — | yol taşları kapalı (PATH_STONES_ON) |
+| Dünya | Zemin geçiş bandı (yama sınırları organik + harmanlı) | BRANCH'TE | gorsel-tur | world3d.gd (_build_edge_blend), map_gen.gd | — | — | sınırda serpinti 1.7x |
+| Dünya | Spawn kampı (yıkık kulübe/kuyu/terk edilmiş tarla/yollar) | BRANCH'TE | gorsel-tur | world3d.gd (_camp_plan, _build_spawn_camp) | — | — | TAMAMEN DEKOR; KAMPTEST CI'da |
+| Tarım | Boş sürülü tarla göstergesi (planting_mound) | BRANCH'TE | gorsel-tur | world3d.gd (_update_mound_node) | tarım-3d | — | ekilince kaybolur, hasatta döner |
+| Dünya | Taş yol (auto-tiling karo + kenar erimesi) | BRANCH'TE | tas-yol-fix | world3d.gd (_build_road), road_tiles.gd | gorsel-tur | road_tile_edge.glb ve moss_patch repoda yok (fallback var) | ROADTEST CI'da; miras/yeni yosun farkı |
 | Dünya | Ağaç kesme + çalı yeniden büyüme | ÇALIŞIYOR | main | world3d.gd, gather_rules.gd | alet | — | balta tek vuruş |
 | Dünya | Kaya kırma (taş/kömür/altın/bakır) | ÇALIŞIYOR | main | world3d.gd | kazma | — | — |
 | Kazı | Kürekle kazı (derinlik 1–4) | ÇALIŞIYOR | main | world3d.gd (_depth), dig_rules.gd | kürek | — | — |
@@ -117,11 +123,11 @@ Durum değerleri: ÇALIŞIYOR / BRANCH'TE / YARIM / SADECE-PLAN / BOZUK.
 | Durum | Adet |
 |---|---|
 | ÇALIŞIYOR | 82 |
-| BRANCH'TE | 5 |
+| BRANCH'TE | 11 |
 | YARIM | 3 |
 | SADECE-PLAN | 13 |
 | BOZUK | 0 |
-| **TOPLAM** | **103** |
+| **TOPLAM** | **109** |
 
 (BOZUK 0: bilinen iki cihaz hatası — Ayarlar Kapat taşması ve sandık
 overlay'i — bu denetim sırasında düzeltilip 01:19 APK'da yayınlandı.)

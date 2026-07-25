@@ -101,11 +101,11 @@ const TOOL_HOLD := {
 			"extra": Vector3.ZERO},
 	# hoe.glb OLCULDU: sap uzun ekseni Y (-0.5..0.5), kafa X'te genis (0.52),
 	# Z ince (0.26) -> balta/kazma ailesiyle AYNI duzen. Baslangic olarak
-	# kazmanin elde ayarlanmis degerleri verildi; ince ayar Grip Ayar
-	# Modu'ndan yapilir (butonlarla, kod dokunmadan).
+	# ELDE AYARLANDI (Grip Ayar Modu, kullanici onayi). Baslangicta
+	# kazmanin degerleri verilmisti; capa oyunda dogrudan hizalandi.
 	"capa": {"axis": 1, "grip": 0.18, "scale": 0.5,
-			"rot_deg": Vector3(-166.0, 79.0, -96.0),
-			"extra": Vector3(0.021, 0.072, 0.045)},
+			"rot_deg": Vector3(-340.0, 79.0, -96.0),
+			"extra": Vector3(0.035, 0.121, 0.087)},
 	# ELDE AYARLANDI (Grip Ayar Modu, kullanici onayi): capraz modellenmis
 	# kurek icin hesapla bulunamayan poz, ekran yonu butonlariyla oturtuldu.
 	"kurek": {"axis": 2, "grip": 0.15, "scale": 0.5,
@@ -181,7 +181,7 @@ const GRIP_OVERRIDE_PATH := "user://grip_overrides.json"
 ## Kayitli ofsetler TOOL_HOLD'un UZERINE biner. Bir ayar koda islenince
 ## cihazdaki eski kayit AYNI farki bir daha uygular (cift donme!). Bu sayi
 ## koda deger islendiginde ARTIRILIR; eski surumlu kayit yok sayilir/silinir.
-const GRIP_VERSION := 3
+const GRIP_VERSION := 4
 var _grip_over: Dictionary = {}
 var _hat_id: String = ""
 var _face_path: String = ""

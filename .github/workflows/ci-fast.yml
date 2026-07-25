@@ -1,0 +1,86 @@
+name: Hizli testler (mantik)
+
+# HIZLI KATMAN: oyunu GERCEK --headless'te (xvfb yok, OpenGL yok) kosar,
+# yalniz kare almayan mantik testlerini calistirir ve saniyeler icinde
+# biter. Her push'ta calisir.
+#
+# Agir/gorsel katman screenshot.yml'de: PR + elle tetikleme.
+#
+# IMPORT ONBELLEGI: .godot/imported Godot'nun ice aktarma ciktisi.
+# Assetler degismediyse yeniden ice aktarma ~3 dakikayi bosa harciyordu;
+# onbellekten gelince saniyeler suruyor.
+
+on:
+  push:
+    paths:
+      - "scripts/**"
+      - "project.godot"
+      - "*.tscn"
+      - "assets/**"
+      - ".github/workflows/ci-fast.yml"
+  workflow_dispatch: {}
+
+env:
+  GODOT_TAG: "4.4-stable"
+
+jobs:
+  hizli:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Repoyu al
+        uses: actions/checkout@v4
+
+      - name: Godot indir
+        run: |
+          set -e
+          mkdir -p /opt/godot
+          curl -sSL -o /tmp/godot.zip \
+            "https://github.com/godotengine/godot/releases/download/${GODOT_TAG}/Godot_v${GODOT_TAG}_linux.x86_64.zip"
+          unzip -q /tmp/godot.zip -d /opt/godot/editor
+          GODOT_BIN=$(find /opt/godot/editor -maxdepth 2 -type f -name 'Godot_*')
+          chmod +x "$GODOT_BIN"
+          mv "$GODOT_BIN" /opt/godot/godot
+
+      - name: Import onbellegi
+        uses: actions/cache@v4
+        with:
+          # HEM .godot HEM assetlerin yanindaki .import dosyalari.
+          # ILK DENEMEDE yalniz .godot onbelleklendi ve ICE AKTARMA
+          # HIC HIZLANMADI (olculdu: onbellek 4 sn'de geri geldi, ice
+          # aktarma yine 164 sn). Sebep: bu repoda assets/ altinda
+          # commit'lenmis .import dosyasi YOK (459 asset, 0 .import) ve
+          # .import dosyalari .godot'nun ICINDE DEGIL, asset'in yaninda
+          # duruyor. Onlar olmadan Godot her seferinde her seyi bastan
+          # ice aktariyor.
+          path: |
+            .godot
+            assets/**/*.import
+          # Anahtar: assetlerin + proje ayarlarinin hash'i. Asset
+          # degismediyse ice aktarma adimi neredeyse bedava.
+          key: godot-import-${{ env.GODOT_TAG }}-${{ hashFiles('assets/**', 'project.godot') }}
+          restore-keys: |
+            godot-import-${{ env.GODOT_TAG }}-
+
+      - name: Projeyi ice aktar
+        run: /opt/godot/godot --headless --import --path "$GITHUB_WORKSPACE" || true
+
+      - name: Mantik testleri
+        env:
+          RABLE_SCREENSHOT: /tmp/unused.png
+          RABLE_TEST_LEVEL: hizli
+        run: |
+          set -o pipefail
+          timeout 180 /opt/godot/godot --headless --path "$GITHUB_WORKSPACE" \
+            > /tmp/fast.log 2>&1 || true
+          tail -60 /tmp/fast.log
+          # Parse hatasi = tum dosya yuklenmez ve oyun sessizce hic
+          # calismaz. Bu tuzaga bu projede dort kez dusuldu; artik CI
+          # kirmizi yaniyor.
+          if grep -qE "Parse Error|SCRIPT ERROR" /tmp/fast.log; then
+            echo "::error::GDScript hatasi var (yukariya bak)"
+            exit 1
+          fi
+          if ! grep -q "FASTTESTS: bitti" /tmp/fast.log; then
+            echo "::error::Hizli testler tamamlanmadi"
+            exit 1
+          fi

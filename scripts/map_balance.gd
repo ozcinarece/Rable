@@ -11,6 +11,11 @@ const SEED_DEFAULT: int = 20260721
 # --- Zemin lekeleri (çim ana; toprak/plato noise ile) -------------------
 const DIRT_SCALE: float = 0.05        # toprak leke noise frekansı (büyük leke)
 const DIRT_THRESHOLD: float = 0.62    # bu üstü toprak (yüksek=azınlık leke; çim ana)
+## KENAR KIRMA: leke sınırları düşük frekanslı noise'la çizilince hücre
+## çözünürlüğünde MERDİVEN gibi görünüyordu. Eşiğe yüksek frekanslı ufak
+## bir gürültü eklenir; sınır düzensiz/organik bir saçağa döner.
+const EDGE_DETAIL_SCALE: float = 0.42  # kenar saçağı noise frekansı (ince)
+const EDGE_JITTER: float = 0.04        # eşiğin ± oynama payı
 const HILL_SCALE: float = 0.035       # yükseltilmiş plato noise frekansı
 const HILL_THRESHOLD: float = 0.72    # bu üstü yüksek plato "h" (seyrek plato)
 
