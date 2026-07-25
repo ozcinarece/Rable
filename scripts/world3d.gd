@@ -2874,8 +2874,14 @@ func _build_road() -> void:
 			continue   # ic hucre: kenar dekoru yok
 
 		# --- 2b) KENAR: cim karonun USTUNE biner, kenar cizgisini kirar ---
+		# KALITE CARPANI UYGULANMAZ. Bu bir dekor degil, GECISIN KENDISI:
+		# yol-cim sinirindaki net cizgiyi kiran tek sey bu. Kademe carpani
+		# (orta = 0.7) uygulandiginda ortme %60 yerine %47'ye dusuyordu ve
+		# tepeden bakista duz karo kenarlari geri geliyordu. Dusuk
+		# kademede zaten daha az yol hucresi gorunuyor; asil tasarruf
+		# derz dekoru ve sacilmada (onlar mult'a bagli).
 		if RoadTiles.hash01(cell.x, cell.y, 317) * 100.0 \
-				< float(RoadTiles.EDGE_OVERLAP_CHANCE) * mult:
+				< float(RoadTiles.EDGE_OVERLAP_CHANCE):
 			tufts.append(_road_edge_xform(cell, open_dirs, 319, 0.0))
 			_road_edge_covered += 1
 

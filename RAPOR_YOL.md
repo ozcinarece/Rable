@@ -176,3 +176,29 @@ hiçbir dalda bulunamadı; yalnız `road_tile_a/b/c` var. Kod dosyayı
 (`tek_acik=32`) kırık tarafı dışa dönük olarak devreye giriyor; kod
 değişikliği gerekmiyor. **`moss_patch`** de aynı durumda: `%25 derz
 yosunu` kuralı yazılı ve çalışıyor, ama çizecek model yok.
+
+
+---
+
+## 9. Sonuç testi (görev 3b)
+
+Kriter gözle veriliyordu: "tepeden bakınca yol ile çim arasında net bir
+çizgi görünmemeli, ama yol nereye gidiyor rahat okunmalı." Bunun için
+**tam tepeden** bir kare eklendi (`docs/screens/3d_yol_tepe.png`) ve
+ölçü tarafı iki orana bağlandı:
+
+- `kenar_ortulu` — karo kenarına çim **binen** hücre / kenar hücresi
+  (hedef ~%60).
+- `derz_ot` — derz dekoru alan hücre / tüm yol (hedef ~%30).
+
+İlk koşu `kenar_ortulu=%47` verdi. Sebep: **kalite kademesi çarpanı**
+(`orta` = 0.7) kenar örtmeye de uygulanıyordu. Oysa kenar örtme bir dekor
+değil, **geçişin kendisi** — sınırdaki net çizgiyi kıran tek şey o.
+Çarpan kenar örtmeden kaldırıldı; derz dekoru ve saçılma kademeye bağlı
+kalmaya devam ediyor (asıl tasarruf zaten orada, ve düşük kademede
+ekranda daha az yol hücresi görünüyor).
+
+**Tepeden bakışta kalan durum:** yolun gittiği yön net okunuyor; sınırın
+büyük kısmı tutamlarla kırılmış. Kenar karosu (`road_tile_edge.glb`)
+gelene kadar tek taraflı açık 32 hücrede hâlâ düz karo kenarı var — o
+dosya sistemin bu maddedeki son parçası.
