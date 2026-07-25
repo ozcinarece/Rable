@@ -85,8 +85,10 @@ const PLACE_MODELS := {
 			"behavior": "station", "max_hp": 120},
 	"sandik": {"model": "res://assets/models/test/storege_box.glb",
 			"h": 0.55, "solid": true, "behavior": "station", "max_hp": 60},
+	# h 0.9 karaktere gore devasa bir odun yiginiydi -> 0.5 (ates cukuru
+	# insanin dizine gelir, gogsune degil).
 	"ocak": {"model": "res://assets/models/tools/campfire-pit.glb",
-			"h": 0.9, "solid": true, "behavior": "hearth", "max_hp": 400},
+			"h": 0.5, "solid": true, "behavior": "hearth", "max_hp": 400},
 	"platform": {"model": "platform", "h": 1.5, "solid": false,
 			"behavior": "platform", "max_hp": 100, "rotatable": true},
 	"kamp_evi": {"model": "res://assets/models/tools/tent.glb",
@@ -2113,6 +2115,7 @@ func _build_world() -> void:
 	# "kamptaki agaclar silinmis" diye delta yazar ve her yuklemede
 	# agaclar kulubenin icinde geri belirirdi.
 	_path_cells.clear()
+	_build_edge_blend()  # zemin gecis bandi (arazi kurulmadan once hazir)
 	_camp_plan()
 
 	# kayit-sistemi: taban nesne anlik goruntusu (seed'den uretilen ilk durum).
@@ -2229,6 +2232,52 @@ func _build_sea_rocks() -> void:
 # su hucreleri cukurlasir, deniz duzlemi iclerini doldurur (kumsal suya
 # egimle iner).
 
+
+# --- ZEMIN GECIS BANDI (kenar harmani) ----------------------------------
+# Toprak/cim/kum yamalarinin sinirlari hucre cozunurlugunde KESKIN KARE
+# cikiyordu. Iki katmanli cozum:
+#   1) map_gen esige ince gurultu ekler -> sinirin SEKLI organik olur.
+#   2) Burada sinir hucrelerinin RENGI komsu ortalamasina cekilir ->
+#      cizgi tek renk atlamasi yerine gecis bandi olur (%30 bir komsu
+#      farkliysa, %60 uc-dort komsu farkliysa).
+# Su ("~") harman disi: cim<->su karisimi camur yesili verir, kiyiyi
+# kum zaten yumusatiyor.
+const EDGE_BLEND_MIN := 0.30
+const EDGE_BLEND_MAX := 0.60
+const EDGE_NB: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0),
+		Vector2i(0, 1), Vector2i(0, -1)]
+var _edge_blend: Dictionary = {}   # cell -> harmanlanmis Color
+
+func _build_edge_blend() -> void:
+	_edge_blend.clear()
+	for cell: Vector2i in _ground_char:
+		var ch: String = _ground_char[cell]
+		if ch == "~":
+			continue
+		var base: Color = GROUND_DEFS[ch]["color"]
+		var mix := Color(0, 0, 0)
+		var diff := 0
+		for d: Vector2i in EDGE_NB:
+			var nch: String = String(_ground_char.get(cell + d, ch))
+			if nch == ch or nch == "~":
+				continue
+			mix += Color(GROUND_DEFS[nch]["color"])
+			diff += 1
+		if diff == 0:
+			continue
+		mix = mix / float(diff)
+		var t: float = EDGE_BLEND_MIN + (EDGE_BLEND_MAX - EDGE_BLEND_MIN) \
+				* (float(diff - 1) / 3.0)
+		_edge_blend[cell] = base.lerp(mix, t)
+
+## Hucrenin zemin rengi: sinirdaysa gecis bandi rengi, degilse taban renk.
+func _ground_color(cell: Vector2i, def: Dictionary) -> Color:
+	if _edge_blend.has(cell):
+		var c: Color = _edge_blend[cell]
+		return c
+	var base: Color = def["color"]
+	return base
+
 func _cell_props(cx: int, cy: int) -> Array:
 	if cx < 0 or cy < 0 or cx >= _map_w or cy >= _map_h:
 		return [-1.0, Color(0.72, 0.60, 0.38)]  # harita disi: denize inen yamac
@@ -2238,7 +2287,7 @@ func _cell_props(cx: int, cy: int) -> Array:
 		# Golun dibi kumlu; su yuzeyini deniz duzlemi saglar
 		return [-0.40, Color(0.62, 0.54, 0.36)]
 	if ch == "h":
-		return [1.1, def["color"]]
+		return [1.1, _ground_color(Vector2i(cx, cy), def)]
 	# Duz alanlar hafif dalgali: dogal tepecik hissi (yumusak fonksiyon)
 	var roll := sin(cx * 0.37) * cos(cy * 0.29) * 0.07 \
 			+ sin(cx * 0.15 + cy * 0.42) * 0.05
@@ -2258,7 +2307,7 @@ func _cell_props(cx: int, cy: int) -> Array:
 	# YOL IZI (gorsel-tur): asinmis patika lekesi. GROUND char EKLENMEDI —
 	# yalniz RENK harmani; yurume/mekanik etkisi YOK (patika sistemi degil).
 	if _path_cells.has(Vector2i(cx, cy)):
-		var pc: Color = def["color"]
+		var pc: Color = _ground_color(Vector2i(cx, cy), def)
 		return [roll, pc.lerp(EnvModels.PATH_TINT, 0.75)]
 	# TARIM: surulu tarla rengi (veri Farming'de; GROUND char EKLENMEDI —
 	# kayit/uretec varsayimlari bozulmasin). Islakken koyulasir.
@@ -2267,7 +2316,7 @@ func _cell_props(cx: int, cy: int) -> Array:
 		var fcol: Color = TarimBalance.TILLED_WET_COLOR \
 				if bool(fplot.get("watered_today", false)) else TarimBalance.TILLED_COLOR
 		return [roll + TarimBalance.TILLED_TOP, fcol]
-	return [roll, def["color"]]
+	return [roll, _ground_color(Vector2i(cx, cy), def)]
 
 # Bir dunya noktasinda yukseklik+renk (4 komsu hucrenin harmani)
 func _sample_terrain(x: float, z: float) -> Array:
@@ -2297,8 +2346,19 @@ func _sample_terrain(x: float, z: float) -> Array:
 	# Sert adimda her kose ya A ya B degerini alir; gecis tek quad'a siner.
 	var hfx := (0.0 if fx < 0.5 else 1.0) if sharp else fx
 	var hfz := (0.0 if fz < 0.5 else 1.0) if sharp else fz
-	var cfx := (0.0 if fx < 0.5 else 1.0) if sharp else smoothstep(0.2, 0.8, fx)
-	var cfz := (0.0 if fz < 0.5 else 1.0) if sharp else smoothstep(0.2, 0.8, fz)
+	# Renk gecisi normalde dar bantta (0.2..0.8) tutuluyor ki dokular
+	# bulanmasin; ama zemin TURU degisen sinirda bu dar bant merdiveni
+	# gorunur birakiyordu -> orada tam hucre genisliginde yumusatilir.
+	var soft := _edge_blend.has(Vector2i(i0, j0)) \
+			or _edge_blend.has(Vector2i(i0 + 1, j0)) \
+			or _edge_blend.has(Vector2i(i0, j0 + 1)) \
+			or _edge_blend.has(Vector2i(i0 + 1, j0 + 1))
+	var cband_lo: float = 0.0 if soft else 0.2
+	var cband_hi: float = 1.0 if soft else 0.8
+	var cfx := (0.0 if fx < 0.5 else 1.0) if sharp \
+			else smoothstep(cband_lo, cband_hi, fx)
+	var cfz := (0.0 if fz < 0.5 else 1.0) if sharp \
+			else smoothstep(cband_lo, cband_hi, fz)
 	for dj in 2:
 		for di in 2:
 			var wgt := (hfx if di == 1 else 1.0 - hfx) * (hfz if dj == 1 else 1.0 - hfz)
@@ -2710,7 +2770,6 @@ func _build_path_stones() -> void:
 const CAMP_OFF := {
 	"ocak": Vector2i(0, 0),
 	"hut": Vector2i(-5, -4),           # KB kulube (3x3 ayak izi, kapi guneyde)
-	"hut_repaired": Vector2i(-10, -4), # YALNIZ debug: onarilmis kopya
 	"well": Vector2i(5, -3),
 	"field": Vector2i(5, -1),          # 2x2 tarlanin sol-ust hucresi
 	"masa": Vector2i(-5, 3),           # GB uretim kosesi (tezgah YOK)
@@ -2727,9 +2786,15 @@ const CAMP_ROADS := [
 ]
 ## Yol kavsaklarindaki sonuk mesale direkleri (ocak merkezli ofset).
 const CAMP_TORCHES := [Vector2i(0, -3), Vector2i(3, 0), Vector2i(-3, 0), Vector2i(0, 4)]
-const CAMP_RADIUS := 7      # agac/kaya seyreltme + serpinti yogunlastirma yaricapi
-const CAMP_KEEP_TREE := 14  # yaricap icinde agac/kayanin ~%14'u kalir (seyrek)
+## KAMP ACIKLIGI (iki kademe): CLEAR_R icinde agac/kaya HIC yok — kamp
+## nefes alsin; CLEAR_R..FADE_R arasi seyrek (ormana yumusak gecis, sert
+## bir "agac duvari" cizgisi olusmasin).
+const CAMP_CLEAR_R := 8     # bu yaricapta agac/kaya SIFIR
+const CAMP_FADE_R := 12     # bu yaricapa kadar seyrek (CLEAR_R'den sonra)
+const CAMP_FADE_KEEP := 45  # gecis halkasinda agac/kayanin ~%45'i kalir
+const CAMP_RADIUS := CAMP_FADE_R  # serpinti yogunlastirma + kamp hucre kumesi
 const CAMP_SCATTER_BOOST := 2.0  # kamp icinde dal/kuru ot yogunlugu carpani
+const EDGE_SCATTER_BOOST := 1.7  # zemin yamasi sinirinda serpinti carpani
 
 var _camp_center := Vector2i(-999, -999)
 var _camp_cells: Dictionary = {}   # kamp yaricapi (serpinti yogunlugu icin)
@@ -2764,19 +2829,24 @@ func _camp_plan() -> void:
 	_camp_center = _spawn_cell
 	_camp_cells.clear()
 	_camp_field.clear()
-	# 1) Kamp alanini ac: yaricap icindeki agac/kayalarin cogu kaldirilir,
-	#    kucuk bir kismi kalir (mockup'taki "acikligi ceviren seyrek agac").
-	for dy in range(-CAMP_RADIUS, CAMP_RADIUS + 1):
-		for dx in range(-CAMP_RADIUS, CAMP_RADIUS + 1):
-			if dx * dx + dy * dy > CAMP_RADIUS * CAMP_RADIUS:
+	# 1) Kamp acikligi. Ic daire (CLEAR_R) tamamen bosaltilir; disindaki
+	#    halkada (FADE_R'ye kadar) agaclarin bir kismi kalir ki ormana
+	#    gecis sert bir cizgi olmasin.
+	for dy in range(-CAMP_FADE_R, CAMP_FADE_R + 1):
+		for dx in range(-CAMP_FADE_R, CAMP_FADE_R + 1):
+			var r2 := dx * dx + dy * dy
+			if r2 > CAMP_FADE_R * CAMP_FADE_R:
 				continue
 			var c := _camp_center + Vector2i(dx, dy)
 			_camp_cells[c] = true
 			if not _objects.has(c):
 				continue
-			var keep: bool = int(EnvModels.hash01(c.x, c.y, 401) * 100.0) < CAMP_KEEP_TREE
-			if keep and not _camp_build_footprint(c):
-				continue
+			if r2 > CAMP_CLEAR_R * CAMP_CLEAR_R:
+				# Gecis halkasi: seyrelt (yapi ayak izinde istisna yok)
+				var keep: bool = int(EnvModels.hash01(c.x, c.y, 401) * 100.0) \
+						< CAMP_FADE_KEEP
+				if keep and not _camp_build_footprint(c):
+					continue
 			_objects.erase(c)
 			_solid_cells.erase(c)
 	# 2) Yollar: ocaktan dort yone asinmis serit.
@@ -2785,16 +2855,13 @@ func _camp_plan() -> void:
 		var rd: Vector2i = r["dir"]
 		_add_path_strip(hearth, rd, int(r["len"]))
 	_path_cells[hearth] = true
-	# 3) Tarla (2x2) + bati kenarinda 1 hucrelik KURU kanal (su yok, sadece
-	#    kazilmis iz: "burada sulama vardi").
+	# 3) Tarla (2x2). Bati kenarindaki "kuru kanal" KALDIRILDI: kazi
+	#    derinligi arazide kare kenarli bir BLOK YUKSELTI uretiyordu
+	#    (kose kose, dogal degil) ve dekoratif degeri yoktu.
 	var f := _camp_at("field")
 	for dy in 2:
 		for dx in 2:
 			_camp_field[f + Vector2i(dx, dy)] = true
-	for dy in 2:
-		var ch := f + Vector2i(-1, dy)
-		_depth[ch] = 1
-		_objects.erase(ch)
 	# 4) Dogus: kulubenin ONUNDE (kapi guneye bakiyor).
 	_spawn_cell = _camp_at("hut") + Vector2i(0, 2)
 	_objects.erase(_spawn_cell)
@@ -2833,9 +2900,6 @@ func _build_spawn_camp() -> void:
 			if dx == 0 and dy == 1:
 				continue  # kapi
 			_solid_cells[hut + Vector2i(dx, dy)] = true
-	# Onarilmis kopya: YALNIZ debug/test — yan yana karsilastirma icin
-	if OS.is_debug_build() or TestMode.ENABLED:
-		_camp_prop_env("repaired_hut", _camp_at("hut_repaired"), 0.0)
 	# Kuyu
 	var well := _camp_at("well")
 	_camp_prop_env("ruined_well", well, 25.0)
@@ -3120,15 +3184,20 @@ func _run_camp_test(save_path: String) -> void:
 	for off: Vector2i in CAMP_TORCHES:
 		if _placed.has(c + off):
 			veri_temiz = false
-	# 5) Tarla: 4 hucre dekor + bati kenarinda kuru kanal
+	# 5) Tarla: 4 hucre dekor
 	var tarla := _camp_field.size()
 	var f := _camp_at("field")
-	var kanal: bool = int(_depth.get(f + Vector2i(-1, 0), 0)) == 1
-	# 6) Kamp acikligi: yaricap icinde agac/kaya SEYREK kaldi mi
+	# 6) Kamp acikligi: IC DAIRE tamamen bos mu, gecis halkasi seyrek mi
+	var ic_dolu := 0
 	var dolu := 0
 	for cell: Vector2i in _camp_cells:
-		if _objects.has(cell):
-			dolu += 1
+		if not _objects.has(cell):
+			continue
+		dolu += 1
+		var dc := cell - c
+		if dc.x * dc.x + dc.y * dc.y <= CAMP_CLEAR_R * CAMP_CLEAR_R:
+			ic_dolu += 1
+	var aciklik_bos: bool = ic_dolu == 0
 	var doluluk: float = float(dolu) / maxf(1.0, float(_camp_cells.size())) * 100.0
 
 	# Kareler: mockup acisiyla genis kamp + tarla yakin plani
@@ -3156,10 +3225,10 @@ func _run_camp_test(save_path: String) -> void:
 
 	var line := ("KAMPTEST: merkez=%s dogus_on=%s dogus_bos=%s kulube_kati=%s "
 			+ "kapi_acik=%s yol_yon=%d/4 ocak_yanmiyor=%s isik_yok=%s "
-			+ "veri_temiz=%s tarla=%d kanal=%s dolu=%%%.0f") % [
+			+ "veri_temiz=%s tarla=%d aciklik_bos=%s halka_dolu=%%%.0f") % [
 		str(c), str(dogus_on), str(dogus_bos), str(kulube_kati), str(kapi_acik),
 		yol_yon, str(ocak_yanmiyor), str(isik_yok), str(veri_temiz),
-		tarla, str(kanal), doluluk]
+		tarla, str(aciklik_bos), doluluk]
 	print(line)
 	var fh := FileAccess.open("res://docs/screens/kamptest.txt", FileAccess.WRITE)
 	if fh != null:
@@ -3194,6 +3263,10 @@ func _build_env_scatter(grass_cells: Array) -> void:
 		var camp_boost: float = 1.0
 		if _camp_cells.has(cell):
 			camp_boost = CAMP_SCATTER_BOOST if id != "pebble_cluster" else 1.0
+		# ZEMIN SINIRI: yama kenarina fazladan serpinti — cizgiyi kirar
+		# (renk harmani sinirin kendisini, serpinti siluetini yumusatir).
+		if _edge_blend.has(cell):
+			camp_boost *= EDGE_SCATTER_BOOST
 		var roll := int(EnvModels.hash01(cell.x, cell.y, 101) * 100.0)
 		var chance: int = int(float(_scatter_chance(id)) * mult * camp_boost)
 		if roll >= chance:
@@ -5200,7 +5273,9 @@ const MOUND_GLB := [
 ## hucrede yerini yukaridaki yatak modelleri alir (sira ile).
 const MOUND_EMPTY := {"path": "res://assets/models/crops/planting_mound.glb",
 		"rot_deg": Vector3.ZERO}
-const MOUND_FOOTPRINT := 0.92  # hucreye sigacak taban genisligi (m)
+## Hoyuk hucrenin TAMAMINI kaplamamali: "icine tohum ekilecek" olcekte
+## kucuk bir toprak yuvasi (0.92 -> 0.42; hucrenin ~%42'si).
+const MOUND_FOOTPRINT := 0.42  # taban genisligi (m)
 ## Meshy hoyugu neredeyse BEYAZ geliyordu (kamp karesinde 4 beyaz kubbe).
 ## Toprak tonuna cekilir.
 const MOUND_TINT := Color(0.50, 0.39, 0.29)
