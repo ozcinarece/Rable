@@ -155,6 +155,14 @@ var _head_attach: Node3D   # sapka/gozluk baglanma noktasi (olcek=1 ayna)
 var _tool_src: Node3D      # el kemigi kaynagi (aynaya kopyalanir)
 var _head_src: Node3D      # kafa kemigi kaynagi (aynaya kopyalanir)
 var _held_tool_path: String = ""  # karakter degisince yeniden takmak icin
+
+## GRIP AYAR MODU (debug araci): TOOL_HOLD'un UZERINE binen canlı ofsetler.
+## item_id -> {"extra": Vector3 (metre), "rot": Vector3 (derece)}.
+## Oyun icinde 6 butonla ayarlanir, user://grip_overrides.json'a kaydedilir
+## ve her aciliste geri yuklenir. Kalici hale getirmek icin uretilen
+## TOOL_HOLD satiri koda yapistirlir (bkz. grip_code_line).
+const GRIP_OVERRIDE_PATH := "user://grip_overrides.json"
+var _grip_over: Dictionary = {}
 var _hat_id: String = ""
 var _face_path: String = ""
 var _hair_style: String = ""  # "" = modelin kendi saci
@@ -174,6 +182,7 @@ var _rescale_model: Node3D = null
 var _rescale_wait: int = 0
 
 func _ready() -> void:
+	_load_grip_overrides()  # grip ayar modunda kaydedilenler geri gelsin
 	_visual = Node3D.new()
 	add_child(_visual)
 	set_character(DEFAULT_MODEL)
@@ -370,6 +379,118 @@ func debug_attach_world(path: String) -> void:
 		f.store_string(line + "\n")
 		f.close()
 
+# --- GRIP AYAR MODU (debug araci) --------------------------------------
+# Yeni bir Meshy aleti geldiginde hizalamayi oyun icinde yapmak icin.
+# Butonlar world3d/hud uzerinden bu API'yi cagirir; her degisiklikten sonra
+# alet yeniden takilir, boylece sonuc ANINDA gorunur.
+
+## Su an kusanili aletin ayar kaydi (yoksa bos olusturulur).
+func _grip_entry() -> Dictionary:
+	if _held_tool_path == "":
+		return {}
+	if not _grip_over.has(_held_tool_path):
+		_grip_over[_held_tool_path] = {"extra": Vector3.ZERO, "rot": Vector3.ZERO}
+	return _grip_over[_held_tool_path]
+
+## Aleti eksende KAYDIR (metre). axis: 0=X 1=Y 2=Z.
+func grip_nudge(axis: int, delta: float) -> void:
+	var e := _grip_entry()
+	if e.is_empty():
+		return
+	var v: Vector3 = e["extra"]
+	v[axis] += delta
+	e["extra"] = v
+	set_held_tool(_held_tool_path)
+
+## Aleti eksen etrafinda DONDUR (derece).
+func grip_rotate(axis: int, deg: float) -> void:
+	var e := _grip_entry()
+	if e.is_empty():
+		return
+	var v: Vector3 = e["rot"]
+	v[axis] += deg
+	e["rot"] = v
+	set_held_tool(_held_tool_path)
+
+## Su anki aletin ayarini sifirla (TOOL_HOLD tabanina don).
+func grip_reset() -> void:
+	if _held_tool_path == "":
+		return
+	_grip_over.erase(_held_tool_path)
+	set_held_tool(_held_tool_path)
+
+## Ekranda gosterilecek ozet.
+func grip_status() -> String:
+	if _held_tool_path == "":
+		return "alet yok"
+	var e: Dictionary = _grip_over.get(_held_tool_path, {})
+	var ex: Vector3 = e.get("extra", Vector3.ZERO)
+	var ro: Vector3 = e.get("rot", Vector3.ZERO)
+	return "%s\nkaydir %.3f, %.3f, %.3f\ndondur %.1f, %.1f, %.1f" % [
+		_held_tool_path, ex.x, ex.y, ex.z, ro.x, ro.y, ro.z]
+
+## Kalici hale getirmek icin TOOL_HOLD'a yapistirlacak satir (taban + ofset).
+func grip_code_line() -> String:
+	if _held_tool_path == "" or not TOOL_HOLD.has(_held_tool_path):
+		return ""
+	var cfg: Dictionary = TOOL_HOLD[_held_tool_path]
+	var e: Dictionary = _grip_over.get(_held_tool_path, {})
+	var rot: Vector3 = cfg.get("rot_deg", Vector3.ZERO) + e.get("rot", Vector3.ZERO)
+	var ext: Vector3 = cfg.get("extra", Vector3.ZERO) + e.get("extra", Vector3.ZERO)
+	var line := "\"%s\": {\"axis\": %d, \"grip\": %s, \"scale\": %s," % [
+		_held_tool_path, int(cfg.get("axis", 1)),
+		str(cfg.get("grip", 0.5)), str(cfg.get("scale", 0.0))]
+	line += "\n\t\t\"rot_deg\": Vector3(%.1f, %.1f, %.1f)," % [rot.x, rot.y, rot.z]
+	if cfg.has("grip_pt"):
+		var gp: Vector3 = cfg["grip_pt"]
+		line += "\n\t\t\"grip_pt\": Vector3(%.3f, %.3f, %.3f)," % [gp.x, gp.y, gp.z]
+	line += "\n\t\t\"extra\": Vector3(%.3f, %.3f, %.3f)}," % [ext.x, ext.y, ext.z]
+	return line
+
+## Ayarlari cihaza kaydet + koda yapistirlacak satiri log'a/dosyaya yaz.
+## NOT: disa aktarilmis oyunda res:// SALT-OKUNUR oldugu icin tool_profiles/
+## player3d dosyasina DOGRUDAN yazilamaz; bu yuzden ayarlar user:// altina
+## yazilir (telefonda kalici) ve kod satiri ayrica uretilir.
+func grip_save() -> String:
+	var data := {}
+	for k: String in _grip_over:
+		var e: Dictionary = _grip_over[k]
+		var ex: Vector3 = e.get("extra", Vector3.ZERO)
+		var ro: Vector3 = e.get("rot", Vector3.ZERO)
+		data[k] = {"extra": [ex.x, ex.y, ex.z], "rot": [ro.x, ro.y, ro.z]}
+	var f := FileAccess.open(GRIP_OVERRIDE_PATH, FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify(data, "\t"))
+		f.close()
+	var line := grip_code_line()
+	print("GRIP KAYDEDILDI -> ", GRIP_OVERRIDE_PATH)
+	print("TOOL_HOLD satiri:\n", line)
+	# Kod satiri ayri dosyaya da yazilir (telefondan kopyalamak/almak icin).
+	var f2 := FileAccess.open("user://grip_code.txt", FileAccess.WRITE)
+	if f2 != null:
+		f2.store_string(line + "\n")
+		f2.close()
+	return line
+
+func _load_grip_overrides() -> void:
+	if not FileAccess.file_exists(GRIP_OVERRIDE_PATH):
+		return
+	var f := FileAccess.open(GRIP_OVERRIDE_PATH, FileAccess.READ)
+	if f == null:
+		return
+	var parsed = JSON.parse_string(f.get_as_text())
+	f.close()
+	if not (parsed is Dictionary):
+		return
+	for k: String in parsed:
+		var e: Dictionary = parsed[k]
+		var ex: Array = e.get("extra", [0, 0, 0])
+		var ro: Array = e.get("rot", [0, 0, 0])
+		_grip_over[k] = {
+			"extra": Vector3(float(ex[0]), float(ex[1]), float(ex[2])),
+			"rot": Vector3(float(ro[0]), float(ro[1]), float(ro[2])),
+		}
+
 func _sync_attach_mirrors() -> void:
 	if _tool_src != null and _tool_attach != null:
 		var gt := _tool_src.global_transform
@@ -547,7 +668,12 @@ func set_held_tool(model_path: String) -> void:
 			if fixed > 0.0:
 				s = fixed / size  # sabit ~fixed m boy (telafi yok)
 			visual.scale = Vector3(s, s, s)
-			visual.rotation_degrees = cfg.get("rot_deg", Vector3.ZERO)
+			# GRIP AYAR MODU: canli ofset TOOL_HOLD'un UZERINE eklenir
+			# (taban veri bozulmaz; kapatilinca/silinince eski hale doner).
+			var ov: Dictionary = _grip_over.get(model_path, {})
+			var ov_rot: Vector3 = ov.get("rot", Vector3.ZERO)
+			var ov_extra: Vector3 = ov.get("extra", Vector3.ZERO)
+			visual.rotation_degrees = cfg.get("rot_deg", Vector3.ZERO) + ov_rot
 			var sz := aabb.size
 			var li: int = int(cfg.get("axis", 1))  # aletin uzun ekseni (balta=Y)
 			var frac: float = float(cfg.get("grip", 0.5))  # 0=MIN uc,1=MAX uc
@@ -558,7 +684,8 @@ func set_held_tool(model_path: String) -> void:
 			if cfg.has("grip_pt"):
 				g = cfg["grip_pt"]
 			var basis := Basis.from_euler(visual.rotation)
-			visual.position = -(basis * (g * s)) + cfg.get("extra", Vector3.ZERO)
+			visual.position = -(basis * (g * s)) \
+					+ cfg.get("extra", Vector3.ZERO) + ov_extra
 		else:
 			visual.scale = Vector3(s, s, s)
 

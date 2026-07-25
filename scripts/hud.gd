@@ -52,6 +52,7 @@ signal place_cancel                       # İPTAL
 signal drop_item_requested(slot_index: int)
 
 const Items = preload("res://scripts/items.gd")
+const TestMode = preload("res://scripts/test_mode.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const UiSlotScript = preload("res://scripts/ui_slot.gd")
 const UIColors = preload("res://scripts/ui_colors.gd")
@@ -157,7 +158,11 @@ const CAT_COLOR_KEY := {"malzeme": "resource", "alet": "tool",
 
 func _ready() -> void:
 	Inventory.changed.connect(_refresh)
+	# CIHAZ HATASI: istasyon yakinligi degisince YALNIZ kartlar yenileniyordu;
+	# detay seridindeki "⚠ Tezgah gerekli — uzaktasin" satiri ve Uret butonu
+	# BAYAT kaliyordu (tezgaha yurudugunde uyari silinmiyordu). Ikisi de yenilenir.
 	Crafting.station_changed.connect(_update_cards)
+	Crafting.station_changed.connect(_update_detail)
 	Crafting.queue_changed.connect(_update_cards)
 	Hunger.changed.connect(_update_hunger)
 	Thirst.changed.connect(_update_thirst)
@@ -230,6 +235,7 @@ func _ready() -> void:
 	_update_hunger()
 
 func _process(_delta: float) -> void:
+	_tick_grip_hold(_delta)
 	_update_day_pulse()
 	# gunduz/gece: gece kenar vinyeti gecişi YUMUŞAK (nightness eğrisi; çok hafif
 	# lavanta, UI_DESIGN 4.5). Gün/saat pill ilerlemesi de her kare akar.
@@ -396,6 +402,10 @@ var _lock_chip: PanelContainer
 var _lock_chip_label: Label
 
 func _build_lock_chip() -> void:
+	# TEST MODU: kapasite zaten tam acik, kilitli slot kavrami yok. Ayrica
+	# izgara ScrollContainer'a tasindigi icin cip oraya eklenmemeli.
+	if TestMode.ENABLED:
+		return
 	var vbox := inventory_grid.get_parent()
 	_lock_chip = PanelContainer.new()
 	_lock_chip.theme_type_variation = "InnerPanel"
@@ -721,6 +731,11 @@ func _build_dock() -> void:
 
 # 68px kategori renkli dolgulu daire + %68 dolduran koyu kahve ikon.
 func _style_dock_button(btn: Button, color: Color) -> void:
+	# CIHAZ HATASI ("envantere cok zor basiliyor"): varsayilan buton RELEASE
+	# aninda tetiklenir ve parmak 1-2 px kayarsa basis IPTAL olur — dokunmatikte
+	# cogu dokunus boyle kaciyordu. BASIS aninda tetikle (dock butonlari zaten
+	# geri alinabilir panel acar, yanlis basisin bedeli yok).
+	btn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
 	btn.custom_minimum_size = Vector2(68, 68)
 	btn.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	btn.expand_icon = true
@@ -740,6 +755,132 @@ func _style_dock_button(btn: Button, color: Color) -> void:
 	for c in ["icon_normal_color", "icon_hover_color", "icon_pressed_color",
 			"icon_disabled_color"]:
 		btn.add_theme_color_override(c, UIColors.INK_DARK)
+
+# --- GRIP AYAR MODU (debug araci) --------------------------------------
+# Yeni Meshy aleti geldiginde elde hizalamayi OYUN ICINDE yapmak icin.
+# 6 buton: KISA bas = o eksende kaydir, UZUN bas = o eksen etrafinda dondur
+# (basili tuttukca akar). Kaydet -> cihazda kalici + koda yapistirlacak
+# TOOL_HOLD satiri uretilir.
+signal grip_nudge_requested(axis: int, delta: float)
+signal grip_rotate_requested(axis: int, deg: float)
+signal grip_reset_requested
+signal grip_save_requested
+
+const GRIP_STEP_M := 0.005    # kisa basis: 5 mm
+const GRIP_STEP_DEG := 2.0    # uzun basis: her tekrarda 2 derece
+const GRIP_LONG_PRESS := 0.35 # bu sureden sonra dondurmeye gecer
+const GRIP_REPEAT := 0.09     # dondurme tekrar araligi
+
+var _grip_panel: PanelContainer
+var _grip_status: Label
+var _grip_code: Label
+var _grip_hold_axis: int = -1
+var _grip_hold_sign: float = 0.0
+var _grip_hold_t: float = 0.0
+var _grip_hold_repeat: float = 0.0
+var _grip_rotating: bool = false
+
+func _on_grip_tuner_toggled(on: bool) -> void:
+	if _grip_panel == null:
+		_build_grip_panel()
+	_grip_panel.visible = on
+
+func _build_grip_panel() -> void:
+	_grip_panel = PanelContainer.new()
+	_grip_panel.theme = load("res://theme_main.tres")
+	_grip_panel.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+	_grip_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+	_grip_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	_grip_panel.custom_minimum_size = Vector2(250, 0)
+	_grip_panel.visible = false
+	add_child(_grip_panel)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 6)
+	_grip_panel.add_child(vb)
+	var hdr := Label.new()
+	hdr.text = "Grip Ayarı"
+	hdr.theme_type_variation = "HeaderLabel"
+	hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	vb.add_child(hdr)
+	var tip := Label.new()
+	tip.theme_type_variation = "SubtleLabel"
+	tip.text = "kısa bas: kaydır · uzun bas: döndür"
+	tip.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	vb.add_child(tip)
+	_grip_status = Label.new()
+	_grip_status.theme_type_variation = "SubtleLabel"
+	_grip_status.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_grip_status.text = "alet yok"
+	vb.add_child(_grip_status)
+	# 6 buton: X- X+ / Y- Y+ / Z- Z+
+	for axis in 3:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		vb.add_child(row)
+		for sign_i in [-1.0, 1.0]:
+			var b := Button.new()
+			b.text = "%s%s" % ["XYZ"[axis], "+" if sign_i > 0.0 else "−"]
+			b.custom_minimum_size = Vector2(0, 44)
+			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			b.button_down.connect(_on_grip_down.bind(axis, sign_i))
+			b.button_up.connect(_on_grip_up)
+			row.add_child(b)
+	var brow := HBoxContainer.new()
+	brow.add_theme_constant_override("separation", 6)
+	vb.add_child(brow)
+	var rst := Button.new()
+	rst.text = "Sıfırla"
+	rst.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	rst.pressed.connect(func(): grip_reset_requested.emit())
+	brow.add_child(rst)
+	var sv := Button.new()
+	sv.theme_type_variation = "PrimaryButton"
+	sv.text = "Kaydet"
+	sv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sv.pressed.connect(func(): grip_save_requested.emit())
+	brow.add_child(sv)
+	_grip_code = Label.new()
+	_grip_code.theme_type_variation = "SubtleLabel"
+	_grip_code.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_grip_code.visible = false
+	vb.add_child(_grip_code)
+
+func _on_grip_down(axis: int, sign_v: float) -> void:
+	_grip_hold_axis = axis
+	_grip_hold_sign = sign_v
+	_grip_hold_t = 0.0
+	_grip_hold_repeat = 0.0
+	_grip_rotating = false
+
+func _on_grip_up() -> void:
+	# Uzun basista dondurme zaten akmisti; kisa basista TEK kaydirma uygula.
+	if _grip_hold_axis >= 0 and not _grip_rotating:
+		grip_nudge_requested.emit(_grip_hold_axis, _grip_hold_sign * GRIP_STEP_M)
+	_grip_hold_axis = -1
+
+func _tick_grip_hold(delta: float) -> void:
+	if _grip_hold_axis < 0:
+		return
+	_grip_hold_t += delta
+	if _grip_hold_t < GRIP_LONG_PRESS:
+		return
+	_grip_rotating = true
+	_grip_hold_repeat -= delta
+	if _grip_hold_repeat <= 0.0:
+		_grip_hold_repeat = GRIP_REPEAT
+		grip_rotate_requested.emit(_grip_hold_axis, _grip_hold_sign * GRIP_STEP_DEG)
+
+## world3d her degisiklikten sonra cagirir (canli geri bildirim).
+func set_grip_status(text: String) -> void:
+	if _grip_status != null:
+		_grip_status.text = text
+
+## Kaydet sonrasi: koda yapistirlacak satiri panelde goster.
+func show_grip_code(line: String) -> void:
+	if _grip_code == null:
+		return
+	_grip_code.visible = line != ""
+	_grip_code.text = "Kaydedildi. Kalıcı yapmak için:\n" + line
 
 # --- R1: Ayarlar (Duraklat) menusu --------------------------------------
 # "Yeni Oyun" (yanlislikla basilirsa oyun silinir!) ve Kamera/Gorunum debug
@@ -808,6 +949,12 @@ func _build_settings_menu() -> void:
 	perf_check.text = "FPS göstergesi"
 	perf_check.toggled.connect(func(on: bool): perf_overlay_toggled.emit(on))
 	vb.add_child(perf_check)
+	# GRIP AYAR MODU: yalnizca debug build'de gorunur (yayin surumunde yok).
+	if OS.is_debug_build():
+		var grip_check := CheckButton.new()
+		grip_check.text = "Grip Ayarı (aleti elde hizala)"
+		grip_check.toggled.connect(_on_grip_tuner_toggled)
+		vb.add_child(grip_check)
 
 	_newgame_button = Button.new()
 	_newgame_button.theme_type_variation = "PrimaryButton"
@@ -921,8 +1068,27 @@ func _fill_circle_button(btn: Button, bg: Color, icon_col: Color, margin: float)
 # --- Slotlarin kurulumu -------------------------------------------------
 
 func _build_slots() -> void:
-	# Envanter izgarasi: 16 sabit slot (canta yoksa sondakiler kilitli)
-	for i in Inventory.TOTAL_SLOTS:
+	# Envanter izgarasi: 16 sabit slot (canta yoksa sondakiler kilitli).
+	# TEST MODU acikken izgara genisler (Inventory.max_slots) — 8 sutunda
+	# 12 satir eder ve panel yuksekligini tasirdi; bu yuzden yalnizca test
+	# modunda izgara kaydirilabilir bir kutuya alinir (normal modda sahne
+	# yapisi hic degismez).
+	if TestMode.ENABLED:
+		var vbox := inventory_grid.get_parent() as Control
+		var at := inventory_grid.get_index()
+		vbox.remove_child(inventory_grid)
+		var sc := ScrollContainer.new()
+		sc.name = "SlotScroll"
+		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		# Bilgi seridi de EXPAND_FILL; esit bolusunce izgaraya 2.5 satir
+		# kaliyordu. Oran ile bos alanin cogu izgaraya gitsin.
+		sc.size_flags_stretch_ratio = 3.0
+		sc.custom_minimum_size = Vector2(0, 300)
+		vbox.add_child(sc)
+		vbox.move_child(sc, at)
+		sc.add_child(inventory_grid)
+	for i in Inventory.max_slots():
 		var slot := _make_slot("inv", i)
 		inventory_grid.add_child(slot)
 		_inv_slots.append(slot)

@@ -12,6 +12,11 @@ extends Node
 
 signal changed
 
+## TEST MODU (scripts/test_mode.gd): acikken kapasite pratikte sinirsiz ve
+## katalogdaki tum esyalar verilir. Kapatmak icin TestMode.ENABLED = false.
+const TestMode = preload("res://scripts/test_mode.gd")
+const Items = preload("res://scripts/items.gd")
+
 const STACK_MAX: int = 50
 # Varsayilan slot sayisi 16 (tek dogruluk kaynagi). Ileride "deri canta"
 # bu tabana ek slot acacak (SLOTS_PER_BAG * canta sayisi).
@@ -40,6 +45,9 @@ func _ready() -> void:
 		_give_starter_kit()
 
 func _give_starter_kit() -> void:
+	if TestMode.ENABLED:
+		_give_test_kit()
+		return
 	for item_id in STARTER_KIT:
 		add_item(item_id, STARTER_KIT[item_id])
 	# Aletler hizli erisimde hazir dursun
@@ -49,15 +57,43 @@ func _give_starter_kit() -> void:
 			hotbar[slot_i] = item_id
 			slot_i += 1
 
+## TEST MODU: katalogdaki HER esyayi verir (aletler 1, kalani AMOUNT kadar).
+## Zaten elde olan tur atlanir — kayit yuklendikten sonra da cagrilabilir.
+func _give_test_kit() -> void:
+	for key in Items.ITEMS:
+		var item_id := String(key)
+		var want: int = 1 if item_id in TestMode.SINGLE_ITEMS else TestMode.AMOUNT
+		if item_id == "canta":
+			want = TestMode.BAGS
+		var have := get_count(item_id)
+		if have < want:
+			_sim_add(slots, item_id, want - have)
+	# Hizli erisim: en cok kullanilan aletler hazir gelsin
+	var quick := ["balta", "kazma", "kurek", "sulama_kabi", "capa",
+			"kilic", "tohum", "mesale"]
+	for i in mini(quick.size(), HOTBAR_SIZE):
+		hotbar[i] = String(quick[i])
+	changed.emit()
+
 func _init_arrays() -> void:
 	slots = []
-	slots.resize(TOTAL_SLOTS)
+	slots.resize(max_slots())
 	hotbar = []
 	for i in HOTBAR_SIZE:
 		hotbar.append("")
 
+## Dizinin/izgaranin toplam boyu (test modunda genisler).
+func max_slots() -> int:
+	return TestMode.SLOTS if TestMode.ENABLED else TOTAL_SLOTS
+
+## Bir yiginda en fazla kac adet durur (test modunda pratikte sinirsiz).
+func stack_limit() -> int:
+	return TestMode.STACK if TestMode.ENABLED else STACK_MAX
+
 ## Su an kullanilabilir slot sayisi (canta sayisina gore)
 func get_slot_count() -> int:
+	if TestMode.ENABLED:
+		return max_slots()
 	return BASE_SLOTS + mini(get_count("canta"), MAX_BAGS) * SLOTS_PER_BAG
 
 func get_used_slots() -> int:
@@ -93,19 +129,20 @@ func can_add_all(drops: Dictionary) -> bool:
 # sim dizisine ekleme dener; sigmazsa false (sim degismis olabilir)
 func _sim_add(sim: Array, item_id: String, amount: int) -> bool:
 	var capacity := get_slot_count()
+	var cap_stack := stack_limit()
 	var left: int = amount
 	for i in capacity:
 		if left <= 0:
 			break
-		if sim[i] != null and sim[i]["id"] == item_id and sim[i]["count"] < STACK_MAX:
-			var take: int = mini(STACK_MAX - sim[i]["count"], left)
+		if sim[i] != null and sim[i]["id"] == item_id and sim[i]["count"] < cap_stack:
+			var take: int = mini(cap_stack - sim[i]["count"], left)
 			sim[i]["count"] += take
 			left -= take
 	for i in capacity:
 		if left <= 0:
 			break
 		if sim[i] == null:
-			var take: int = mini(STACK_MAX, left)
+			var take: int = mini(cap_stack, left)
 			sim[i] = {"id": item_id, "count": take}
 			left -= take
 	return left <= 0
@@ -156,7 +193,7 @@ func move_slot(from: int, to: int) -> void:
 	if a == null:
 		return
 	if b != null and b["id"] == a["id"]:
-		var space: int = STACK_MAX - b["count"]
+		var space: int = stack_limit() - b["count"]
 		var moved: int = mini(space, a["count"])
 		b["count"] += moved
 		a["count"] -= moved
@@ -204,13 +241,17 @@ func to_save() -> Dictionary:
 func load_save(data: Dictionary) -> void:
 	_init_arrays()
 	var saved_slots: Array = data.get("slots", [])
-	for i in mini(saved_slots.size(), TOTAL_SLOTS):
+	for i in mini(saved_slots.size(), max_slots()):
 		var slot = saved_slots[i]
 		if slot is Dictionary and slot.has("id") and int(slot.get("count", 0)) > 0:
 			slots[i] = {"id": String(slot["id"]), "count": int(slot["count"])}
 	var saved_hotbar: Array = data.get("hotbar", [])
 	for i in mini(saved_hotbar.size(), HOTBAR_SIZE):
 		hotbar[i] = String(saved_hotbar[i])
+	# TEST MODU: eski kayit yuklendiginde de tum esyalar elde olsun
+	# (kayit, test setini ezmesin).
+	if TestMode.ENABLED and not container_mode:
+		_give_test_kit()
 	changed.emit()
 
 ## Eski (v2) kayitlar icin: {"item_id": adet} sozlugunden slotlari doldurur.
@@ -219,9 +260,9 @@ func load_from_dict(items: Dictionary) -> void:
 	for item_id in items:
 		var count := int(items[item_id])
 		while count > 0:
-			var take: int = mini(STACK_MAX, count)
+			var take: int = mini(stack_limit(), count)
 			var placed := false
-			for i in TOTAL_SLOTS:
+			for i in max_slots():
 				if slots[i] == null:
 					slots[i] = {"id": item_id, "count": take}
 					placed = true
