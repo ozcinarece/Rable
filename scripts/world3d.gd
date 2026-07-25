@@ -341,6 +341,7 @@ func _ready() -> void:
 	hud.grip_reset_requested.connect(_on_grip_reset)
 	hud.grip_save_requested.connect(_on_grip_save)
 	hud.grip_move_requested.connect(_on_grip_move)
+	hud.grip_tuner_opened.connect(func(): hud.set_grip_status(player.grip_status()))
 	hud.settings_toggled.connect(func(o: bool): _cam_layer.visible = o)
 	hud.move_toggled.connect(func(on: bool): _move_mode = on)
 	hud.drop_item_requested.connect(_on_drop_item)

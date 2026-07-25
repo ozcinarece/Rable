@@ -768,6 +768,9 @@ signal grip_save_requested
 ## Ekran yonunde kaydirma: "yukari" | "asagi" | "sol" | "sag".
 ## (X/Y/Z el cercevesinde; goz ile eslesmiyordu.)
 signal grip_move_requested(dir_id: String)
+## Panel acildi: world3d guncel alet durumunu geri yazsin (yoksa buton
+## basilana kadar "alet yok" yaziyordu).
+signal grip_tuner_opened
 
 const GRIP_STEP_M := 0.005    # kisa basis: 5 mm
 const GRIP_STEP_DEG := 2.0    # uzun basis: her tekrarda 2 derece
@@ -787,6 +790,8 @@ func _on_grip_tuner_toggled(on: bool) -> void:
 	if _grip_panel == null:
 		_build_grip_panel()
 	_grip_panel.visible = on
+	if on:
+		grip_tuner_opened.emit()  # guncel alet/ofset hemen yazilsin
 
 func _build_grip_panel() -> void:
 	_grip_panel = PanelContainer.new()
