@@ -2159,6 +2159,7 @@ func _build_world() -> void:
 	_build_sea_rocks()
 	_build_decor(ground_cells["."] + ground_cells["h"])
 	_rebuild_objects()
+	_build_dig_decor()   # A5 + A6: kazi agzi ve tabani
 	_build_spawn_camp()  # kamp dekoru (nesneler kurulduktan sonra)
 	_build_ground_markers()  # harita-v2: kil işaretleri + yüzey cevher ipuçları
 
@@ -2557,7 +2558,84 @@ func _refresh_terrain_at(cell: Vector2i) -> void:
 	for ck in touched:
 		_build_chunk(ck)
 	_build_decor(_decor_cells)
+	_build_dig_decor()   # A5 + A6: kazi agzi ve tabani
 	_rebuild_objects()
+
+
+# --- KAZI DEKORU (A5 agiz sarkmasi + A6 taban serpintisi) ---------------
+# Kazi MANTIGINA dokunmuyor: yalnizca _depth verisini okuyup uzerine
+# gorsel koyuyor. Kazi sonrasi chunk yenilemesiyle birlikte yeniden
+# kurulur (deterministik hash -> ayni cukur ayni serpintiyi alir).
+var _dig_decor_nodes: Array = []
+
+func _build_dig_decor() -> void:
+	for n in _dig_decor_nodes:
+		if is_instance_valid(n):
+			n.queue_free()
+	_dig_decor_nodes.clear()
+	if _depth.is_empty():
+		return
+	var mult: float = float(DigWaterVisual.tier_of(_quality_tier)["scatter"])
+	var mouth: Array = []
+	var soil: Array = []
+	var rock: Array = []
+	for cell: Vector2i in _depth:
+		var d: int = int(_depth[cell])
+		if d <= 0:
+			continue
+		# --- A6 TABAN SERPINTISI: hucre basina 0..2 parca ---
+		# Sigda toprak obegi, derinde tas kiymigi.
+		var n_items: int = int(DigWaterVisual.hash01(cell.x, cell.y, 501)
+				* float(DigWaterVisual.FLOOR_SCATTER_MAX + 1) * mult)
+		var deep: bool = d > DigWaterVisual.FLOOR_SHALLOW_MAX_DEPTH
+		for k in n_items:
+			var salt := 503 + k * 7
+			var ox: float = (DigWaterVisual.hash01(cell.x, cell.y, salt) - 0.5) * 0.6
+			var oz: float = (DigWaterVisual.hash01(cell.x, cell.y, salt + 1) - 0.5) * 0.6
+			var rr: float = DigWaterVisual.hash01(cell.x, cell.y, salt + 2) * TAU
+			var sc: float = 0.75 + DigWaterVisual.hash01(cell.x, cell.y, salt + 3) * 0.5
+			var b := Basis().rotated(Vector3.UP, rr).scaled(Vector3(sc, sc, sc))
+			var t := Transform3D(b, _cell_center(cell) + Vector3(ox, 0.0, oz))
+			if deep:
+				rock.append(t)
+			else:
+				soil.append(t)
+		# --- A5 AGIZ SARKMASI: kenar hucrelerine cukura EGIK cim ---
+		# Kenar = kazilmis hucrenin KAZILMAMIS komsusu. Cim cukurun
+		# agzindan iceri sarkar; keskin sinir cizgisini kiran sey bu.
+		for dd: Vector2i in EDGE_NB:
+			var nb := cell + dd
+			if int(_depth.get(nb, 0)) > 0:
+				continue
+			if String(_ground_char.get(nb, "")) == "~" or _objects.has(nb):
+				continue
+			if DigWaterVisual.hash01(nb.x, nb.y, 511) * 100.0 \
+					>= float(DigWaterVisual.MOUTH_TUFT_CHANCE) * mult:
+				continue
+			# Cukura dogru egim: tutam kenardan iceri sarkar
+			var tilt := deg_to_rad(DigWaterVisual.MOUTH_TUFT_TILT_DEG)
+			var axis := Vector3(float(dd.y), 0.0, -float(dd.x))
+			if axis.length() < 0.01:
+				continue
+			var eb := Basis(axis.normalized(), tilt)
+			eb = eb.rotated(Vector3.UP,
+					DigWaterVisual.hash01(nb.x, nb.y, 513) * 0.6)
+			var off := Vector3(float(-dd.x) * 0.34, 0.0, float(-dd.y) * 0.34)
+			mouth.append(Transform3D(eb, _cell_center(nb) + off))
+	for pair in [["soil_clump", soil], ["rock_shard", rock]]:
+		var list: Array = pair[1]
+		if list.is_empty():
+			continue
+		var node := _env_scatter_node(String(pair[0]), list)
+		if node != null:
+			add_child(node)
+			_dig_decor_nodes.append(node)
+	if not mouth.is_empty():
+		var mn := _env_scatter_node("grass_tuft", mouth,
+				DigWaterVisual.MOUTH_TUFT_SPAN)
+		if mn != null:
+			add_child(mn)
+			_dig_decor_nodes.append(mn)
 
 # Notr benek dokusu: koyu/acik gri noktalar, renkleri carparak dokular
 var _neutral_speckle: ImageTexture
