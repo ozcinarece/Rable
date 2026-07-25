@@ -151,7 +151,34 @@ Bu rakam bir sonraki `scripts/**` push'unda görülecek — o yüzden
 rapordaki "~30 sn" satırı hâlâ **öngörü**, ölçüm değil. Ölçülen tek
 şey: soğuk önbellekte 3 dk 49 sn, testlerin payı 32 sn.
 
-## 8. Açık kalan
+## 8. Önbellek ilk denemede İŞE YARAMADI — düzeltildi
+
+İkinci koşu (30172121648, asset değişmemiş) beklenen kazancı **vermedi**:
+
+| Adım | Süre |
+|---|---:|
+| Import önbelleği (geri yükleme) | 4 sn |
+| **Projeyi içe aktar** | **164 sn** |
+
+Önbellek geri yüklendi ama içe aktarma yine baştan koştu. Sebep: bu
+repoda `assets/` altında **commit'lenmiş `.import` dosyası yok** —
+459 asset, 0 `.import`. Ve `.import` dosyaları `.godot/` klasörünün
+**içinde değil**, her asset'in yanında duruyor. `path: .godot` onları
+hiç kapsamadı; Godot her koşuda 459 asset'i sıfırdan içe aktardı.
+
+Düzeltme — önbellek yolu iki girdiye çıkarıldı:
+
+```yaml
+path: |
+  .godot
+  assets/**/*.import
+```
+
+Bunu açıkça yazıyorum çünkü raporun 2. ve 6. bölümündeki "~180 sn →
+birkaç saniye" satırları o ölçüm alınana kadar **doğrulanmamış
+öngörüydü** ve ilk hâlleriyle yanlıştı.
+
+## 9. Açık kalan
 - **Oyunu çalıştır adımı hâlâ ağır katmanın tavanı.** Asıl kazanç
   oradan gelir ama bunun için testlerin kare almadan koşabilecek şekilde
   yeniden yazılması gerekiyor (yukarıdaki kapsam notu). Ayrı bir iş.

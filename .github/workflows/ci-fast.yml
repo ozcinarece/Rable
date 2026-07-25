@@ -44,7 +44,17 @@ jobs:
       - name: Import onbellegi
         uses: actions/cache@v4
         with:
-          path: .godot
+          # HEM .godot HEM assetlerin yanindaki .import dosyalari.
+          # ILK DENEMEDE yalniz .godot onbelleklendi ve ICE AKTARMA
+          # HIC HIZLANMADI (olculdu: onbellek 4 sn'de geri geldi, ice
+          # aktarma yine 164 sn). Sebep: bu repoda assets/ altinda
+          # commit'lenmis .import dosyasi YOK (459 asset, 0 .import) ve
+          # .import dosyalari .godot'nun ICINDE DEGIL, asset'in yaninda
+          # duruyor. Onlar olmadan Godot her seferinde her seyi bastan
+          # ice aktariyor.
+          path: |
+            .godot
+            assets/**/*.import
           # Anahtar: assetlerin + proje ayarlarinin hash'i. Asset
           # degismediyse ice aktarma adimi neredeyse bedava.
           key: godot-import-${{ env.GODOT_TAG }}-${{ hashFiles('assets/**', 'project.godot') }}
