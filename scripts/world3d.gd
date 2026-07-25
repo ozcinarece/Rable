@@ -487,7 +487,8 @@ func _setup_screenshot(save_path: String) -> void:
 	# Yeni GLB aletler: kazma + kurek yakin cekim (on + sag).
 	# HUD (hotbar) alet ucunu kapatiyordu -> cekim boyunca gizle.
 	hud.visible = false
-	for tf in [["kazma", "_kazma"], ["kurek", "_kurek"], ["sulama_kabi", "_sulamakabi"]]:
+	for tf in [["kazma", "_kazma"], ["kurek", "_kurek"],
+			["sulama_kabi", "_sulamakabi"], ["capa", "_capa"]]:
 		player.set_held_tool(String(tf[0]))
 		player.set_grip_marker(true)  # tutus isareti (set_held_tool temizler -> sonra tak)
 		await get_tree().create_timer(0.4).timeout
@@ -4643,7 +4644,59 @@ var _crop_nodes: Dictionary = {}  # cell -> Node3D
 
 func _on_plot_changed(cell: Vector2i) -> void:
 	_refresh_terrain_at(cell)
+	_update_mound_node(cell)
 	_update_crop_node(cell)
+
+# --- TARLA HOYUGU (planting_mound) ---------------------------------------
+## Capalanan her tarlaya kullanicinin GLB'si konur; iki model SIRA ILE
+## kullanilir (1. tarla A, 2. tarla B, 3. A ...). Sira "kacinci tarla
+## acildigi"ndan gelir (Farming.plots ekleme sirasi), boylece kayit/yukleme
+## sonrasi da AYNI kalir — ayrica veri saklamaya gerek yok.
+var _mound_nodes: Dictionary = {}  # cell -> Node3D
+
+## OLCULDU: planting_mound DIK modellenmis (Z kalinligi 0.14) -> yatirmak
+## icin X'te -90. planting_mound2 zaten yatik (Y ince) -> donme yok.
+const MOUND_GLB := [
+	{"path": "res://assets/models/test/planting_mound.glb",
+			"rot_deg": Vector3(-90, 0, 0)},
+	{"path": "res://assets/models/test/planting_mound2.glb",
+			"rot_deg": Vector3.ZERO},
+]
+const MOUND_FOOTPRINT := 0.92  # hucreye sigacak taban genisligi (m)
+
+func _update_mound_node(cell: Vector2i) -> void:
+	if _mound_nodes.has(cell):
+		_mound_nodes[cell].queue_free()
+		_mound_nodes.erase(cell)
+	if not Farming.plots.has(cell):
+		return
+	var order: int = Farming.plots.keys().find(cell)
+	var node := _build_mound_visual(maxi(0, order) % MOUND_GLB.size())
+	if node == null:
+		return
+	var h := float(_cell_props(cell.x, cell.y)[0])
+	node.position = Vector3(float(cell.x) + 0.5, h, float(cell.y) + 0.5)
+	add_child(node)
+	_mound_nodes[cell] = node
+
+func _build_mound_visual(variant: int) -> Node3D:
+	var cfg: Dictionary = MOUND_GLB[variant]
+	var glb: String = String(cfg["path"])
+	if not ResourceLoader.exists(glb):
+		return null
+	var root := Node3D.new()
+	var inst: Node3D = load(glb).instantiate()
+	inst.rotation_degrees = cfg.get("rot_deg", Vector3.ZERO)
+	root.add_child(inst)
+	_tame_meshy_materials(inst)  # Meshy isimasi kapali (toprak parlamasin)
+	# Tabani hucreye sigdir + zemine otur (donme SONRASI olculur)
+	var aabb := _scene_aabb(inst)
+	var span: float = maxf(aabb.size.x, aabb.size.z)
+	if span > 0.01:
+		var s: float = MOUND_FOOTPRINT / span
+		inst.scale = Vector3(s, s, s)
+		inst.position.y = -aabb.position.y * s
+	return root
 
 func _update_crop_node(cell: Vector2i) -> void:
 	if _crop_nodes.has(cell):
