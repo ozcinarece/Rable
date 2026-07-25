@@ -2966,7 +2966,10 @@ func _camp_prop_mound(cell: Vector2i) -> void:
 	_camp_register_field_node(cell, node)
 
 ## Solmus bitki: genc ekin modeli, kurumus tonda ve kucuk.
+## Hoyuk 0.42 m'ye inince 26 cm bitki hoyukten BUYUK kaldi ve onu ortuyordu
+## (kamp tarla karesinde hoyuk yerine yesil yumak gorunuyordu) -> 15 cm.
 const CAMP_WITHER_TINT := Color(0.52, 0.44, 0.26)
+const CAMP_WITHER_H := 0.15
 
 func _camp_prop_withered(cell: Vector2i) -> void:
 	var glb := "res://assets/models/test/small_young_berry.glb"
@@ -2978,10 +2981,10 @@ func _camp_prop_withered(cell: Vector2i) -> void:
 	_tame_meshy_materials(inst, CAMP_WITHER_TINT)
 	var aabb := _scene_aabb(inst)
 	if aabb.size.y > 0.01:
-		var s: float = 0.26 / aabb.size.y
+		var s: float = CAMP_WITHER_H / aabb.size.y
 		inst.scale = Vector3(s, s, s)
 		inst.position.y = -aabb.position.y * s
-	root.position = _cell_center(cell) + Vector3(0.0, 0.06, 0.0)
+	root.position = _cell_center(cell) + Vector3(0.0, 0.04, 0.0)
 	root.rotation_degrees = Vector3(0.0, float(cell.x * 47 % 360), 9.0)
 	add_child(root)
 	_camp_nodes.append(root)
@@ -5278,7 +5281,8 @@ const MOUND_EMPTY := {"path": "res://assets/models/crops/planting_mound.glb",
 const MOUND_FOOTPRINT := 0.42  # taban genisligi (m)
 ## Meshy hoyugu neredeyse BEYAZ geliyordu (kamp karesinde 4 beyaz kubbe).
 ## Toprak tonuna cekilir.
-const MOUND_TINT := Color(0.50, 0.39, 0.29)
+## (0.50/0.39/0.29 pembeye caliyordu; toprak kahvesine cekildi.)
+const MOUND_TINT := Color(0.44, 0.34, 0.23)
 ## Model kubbe gibi sisman; 0.92 m tabanda ~45 cm boy cikiyor — surulmus
 ## bir sirt icin cok yuksek. Kok dugumde Y ezilir.
 ## (Karakterdeki "node scale yasak" dersi SKINNED modellerin IC dugumleri

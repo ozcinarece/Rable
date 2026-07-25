@@ -9,14 +9,14 @@ etkileşim ve yeni sistem YOK — bu raporun her satırı bu sınırın içinde.
 
 | Model | Dosya | Oyundaki yeri | Root Scale (hedef) |
 |---|---|---|---|
-| `planting_mound` | `assets/models/crops/` | Boş sürülü tarla göstergesi + kamptaki terk edilmiş tarla | **0.92 m taban** (yükseklik değil) |
+| `planting_mound` | `assets/models/crops/` | Boş sürülü tarla göstergesi + kamptaki terk edilmiş tarla | **0.42 m taban** (yükseklik değil) |
 | `grass_tuft` | `assets/models/env/` | Açık çim serpintisi | 0.33 m |
 | `pebble_cluster` | `assets/models/env/` | Kaya/su kenarı serpintisi | 0.18 m |
 | `twig_debris` | `assets/models/env/` | Ağaç dibi serpintisi | 0.40 m |
 | `path_stone` | `assets/models/env/` | Aşınmış yol taşı | 0.45 m |
 | `path_stone_mossy` | `assets/models/env/` | Yol taşı yosunlu varyantı (%40) | 0.45 m |
 | `ruined_hut` | `assets/models/structures/` | Spawn kampı, kuzeybatı | 2.80 m |
-| `repaired_hut` | `assets/models/structures/` | **Yalnız debug**: yıkık kopyanın yanında karşılaştırma | 2.80 m |
+| `repaired_hut` | `assets/models/structures/` | **Yalnız vitrin** — oyuna konmadı (yıkığın yeni hali, ikisi yan yana gereksiz) | 2.80 m |
 | `ruined_well` | `assets/models/structures/` | Spawn kampı, tarlanın kuzeyinde | 1.20 m |
 
 **Ölçek yöntemi:** her modelde ölçek GLB'nin **kök düğümüne** verildi; iç
@@ -28,6 +28,11 @@ yerde duruyor.
 veriyordu; sürülmüş bir sırt için bu çok yüksek. Kök düğümde Y **%55'e
 ezildi** (`MOUND_FLATTEN`). Yasak olan, skinned modelin **iç** düğümlerini
 ölçeklemekti; bu prop skinned değil, kökte ezme güvenli.
+
+Taban ayrıca 0.92 → **0.42 m**'ye indirildi: höyük hücrenin tamamını
+kaplamamalı, "içine tohum ekilecek" ölçekte küçük bir toprak yuvası
+olmalı. Solmuş bitki de aynı oranda küçüldü (26 → 15 cm), yoksa höyükten
+büyük kalıp onu örtüyordu.
 
 ---
 
@@ -150,7 +155,46 @@ kesilirse önce ölçüm düşsün, kareler değil.
 
 ---
 
-## 7. Açık kalan / karar bekleyen
+## 7. Düzeltme turu (kullanıcı geri bildirimi sonrası)
+
+Dört doğrudan düzeltme:
+
+- **Höyük çok küçüldü** (0.92 → 0.42 m taban) — tohum yuvası ölçeği.
+- **`repaired_hut` oyundan çıkarıldı**; yıkığın yeni hali olduğu için
+  ikisini yan yana koymak gereksizdi. Vitrinde duruyor.
+- **Ocak (firepit) küçüldü**: `h` 0.9 → 0.5. Karaktere göre göğsüne gelen
+  bir odun yığınıydı; ateş çukuru dize gelir.
+- **Tarlanın batısındaki kuru kanal kaldırıldı.** Kazı derinliği arazide
+  kare kenarlı bir **blok yükselti** üretiyordu (köşe köşe, doğal değil)
+  ve dekoratif değeri yoktu.
+
+**Zemin geçişleri.** Toprak/çim yamalarının keskin kare sınırları iki
+katmanda yumuşatıldı:
+
+1. `map_gen` leke eşiğine yüksek frekanslı ince gürültü ekliyor
+   (`EDGE_DETAIL_SCALE` 0.42, `EDGE_JITTER` 0.04) → sınırın **şekli**
+   merdiven değil, düzensiz organik saçak.
+2. `world3d` sınır hücrelerinin **rengini** komşu ortalamasına çekiyor:
+   bir komşu farklıysa %30, üç-dört komşu farklıysa %60 karışım
+   (`_build_edge_blend`). Ayrıca renk yumuşatması sınırda tam hücre
+   genişliğine açılıyor (normalde dar bantta tutuluyor ki dokular
+   bulanmasın). Sınır hücrelerinde serpinti 1.7× — silueti de kırar.
+
+Su (`~`) harman dışı: çim↔su karışımı çamur yeşili veriyor, kıyıyı kum
+zaten yumuşatıyor.
+
+**Kamp açıklığı.** İki kademe: iç daire R=8'de ağaç/kaya **sıfır**;
+R=8..12 halkasında ~%45'i kalır. Tek kademe olsaydı ormanla kamp arasında
+sert bir "ağaç duvarı" çizgisi oluşurdu. KAMPTEST artık `aciklik_bos`
+(iç daire tamamen boş mu) ve `halka_dolu` yüzdesini raporluyor:
+
+```
+KAMPTEST: ... veri_temiz=true tarla=4 aciklik_bos=true halka_dolu=%2
+```
+
+---
+
+## 8. Açık kalan / karar bekleyen
 
 - **Yol taşları beğenilmedi** (kullanıcı bildirdi, model değişecek). Ton
   şu an sıcak griye sert çekilmiş durumda; yeni model gelince
