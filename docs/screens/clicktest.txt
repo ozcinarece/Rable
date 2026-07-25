@@ -1,4 +1,4 @@
-envanter: acildi=true kapandi=true
-uretim: acildi=true kapandi=true
-arastirma: acildi=true kapandi=true
-ayarlar: acildi=true kapandi=true kapat_pos=(640.0, 608.5)
+envanter: acildi=false kapandi=true
+uretim: acildi=false kapandi=true
+arastirma: acildi=false kapandi=true
+ayarlar: acildi=false kapandi=true kapat_pos=(505.5, 367.5)
