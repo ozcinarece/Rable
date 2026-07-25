@@ -466,6 +466,15 @@ func _setup_screenshot(save_path: String) -> void:
 		str(_spawn_cell), _ground_char.get(_spawn_cell, "?")])
 	print("CAMTEST: zoom_var=%.3f min=%.2f max=%.2f" % [
 		cam_distance, CAM_ZOOM_MIN, CAM_ZOOM_MAX])
+	# --- TEST KATMANI ---------------------------------------------------
+	# "hizli": yalniz MANTIK testleri; ekran goruntusu, vitrin, bekleme
+	# YOK. Gercek --headless'te (xvfb'siz, OpenGL'siz) kosar ve saniyeler
+	# icinde biter -> her push'ta calistirilabilir.
+	# "tam" (varsayilan): butun gorsel akis (kareler + vitrin + sondalar).
+	# Ayrim CI is akisinda RABLE_TEST_LEVEL ile veriliyor.
+	if OS.get_environment("RABLE_TEST_LEVEL") == "hizli":
+		_run_fast_tests()
+		return
 	# STIL: animasyonlu Meshy karakteri — skinned olcek fix'i (_fix_skinned_scale)
 	# Armature 0.01 olcegini kemik pozlarindan duzeltir.
 	player.set_character("res://assets/models/test/character_animated_2.glb")
@@ -801,6 +810,19 @@ func _setup_screenshot(save_path: String) -> void:
 	_run_muhendislik_selftest()  # MUHENDISLIK: merdiven tirmanma kurali
 	_run_creature_selftest()     # YARATIK: varlik + take_hit + oz + melee
 	_run_save_load_selftest()
+	get_tree().quit()
+
+## HIZLI KATMAN: kare almayan, beklemesiz mantik testleri. Bunlar
+## --headless'te de kosar; agir gorsel akisin hicbir parcasina dokunmaz.
+## Kapsam BILEREK dar: harita uretimi, kamera, zaman, muhendislik,
+## yaratik, kayit/yukleme. Kazi/su/tarim/UI testleri kare alma ve
+## bekleme ile ic ice oldugu icin AGIR katmanda kaldi (bkz. RAPOR_CI).
+func _run_fast_tests() -> void:
+	_run_time_selftest()
+	_run_muhendislik_selftest()
+	_run_creature_selftest()
+	_run_save_load_selftest()
+	print("FASTTESTS: bitti")
 	get_tree().quit()
 
 ## YARATIK self-test (Asama 1): spawn -> take_hit hasar -> melee _apply_hitbox
