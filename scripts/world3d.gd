@@ -558,6 +558,7 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(Vector3(float(fbase.x) + 1.5, 0.15, float(fbase.y) + 0.5))
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_tarim.png"))
+	await _run_road_test(save_path)
 	await _run_camp_test(save_path)
 	await _run_env_showcase(save_path)
 	await _run_perf_probe(save_path)
@@ -2128,7 +2129,7 @@ func _build_world() -> void:
 
 	_recompute_water()  # 11.2: haritadaki hazir cukurlar havuz olur (kuru)
 	_build_terrain()
-	_build_path_stones()
+	_build_road()
 	_build_sea()
 	_build_lake_surface()
 	_build_sea_rocks()
@@ -2716,58 +2717,325 @@ func _build_decor(grass_cells: Array) -> void:
 		_decor_nodes.append(node)
 	_build_env_scatter(grass_cells)
 
-# --- ASINMIS YOL SERIDI (gorsel dekor; patika SISTEMI DEGIL) -------------
-# Zemine soluk toprak lekesi (_cell_props okur) + uzerine tas serpintisi.
-# %30 tas eksik (asinmislik), %40 yosunlu varyant. TEK MultiMesh / varyant.
-var _path_cells: Dictionary = {}   # cell -> true (renk lekesi)
-var _path_nodes: Array = []        # tas MultiMesh dugumleri
-## Yol taslari KAPALI (kullanici: "gonderdigim taslari kaldiralim").
-## Yeni model gelince tek satirla geri acilir.
-const PATH_STONES_ON := false
+# --- YOL HUCRELERI ------------------------------------------------------
+# Yol bir ZEMIN TURU: hucre -> yas ("miras" | "yeni"). Zemin rengini
+# _cell_props okur; uzerine dosenen tas karolari asagidaki yol sistemi
+# kurar (_build_road).
+var _path_cells: Dictionary = {}   # cell -> yas (String)
+var _path_nodes: Array = []        # (eski tas serpintisi; perf sondasi okur)
+
+## KAVISLI yol: guneye ilerlerken sinuzoidal x kaymasi. Kosegen/egri
+## gecislerde izgara merdiveni en cok burada goze batar; kenar erimesinin
+## sinandigi yer de burasi.
+func _add_road_curve(from: Vector2i, steps: int, width: int,
+		age: String) -> void:
+	for i in steps:
+		var t := float(i) / maxf(1.0, float(steps - 1))
+		var off := int(round(sin(t * PI * 1.4) * 4.0))
+		var c := from + Vector2i(off, i)
+		if c.x < 1 or c.y < 1 or c.x >= _map_w - 1 or c.y >= _map_h - 1:
+			break
+		for w in width:
+			lay_road(c + Vector2i(w, 0), age)
+		# Kaymanin atladigi hucreyi doldur ki yolda delik kalmasin
+		if i > 0:
+			var prev := int(round(sin((float(i - 1) / maxf(1.0, float(steps - 1)))
+					* PI * 1.4) * 4.0))
+			var step := 1 if off > prev else -1
+			var x := prev
+			while x != off:
+				x += step
+				for w in width:
+					lay_road(Vector2i(from.x + x + w, c.y), age)
 
 ## Bir noktadan verilen yonde `len` hucrelik yol seridi tanimlar.
-func _add_path_strip(from: Vector2i, dir: Vector2i, len_cells: int) -> void:
+## width: serit genisligi (2+ olunca kenar karolari devreye girer).
+func _add_path_strip(from: Vector2i, dir: Vector2i, len_cells: int,
+		age: String = "miras", width: int = 1) -> void:
+	var perp := Vector2i(-dir.y, dir.x)
 	for i in range(1, len_cells + 1):
 		var c := from + dir * i
 		if c.x < 1 or c.y < 1 or c.x >= _map_w - 1 or c.y >= _map_h - 1:
 			break
-		_path_cells[c] = true
+		for w in width:
+			lay_road(c + perp * w, age)
 
-## YOL TASLARI KALDIRILDI (kullanici karari: tas modeli begenilmedi).
-## Yolun kendisi duruyor — o zaten TASLA DEGIL, zemin renk lekesiyle
-## ciziliyor (_cell_props). Fonksiyon govdesi bosaltildi, cagri yerleri
-## ve _path_nodes listesi (perf sondasi okuyor) yerinde birakildi ki
-## yeni tas modeli gelince tek yerden geri acilabilsin.
-func _build_path_stones() -> void:
-	for n in _path_nodes:
+# --- TAS YOL SISTEMI (auto-tiling + kenar erimesi) ----------------------
+# Yol hucresi bir ZEMIN TURUDUR: _path_cells[cell] = yas ("miras"|"yeni").
+# Uzerine 1x1 tas karo doseniyor; karo varyanti (a/b/c) ve 90'lik donusu
+# hucreden deterministik hash ile secilir -> harita yeniden kurulunca
+# desen degismez.
+#
+# KENAR ERIMESI, sistemin can alici yeri. Izgaraya dosenmis kare karolar
+# kenarda MERDIVEN gibi gorunur (ozellikle kosegen yolda). Uc katman:
+#   1) Komsusunda yol OLMAYAN hucre road_tile_edge kullanir, kirik tarafi
+#      disa donuk. (Tam bir tarafi acikken; iki+ tarafi acik dar yolda
+#      tek karoyla iki kenar birden kirilamaz -> normal varyant + agir
+#      dekor. Aciklama RAPOR'da.)
+#   2) Kenar hucrelerinin USTUNE yosun lekesi + ot tutami.
+#   3) KOMSU CIM hucrelerine sacilma (1 hucre %35, 2 hucre %12). Duz
+#      sinir cizgisini asil kiran budur; karo hizasi disina tastigi icin
+#      goz "izgara" gormez.
+const RoadTiles = preload("res://scripts/road_tiles.gd")
+
+const ROAD_NB: Array[Vector2i] = [Vector2i(0, -1), Vector2i(1, 0),
+		Vector2i(0, 1), Vector2i(-1, 0)]   # K, D, G, B (yaw 0/90/180/270)
+
+var _road_nodes: Array = []        # karo + dekor MultiMesh'leri
+var _road_spill: Dictionary = {}   # cim hucresi -> true (serpinti cakismasin)
+
+## Bir hucre yol mu?
+func is_road(cell: Vector2i) -> bool:
+	return _path_cells.has(cell)
+
+## Yol dose (yas: "miras" = harita mirasi, "yeni" = oyuncunun dosedigi).
+## Gorsel sistem ikisini FARKLI cizer (yosun yogunlugu), boylece eski/yeni
+## ayrimi hicbir arayuz olmadan gorselden okunur.
+func lay_road(cell: Vector2i, age: String = "yeni") -> void:
+	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
+		return
+	_path_cells[cell] = age
+
+## Karonun -90 X yatirmasi + Y donusu birlesik temel.
+func _road_basis(yaw_deg: float, scale_v: float) -> Basis:
+	var b := Basis().rotated(Vector3.RIGHT, -PI * 0.5)  # XY duzleminden zemine
+	b = Basis().rotated(Vector3.UP, deg_to_rad(yaw_deg)) * b
+	return b.scaled(Vector3(scale_v, scale_v, scale_v))
+
+func _build_road() -> void:
+	for n in _road_nodes:
 		if is_instance_valid(n):
 			n.queue_free()
-	_path_nodes.clear()
-	if not PATH_STONES_ON:
+	_road_nodes.clear()
+	_road_spill.clear()
+	if _path_cells.is_empty():
 		return
-	var groups := {"path_stone": [], "path_stone_mossy": []}
+	var mult: float = float(EnvModels.SCATTER_TIER_MULT.get(_quality_tier, 1.0))
+	var has_edge: bool = RoadTiles.has_model("road_tile_edge")
+	# tur -> Array[Transform3D]
+	var tiles: Dictionary = {}
+	var moss: Array = []
+	var tufts: Array = []
+	var spill: Dictionary = {"path_stone": [], "path_stone_mossy": [],
+			"pebble_cluster": []}
+
 	for cell: Vector2i in _path_cells:
-		# %30 TAS EKSIK: asinmis yol hissi
-		if int(EnvModels.hash01(cell.x, cell.y, 201) * 100.0) < EnvModels.PATH_STONE_MISS:
-			continue
-		var mossy: bool = int(EnvModels.hash01(cell.x, cell.y, 203) * 100.0) \
-				< EnvModels.PATH_MOSSY_CHANCE
-		var id := "path_stone_mossy" if mossy else "path_stone"
-		var rr: float = EnvModels.hash01(cell.x, cell.y, 207)
-		var rs: float = EnvModels.hash01(cell.x, cell.y, 211)
-		var sc: float = EnvModels.SCATTER_SCALE_MIN + rs \
-				* (EnvModels.SCATTER_SCALE_MAX - EnvModels.SCATTER_SCALE_MIN)
-		var basis := Basis().rotated(Vector3.UP, rr * TAU).scaled(Vector3(sc, sc, sc))
-		groups[id].append(Transform3D(basis, _cell_center(cell)))
-	for id: String in groups:
-		var list: Array = groups[id]
+		var age := String(_path_cells[cell])
+		# --- Acik kenarlar (yol OLMAYAN komsular) ---
+		var open_dirs: Array[int] = []
+		for i in ROAD_NB.size():
+			if not _path_cells.has(cell + ROAD_NB[i]):
+				open_dirs.append(i)
+		# --- Karo secimi ---
+		var id: String
+		var yaw: float
+		if open_dirs.size() == 1 and has_edge:
+			# KENAR KAROSU: kirik taraf disa donuk
+			id = "road_tile_edge"
+			yaw = float(open_dirs[0]) * 90.0
+		else:
+			var vi := int(RoadTiles.hash01(cell.x, cell.y, 301) * 3.0) % 3
+			id = RoadTiles.VARIANTS[vi]
+			yaw = float(int(RoadTiles.hash01(cell.x, cell.y, 307) * 4.0) % 4) * 90.0
+		if not tiles.has(id):
+			tiles[id] = []
+		var pos := _cell_center(cell)
+		tiles[id].append(Transform3D(_road_basis(yaw, 1.0), pos))
+
+		if open_dirs.is_empty():
+			continue   # ic hucre: kenar dekoru yok
+
+		# --- 2) Kenar hucresi ustune yosun + ot ---
+		var mchance: float = float(RoadTiles.EDGE_MOSS_CHANCE) \
+				* RoadTiles.moss_density(age) * mult
+		if RoadTiles.hash01(cell.x, cell.y, 311) * 100.0 < mchance:
+			moss.append(_road_edge_xform(cell, open_dirs, 313, 0.30))
+		if RoadTiles.hash01(cell.x, cell.y, 317) * 100.0 \
+				< float(RoadTiles.EDGE_TUFT_CHANCE) * mult:
+			tufts.append(_road_edge_xform(cell, open_dirs, 319, 0.34))
+
+		# --- 3) Komsu CIM hucrelerine sacilma ---
+		var mossy_pct := RoadTiles.mossy_chance(age)
+		for dy in range(-2, 3):
+			for dx in range(-2, 3):
+				var d: int = maxi(absi(dx), absi(dy))
+				if d == 0:
+					continue
+				var g := cell + Vector2i(dx, dy)
+				if _path_cells.has(g) or _road_spill.has(g):
+					continue
+				if not _road_spill_ok(g):
+					continue
+				var chance: float = float(RoadTiles.SPILL_D1_CHANCE if d == 1
+						else RoadTiles.SPILL_D2_CHANCE) * mult
+				if RoadTiles.hash01(g.x, g.y, 401) * 100.0 >= chance:
+					continue
+				_road_spill[g] = true
+				var sid := "pebble_cluster"
+				if RoadTiles.hash01(g.x, g.y, 409) < 0.5:
+					sid = "path_stone_mossy" \
+							if RoadTiles.hash01(g.x, g.y, 411) * 100.0 < float(mossy_pct) \
+							else "path_stone"
+				var rr: float = RoadTiles.hash01(g.x, g.y, 413) * TAU
+				var sc: float = RoadTiles.SPILL_SCALE_MIN \
+						+ RoadTiles.hash01(g.x, g.y, 419) \
+						* (RoadTiles.SPILL_SCALE_MAX - RoadTiles.SPILL_SCALE_MIN)
+				var ox: float = (RoadTiles.hash01(g.x, g.y, 421) - 0.5) * 0.6
+				var oz: float = (RoadTiles.hash01(g.x, g.y, 431) - 0.5) * 0.6
+				var b := Basis().rotated(Vector3.UP, rr).scaled(Vector3(sc, sc, sc))
+				spill[sid].append(Transform3D(b,
+						_cell_center(g) + Vector3(ox, 0.0, oz)))
+
+	# --- Dugumler: tur basina TEK MultiMesh ---
+	for id: String in tiles:
+		var node := _road_tile_node(id, tiles[id])
+		if node != null:
+			add_child(node)
+			_road_nodes.append(node)
+	if not moss.is_empty():
+		var mn := _road_moss_node(moss)
+		if mn != null:
+			add_child(mn)
+			_road_nodes.append(mn)
+	if not tufts.is_empty():
+		var tn := _env_scatter_node("grass_tuft", tufts)
+		if tn != null:
+			add_child(tn)
+			_road_nodes.append(tn)
+	for sid: String in spill:
+		var list: Array = spill[sid]
 		if list.is_empty():
 			continue
-		var node := _env_scatter_node(id, list)
-		if node == null:
+		var sn := _env_scatter_node(sid, list)
+		if sn != null:
+			add_child(sn)
+			_road_nodes.append(sn)
+
+## Sacilma yalnizca YURUNEBILIR, bos zemine (cim/toprak/kum) duser.
+func _road_spill_ok(g: Vector2i) -> bool:
+	if _objects.has(g) or _placed.has(g):
+		return false
+	if int(_depth.get(g, 0)) != 0:
+		return false
+	return String(_ground_char.get(g, "")) in [".", "d", "s"]
+
+## Kenar dekorunu hucrenin ACIK tarafina dogru kaydirir (yosun/ot tam
+## kenarda ciksin, ortada degil — "aralardan cikan ot" hissi).
+func _road_edge_xform(cell: Vector2i, open_dirs: Array[int], salt: int,
+		span: float) -> Transform3D:
+	var d: Vector2i = ROAD_NB[open_dirs[int(RoadTiles.hash01(cell.x, cell.y, salt)
+			* float(open_dirs.size())) % open_dirs.size()]]
+	var jitter: float = (RoadTiles.hash01(cell.x, cell.y, salt + 1) - 0.5) * 0.5
+	var off := Vector3(float(d.x) * 0.38 + (0.0 if d.x != 0 else jitter), 0.0,
+			float(d.y) * 0.38 + (0.0 if d.y != 0 else jitter))
+	var sc: float = 0.75 + RoadTiles.hash01(cell.x, cell.y, salt + 2) * 0.5
+	var b := Basis().rotated(Vector3.UP,
+			RoadTiles.hash01(cell.x, cell.y, salt + 3) * TAU)
+	b = b.scaled(Vector3(sc, sc, sc))
+	# Karo ustune otursun: SINK kadar asagi degil, karo yuzeyinde
+	return Transform3D(b, _cell_center(cell) + off + Vector3(0, 0.01, 0))
+
+## Karo MultiMesh'i: KOK olcegi hucreye normalize, ust yuzu cim
+## seviyesinin SINK kadar ALTINA oturur (gomuk yol).
+var _road_mesh_cache: Dictionary = {}
+
+func _road_tile_node(id: String, list: Array) -> Node3D:
+	var mesh := _road_mesh(id)
+	if mesh == null:
+		return null
+	var aabb := mesh.get_aabb()
+	# Model XY duzleminde: hucre genisligi X, kalinlik Z (yatirma sonrasi Y)
+	var span: float = maxf(0.001, maxf(aabb.size.x, aabb.size.y))
+	var k: float = RoadTiles.TILE_SPAN / span
+	var thick: float = aabb.size.z * k
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = list.size()
+	for i in list.size():
+		var t: Transform3D = list[i]
+		var b: Basis = t.basis.scaled(Vector3(k, k, k))
+		# Yatirma sonrasi karo merkezi Y'de; ust yuzu SINK kadar altta
+		var y := -RoadTiles.SINK - thick * 0.5
+		mm.set_instance_transform(i, Transform3D(b, t.origin + Vector3(0, y, 0)))
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
+
+func _road_mesh(id: String) -> Mesh:
+	if _road_mesh_cache.has(id):
+		return _road_mesh_cache[id]
+	var glb := RoadTiles.path_of(id)
+	if glb == "" or not ResourceLoader.exists(glb):
+		return null
+	var scene: Node = load(glb).instantiate()
+	_tame_meshy_materials(scene, RoadTiles.TILE_TINT)
+	var mesh: Mesh = null
+	for mi2: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
+		if mi2.mesh == null:
 			continue
-		add_child(node)
-		_path_nodes.append(node)
+		mesh = mi2.mesh
+		# GLTF materyali cogu zaman surface_override'da durur; MultiMesh
+		# yalniz MESH'i kullanir -> tasinmazsa karo BEMBEYAZ cikar.
+		if mesh is ArrayMesh:
+			for si in mesh.get_surface_count():
+				var sm := mi2.get_active_material(si)
+				if sm != null:
+					(mesh as ArrayMesh).surface_set_material(si, sm)
+		break
+	scene.queue_free()
+	_road_mesh_cache[id] = mesh
+	return mesh
+
+## Yosun lekesi: moss_patch GLB'si repoda YOK -> yassi proseduerel disk
+## (palet: yaprak adacayi). Dosya gelince otomatik ona gecer.
+var _moss_mesh: Mesh = null
+
+func _road_moss_mesh() -> Mesh:
+	if _moss_mesh != null:
+		return _moss_mesh
+	if RoadTiles.has_model("moss_patch"):
+		var scene: Node = load(RoadTiles.path_of("moss_patch")).instantiate()
+		_tame_meshy_materials(scene, Color.WHITE)
+		for mi2: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
+			if mi2.mesh == null:
+				continue
+			_moss_mesh = mi2.mesh
+			if _moss_mesh is ArrayMesh:
+				for si in _moss_mesh.get_surface_count():
+					var sm := mi2.get_active_material(si)
+					if sm != null:
+						(_moss_mesh as ArrayMesh).surface_set_material(si, sm)
+			break
+		scene.queue_free()
+	if _moss_mesh == null:
+		var disc := CylinderMesh.new()
+		disc.top_radius = RoadTiles.MOSS_SPAN * 0.5
+		disc.bottom_radius = RoadTiles.MOSS_SPAN * 0.5
+		disc.height = RoadTiles.MOSS_HEIGHT
+		disc.radial_segments = 7
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = RoadTiles.MOSS_FALLBACK
+		mat.roughness = 1.0
+		disc.material = mat
+		_moss_mesh = disc
+	return _moss_mesh
+
+func _road_moss_node(list: Array) -> Node3D:
+	var mesh := _road_moss_mesh()
+	if mesh == null:
+		return null
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = list.size()
+	for i in list.size():
+		mm.set_instance_transform(i, list[i])
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
 
 # --- SPAWN KAMPI (gorsel-tur / Gorev Eki) --------------------------------
 # Mockup'taki "Duvarli Kamp + Kulube" duzeninin YIPRANMIS hali. Iskelet
@@ -2877,7 +3145,15 @@ func _camp_plan() -> void:
 	for r: Dictionary in CAMP_ROADS:
 		var rd: Vector2i = r["dir"]
 		_add_path_strip(hearth, rd, int(r["len"]))
-	_path_cells[hearth] = true
+	lay_road(hearth, "miras")
+	# KIVRIMLI ANA YOL: kampin guney aksindan cikip kavis cizerek
+	# uzaklasir. Auto-tiling ve kenar erimesi ancak GENIS ve EGRI bir
+	# yolda okunur — dar duz seritte her hucrenin iki yani birden acik
+	# oldugu icin kenar karosu hic devreye girmez (bkz. RAPOR).
+	_add_road_curve(hearth + Vector2i(0, 6), 16, 2, "miras")
+	# OYUNCUNUN DOSEDIGI kisa yeni yol: ayni sistem, yosun neredeyse yok.
+	# Eski/yeni farki tek bir arayuz olmadan gorselden okunur.
+	_add_path_strip(hearth + Vector2i(2, 2), Vector2i(1, 0), 5, "yeni", 2)
 	# 3) Tarla (2x2). Bati kenarindaki "kuru kanal" KALDIRILDI: kazi
 	#    derinligi arazide kare kenarli bir BLOK YUKSELTI uretiyordu
 	#    (kose kose, dogal degil) ve dekoratif degeri yoktu.
@@ -3064,7 +3340,7 @@ func _perf_sample(frames: int) -> Dictionary:
 			"draw": draw_sum / maxf(1.0, float(frames))}
 
 func _perf_set_visual(on: bool) -> void:
-	for arr: Array in [_env_scatter_nodes, _path_nodes, _camp_nodes]:
+	for arr: Array in [_env_scatter_nodes, _path_nodes, _road_nodes, _camp_nodes]:
 		for n in arr:
 			if is_instance_valid(n) and n is Node3D:
 				(n as Node3D).visible = on
@@ -3084,12 +3360,75 @@ func _run_perf_probe(save_path: String) -> void:
 	var after: Dictionary = await _perf_sample(8)
 	var line := ("PERFTEST: kamp kamerasi | ONCE fps=%.1f draw=%.0f | "
 			+ "SONRA fps=%.1f draw=%.0f | serpinti_dugum=%d yol_dugum=%d "
-			+ "kamp_dugum=%d") % [
+			+ "kamp_dugum=%d yol_karo_dugum=%d") % [
 		float(before["fps"]), float(before["draw"]),
 		float(after["fps"]), float(after["draw"]),
-		_env_scatter_nodes.size(), _path_nodes.size(), _camp_nodes.size()]
+		_env_scatter_nodes.size(), _path_nodes.size(), _camp_nodes.size(),
+		_road_nodes.size()]
 	print(line)
 	var f := FileAccess.open("res://docs/screens/perftest.txt", FileAccess.WRITE)
+	if f != null:
+		f.store_line(line)
+		f.close()
+
+
+# --- ROADTEST: tas yol sistemi dogrulamasi -------------------------------
+# Sistem SALT GORSEL oldugu icin test de gorsel dogruluga bakar: karolar
+# dosendi mi, kenar erimesinin uc katmani (kenar karosu / karo ustu yosun
+# + ot / komsu cime sacilma) calisti mi, miras ile yeni yol arasinda
+# YOSUN FARKI olustu mu.
+func _run_road_test(save_path: String) -> void:
+	var miras := 0
+	var yeni := 0
+	for cell: Vector2i in _path_cells:
+		if String(_path_cells[cell]) == "yeni":
+			yeni += 1
+		else:
+			miras += 1
+	# Kenar hucreleri (komsusunda yol olmayan) ve ic hucreler
+	var kenar := 0
+	var tek_acik := 0
+	for cell: Vector2i in _path_cells:
+		var open_n := 0
+		for d: Vector2i in ROAD_NB:
+			if not _path_cells.has(cell + d):
+				open_n += 1
+		if open_n > 0:
+			kenar += 1
+		if open_n == 1:
+			tek_acik += 1
+	# Karo/dekor ornek sayilari (MultiMesh instance_count toplami)
+	var karo := 0
+	var dekor := 0
+	for n in _road_nodes:
+		if not is_instance_valid(n) or not (n is MultiMeshInstance3D):
+			continue
+		var mm: MultiMesh = (n as MultiMeshInstance3D).multimesh
+		if mm == null:
+			continue
+		karo += mm.instance_count
+	dekor = _road_spill.size()
+	var edge_var: bool = RoadTiles.has_model("road_tile_edge")
+	var moss_var: bool = RoadTiles.has_model("moss_patch")
+	# Kavisli yolun yakin karesi (kenar gecisi gorunsun)
+	var focus := _camp_center + Vector2i(2, 12)
+	var fp := _cell_center(focus)
+	_cam_locked = true
+	camera.position = fp + Vector3(-3.2, 2.6, 4.2)
+	camera.look_at(fp + Vector3(0.5, 0.0, 0.0))
+	await get_tree().create_timer(0.7).timeout
+	_snap(save_path.replace(".png", "_yol.png"))
+	# Genis kare: kavisin tamami + kampla baglantisi
+	camera.position = _cell_center(_camp_center) + Vector3(2.0, 14.0, 20.0)
+	camera.look_at(_cell_center(_camp_center + Vector2i(1, 9)))
+	await get_tree().create_timer(0.7).timeout
+	_snap(save_path.replace(".png", "_yol_genis.png"))
+	var line := ("ROADTEST: hucre=%d (miras=%d yeni=%d) kenar=%d tek_acik=%d "
+			+ "karo_ornek=%d sacilma=%d edge_glb=%s moss_glb=%s") % [
+		_path_cells.size(), miras, yeni, kenar, tek_acik, karo, dekor,
+		str(edge_var), str(moss_var)]
+	print(line)
+	var f := FileAccess.open("res://docs/screens/roadtest.txt", FileAccess.WRITE)
 	if f != null:
 		f.store_line(line)
 		f.close()
