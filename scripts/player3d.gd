@@ -106,9 +106,12 @@ const TOOL_HOLD := {
 	"capa": {"axis": 1, "grip": 0.18, "scale": 0.5,
 			"rot_deg": Vector3(-166.0, 79.0, -96.0),
 			"extra": Vector3(0.021, 0.072, 0.045)},
-	"kurek": {"axis": 2, "grip": 0.15, "scale": 0.5, "rot_deg": Vector3(-129.1, 0, 0),
-			"grip_pt": Vector3(0, 0.36, -0.45),
-			"extra": Vector3(-0.011, -0.038, -0.030)},
+	# ELDE AYARLANDI (Grip Ayar Modu, kullanici onayi): capraz modellenmis
+	# kurek icin hesapla bulunamayan poz, ekran yonu butonlariyla oturtuldu.
+	"kurek": {"axis": 2, "grip": 0.15, "scale": 0.5,
+			"rot_deg": Vector3(-169.1, -76.0, -8.0),
+			"grip_pt": Vector3(0.0, 0.36, -0.45),
+			"extra": Vector3(-0.091, -0.097, 0.045)},
 }
 
 ## STIL: esya id -> karakterin GOVDE saldiri animasyonu (character_animated).
@@ -178,7 +181,7 @@ const GRIP_OVERRIDE_PATH := "user://grip_overrides.json"
 ## Kayitli ofsetler TOOL_HOLD'un UZERINE biner. Bir ayar koda islenince
 ## cihazdaki eski kayit AYNI farki bir daha uygular (cift donme!). Bu sayi
 ## koda deger islendiginde ARTIRILIR; eski surumlu kayit yok sayilir/silinir.
-const GRIP_VERSION := 2
+const GRIP_VERSION := 3
 var _grip_over: Dictionary = {}
 var _hat_id: String = ""
 var _face_path: String = ""
