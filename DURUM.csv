@@ -71,12 +71,12 @@ Gündüz-Gece,"""Geliyorlar..."" gece uyarısı",ÇALIŞIYOR,main,hud.gd,—,uya
 Gündüz-Gece,night_started → yaratık dalga tetiği,YARIM,main,daynight.gd:14 (sinyal),yaratık AI,3D'de KANCA BOŞ (yalnız 2D legacy bağlı),"daynight yorumunda ""PLANLI"" yazıyor"
 Yaratık,"Yaratık varlığı (can, take_hit, geri tepme)",ÇALIŞIYOR,main,creature.gd,—,yalnız DEBUG spawn (K tuşu / test),Aşama 1
 Yaratık,Öz düşürme,ÇALIŞIYOR,main,creature.gd,—,özün harcama yeri yok,—
-Yaratık,"AI (hedef seçimi + yapı kırma, A* YOK)",BRANCH'TE,yaratik-gece,world3d.gd (_tick_one_creature),gece dalgası,düz yönelme; A* sonraki tur,minimal sürüm
-Yaratık,Gece dalga sistemi (tek grup),BRANCH'TE,yaratik-gece,world3d.gd (_spawn_night_wave),gün döngüsü,gruplu dalga sonraki tur,NIGHTTEST CI'da
+Yaratık,"AI (hedef seçimi + yapı kırma, A* YOK)",ÇALIŞIYOR,main,world3d.gd (_tick_one_creature),gece dalgası,düz yönelme; A* sonraki tur,minimal sürüm
+Yaratık,Gece dalga sistemi (tek grup),ÇALIŞIYOR,main,world3d.gd (_spawn_night_wave),gün döngüsü,gruplu dalga sonraki tur,NIGHTTEST CI'da
 Yaratık,Yaratık tipleri,SADECE-PLAN,—,—,dalga,—,Aşama 5
 Yaratık,Tuzak/kazık yaratık tetiklenmesi,YARIM,main,world3d.gd,yaratık AI,"yapılar yerleşiyor, hedefleri yok",Aşama 5
 Yaratık,Alev hendeği,SADECE-PLAN,—,"creature_balance.gd:70 (FLAME_DPS), item_db kaydı",—,"veri var, kod yok",—
-Yaratık,Ocak hedefi,BRANCH'TE,yaratik-gece,world3d.gd (_tick_one_creature),dalga,sabah ekonomisi/is_banked HÂLÂ YOK,—
+Yaratık,Ocak hedefi,ÇALIŞIYOR,main,world3d.gd (_tick_one_creature),dalga,sabah ekonomisi/is_banked HÂLÂ YOK,—
 Yaratık,Çiğ et düşüren hayvan,SADECE-PLAN,—,—,—,—,yiyecek zinciri kapısı
 UI,"HUD (barlar, dock, ana/saldırı butonu, bağlam)",ÇALIŞIYOR,main,hud.gd,—,—,—
 UI,Ayarlar (kalite/FPS/Yeni Oyun/Kapat),ÇALIŞIYOR,main,hud.gd,—,Kapat taşması 01:19 APK'da düzeltildi,CLICKTEST ✓
@@ -99,4 +99,6 @@ Hikâye/Keşif,KEŞİF çıkışı / harita hedefi,SADECE-PLAN,—,—,—,repo 
 Hikâye/Keşif,Ocak Nefesi,SADECE-PLAN,—,—,—,repo dokümanlarında yok,—
 Hikâye/Keşif,Eşik Gecesi,SADECE-PLAN,—,—,—,repo dokümanlarında yok,—
 Hikâye/Keşif,Hikâye teslimi / senaryo tetikleri,SADECE-PLAN,—,—,—,kodda hiçbir hikâye tetiği yok,—
-Legacy,"2D oyun (world.gd, World.tscn)",ÇALIŞIYOR,main,"world.gd, player.gd",—,"3D ile İKİ AYRI OYUN; 2D'de tarım+gece dalga bağlı, 3D'de yok",web kökünde yayında
+Araçlar,"Test modu (sınırsız envanter + tüm eşyalar + kilitsiz araştırma)",ÇALIŞIYOR,main,test_mode.gd,—,KAPATMAK: TestMode.ENABLED=false,web'de de aktif
+Araçlar,"Grip Ayar Modu (aleti oyun içinde hizala)",ÇALIŞIYOR,main,"hud.gd, player3d.gd",—,yalnız debug build (web'de yok),user://grip_overrides.json
+Legacy,"2D oyun (world.gd, World.tscn)",ÇALIŞIYOR,main,"world.gd, player.gd",—,"3D ile İKİ AYRI OYUN; tarım+gece dalgası artık 3D'de de var",web kökünde yayında
