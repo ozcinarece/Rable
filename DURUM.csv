@@ -71,12 +71,12 @@ Gündüz-Gece,"""Geliyorlar..."" gece uyarısı",ÇALIŞIYOR,main,hud.gd,—,uya
 Gündüz-Gece,night_started → yaratık dalga tetiği,YARIM,main,daynight.gd:14 (sinyal),yaratık AI,3D'de KANCA BOŞ (yalnız 2D legacy bağlı),"daynight yorumunda ""PLANLI"" yazıyor"
 Yaratık,"Yaratık varlığı (can, take_hit, geri tepme)",ÇALIŞIYOR,main,creature.gd,—,yalnız DEBUG spawn (K tuşu / test),Aşama 1
 Yaratık,Öz düşürme,ÇALIŞIYOR,main,creature.gd,—,özün harcama yeri yok,—
-Yaratık,"AI (hedef seçimi, A*, yapı kırma)",SADECE-PLAN,—,creature_balance.gd'de sabitler,—,—,görev listesi Aşama 2
-Yaratık,Gece dalga sistemi,SADECE-PLAN,—,creature_balance.gd (night_damage_mult),AI,—,Aşama 3
+Yaratık,"AI (hedef seçimi + yapı kırma, A* YOK)",BRANCH'TE,yaratik-gece,world3d.gd (_tick_one_creature),gece dalgası,düz yönelme; A* sonraki tur,minimal sürüm
+Yaratık,Gece dalga sistemi (tek grup),BRANCH'TE,yaratik-gece,world3d.gd (_spawn_night_wave),gün döngüsü,gruplu dalga sonraki tur,NIGHTTEST CI'da
 Yaratık,Yaratık tipleri,SADECE-PLAN,—,—,dalga,—,Aşama 5
 Yaratık,Tuzak/kazık yaratık tetiklenmesi,YARIM,main,world3d.gd,yaratık AI,"yapılar yerleşiyor, hedefleri yok",Aşama 5
 Yaratık,Alev hendeği,SADECE-PLAN,—,"creature_balance.gd:70 (FLAME_DPS), item_db kaydı",—,"veri var, kod yok",—
-Yaratık,Ocak hedefi + sabah ekonomisi (is_banked),SADECE-PLAN,—,creature_balance.gd §15.7 sabitler,dalga,is_banked kodda HİÇ YOK,—
+Yaratık,Ocak hedefi,BRANCH'TE,yaratik-gece,world3d.gd (_tick_one_creature),dalga,sabah ekonomisi/is_banked HÂLÂ YOK,—
 Yaratık,Çiğ et düşüren hayvan,SADECE-PLAN,—,—,—,—,yiyecek zinciri kapısı
 UI,"HUD (barlar, dock, ana/saldırı butonu, bağlam)",ÇALIŞIYOR,main,hud.gd,—,—,—
 UI,Ayarlar (kalite/FPS/Yeni Oyun/Kapat),ÇALIŞIYOR,main,hud.gd,—,Kapat taşması 01:19 APK'da düzeltildi,CLICKTEST ✓

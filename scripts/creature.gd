@@ -19,8 +19,18 @@ var damage: int = 6
 var essence: int = 1
 var alive: bool = true
 
+## GECE DALGASI (minimal) — davranis DURUMU. Mantik world3d'de (bu dosya
+## VARLIK), ama sayaclar yaratigin uzerinde yasar.
+var attack_cd: float = 0.0   # oyuncuya saldiri beklemesi
+var struct_cd: float = 0.0   # yapiya vurus beklemesi
+var stuck_time: float = 0.0  # kac saniyedir ilerleyemiyor
+var side_time: float = 0.0   # kalan yana kayma suresi
+var side_sign: float = 1.0   # hangi yana kayiyor (+1/-1)
+
 var _body: Node3D
 var _mat: StandardMaterial3D
+var _eye_light: OmniLight3D
+var _simplified: bool = false
 
 func setup(creature_type: String, hp_mult: float = 1.0) -> void:
 	type = creature_type
@@ -74,12 +84,51 @@ func _build_visual() -> void:
 	glow.position = Vector3(0, 0.42 * scl, 0.24 * scl)
 	glow.shadow_enabled = false
 	_body.add_child(glow)
+	_eye_light = glow
 
 func cell() -> Vector2i:
 	return Vector2i(floori(position.x), floori(position.z))
 
 func is_alive() -> bool:
 	return alive
+
+# --- GECE DALGASI yardimcilari (world3d cagirir) -------------------------
+
+## MOBIL PERF: uzaktaki yaratikta goz isigini kapat (en pahali parca).
+## Ayni degerle tekrar cagirmak bedavadir (durum korunur).
+func set_simplified(on: bool) -> void:
+	if on == _simplified:
+		return
+	_simplified = on
+	if _eye_light != null:
+		_eye_light.visible = not on
+
+## Gittigi yone donsun (govde yalpasi yok — ucuz).
+func face_direction(dir: Vector3) -> void:
+	if _body == null or dir.length() < 0.01:
+		return
+	_body.rotation.y = atan2(dir.x, dir.z)
+
+## Vurus/atilim hissi: kisa one hamle, sonra geri (saldiri geri bildirimi).
+func lunge(dir: Vector3) -> void:
+	if _body == null:
+		return
+	var d := dir.normalized() * 0.18
+	var tw := create_tween()
+	tw.tween_property(_body, "position:x", d.x, 0.08)
+	tw.parallel().tween_property(_body, "position:z", d.z, 0.08)
+	tw.tween_property(_body, "position:x", 0.0, 0.12)
+	tw.parallel().tween_property(_body, "position:z", 0.0, 0.12)
+
+## SAFAK: olmeden erir (oz DUSURMEZ — gunesten kacti, oldurulmedi).
+func melt(seconds: float) -> void:
+	if not alive:
+		return
+	alive = false
+	var tw := create_tween()
+	tw.tween_property(self, "scale", Vector3(0.05, 0.05, 0.05), seconds) \
+			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)
+	tw.tween_callback(queue_free)
 
 ## VURULABİLİR ARAYÜZ (kukla ile AYNI): can, sarsılma, hasar flaşı, ölüm.
 func take_hit(dmg: int, knockback_dir: Vector3) -> void:

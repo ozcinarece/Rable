@@ -1487,6 +1487,10 @@ func _nightness() -> float:
 		"dawn": return 1.0 - DayNight.phase_progress()
 		_: return 0.0
 
+## Disaridan (world3d gece dalgasi) tetiklenen kisa pill.
+func flash_pill(text: String) -> void:
+	_flash_night_pill(text)
+
 ## Ortadaki pill'de kısa (2 sn) tek satır bilgi.
 func _flash_night_pill(text: String) -> void:
 	if _night_pill == null:
@@ -1909,10 +1913,10 @@ func _setup_night_fx() -> void:
 	DayNight.night_started.connect(_on_night_fx)
 	DayNight.dawn_started.connect(_on_day_fx)  # yeni gün (sabah) — "Gün N"
 
-## Gece başında "Gece N" pill'i (2 sn). ("— Geliyorlar" YARATIKLAR gelince
-## eklenecek; şimdilik sadece "Gece N". Vinyet artık _process'te yumuşak.)
+## Gece başında "Gece N — Geliyorlar" pill'i (2 sn). Uyarı ARTIK GERÇEK:
+## world3d aynı sinyalde dalgayı doğuruyor (yaratik-gece, minimal sürüm).
 func _on_night_fx() -> void:
-	_flash_night_pill("Gece %d" % DayNight.day)
+	_flash_night_pill("Gece %d — Geliyorlar" % DayNight.day)
 
 ## Sabah: "Gün N" belirir + sabah bonusu kancası (B kısmı Ocak'a bağlayacak).
 func _on_day_fx() -> void:

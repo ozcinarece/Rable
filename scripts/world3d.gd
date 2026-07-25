@@ -355,6 +355,9 @@ func _ready() -> void:
 	# otomatigi, sonra buyume tick'i — sira world3d'de, belirsizlik yok)
 	Farming.plot_changed.connect(_on_plot_changed)
 	DayNight.dawn_started.connect(_on_farm_dawn)
+	# GECE DALGASI (minimal): kanca artik BOS degil — gece dogur, safakta erit.
+	DayNight.night_started.connect(_on_night_started)
+	DayNight.dawn_started.connect(_on_dawn_clear_creatures)
 	hud.perf_overlay_toggled.connect(_on_perf_overlay_toggled)
 	hud.quality_changed.connect(_on_quality_changed)
 	_build_camera_ui()
@@ -545,6 +548,7 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(Vector3(float(fbase.x) + 1.5, 0.15, float(fbase.y) + 0.5))
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_tarim.png"))
+	await _run_night_test(save_path)
 	hud.visible = true
 	# Ikinci kare: kusbakisi tum ada (teshis icin)
 	# harita-v2: kusbakisi tum 128x128 adayi kapsar (yukseklik boyutla olcekli)
@@ -1324,6 +1328,7 @@ func _process(delta: float) -> void:
 	_tick_water_network(delta)  # 11.8: boru agi mantiksal su transferi
 	if not _ground_items.is_empty():
 		_tick_ground_items(delta)  # #1: suzulme + donme
+	_tick_creatures(delta)  # GECE DALGASI: hedefe git / yapiyi kir / saldir
 	_station_timer += delta
 	if _station_timer >= 0.25:
 		_station_timer = 0.0
@@ -5033,6 +5038,228 @@ func _creature_near(cell: Vector2i) -> Node3D:
 		if Vector2(cr.position.x - center.x, cr.position.z - center.z).length() < 0.75:
 			return cr
 	return null
+
+## NIGHTTEST (CI): gece tetikle -> dogdular mi, Ocak'a YAKLASIYORLAR mi,
+## safakta temizlendi mi. Sonuc docs/screens/nighttest.txt + log.
+func _run_night_test(save_path: String) -> void:
+	_clear_creatures()
+	# Ocak yoksa oyuncunun yanina koy (hedef secimi test edilebilsin)
+	var hc := get_hearth()
+	if hc == Vector2i(-999, -999):
+		var occ := _player_cell() + Vector2i(0, 3)
+		if _ground_char.get(occ, "") in [".", "d", "s"] and not _objects.has(occ) \
+				and not _placed.has(occ):
+			_set_placed(occ, "ocak")
+			hc = get_hearth()
+	var night_no: int = DayNight.day
+	_on_night_started()
+	var spawned := _live_creature_count()
+	var beklenen: int = CreatureBalance.min_wave_count(night_no)
+	# Ocak'a olan TOPLAM uzaklik azaliyor mu? (duz yonelme calisiyor mu)
+	var target_pos := _cell_center(hc) if hc != Vector2i(-999, -999) \
+			else player.position
+	var d0 := _creatures_total_dist(target_pos)
+	for i in 40:  # ~40 kare ilerlet
+		_tick_creatures(0.05)
+	var d1 := _creatures_total_dist(target_pos)
+	var yaklasti: bool = d1 < d0 - 0.01
+	# Kare: gece yaratiklari sahnede
+	if spawned > 0:
+		var cr0: Node3D = _creatures[0]
+		# Yaratiklar harita KENARINDA doguyor (orman bandi); alcak kamera
+		# calinin icinde kaliyordu. Yuksek acidan bak -> yaprak arasina girme.
+		camera.position = cr0.position + Vector3(0.0, 5.5, 5.0)
+		camera.look_at(cr0.position + Vector3(0, 0.3, 0))
+		await get_tree().create_timer(0.4).timeout
+		_snap(save_path.replace(".png", "_gece_yaratik.png"))
+	# Safak: temizlensinler
+	_on_dawn_clear_creatures()
+	await get_tree().create_timer(0.6).timeout
+	var kalan := _live_creature_count()
+	var line := "NIGHTTEST: gece=%d beklenen=%d dogan=%d ocak=%s yaklasti=%s safak_kalan=%d" % [
+		night_no, beklenen, spawned, str(hc != Vector2i(-999, -999)),
+		str(yaklasti), kalan]
+	print(line)
+	var f := FileAccess.open("res://docs/screens/nighttest.txt", FileAccess.WRITE)
+	if f != null:
+		f.store_string(line + "\n")
+		f.close()
+
+## Tum canli yaratiklarin verilen noktaya toplam uzakligi (test olcusu).
+func _creatures_total_dist(target: Vector3) -> float:
+	var total := 0.0
+	for cr in _creatures:
+		if is_instance_valid(cr) and cr.is_alive():
+			total += Vector2(cr.position.x - target.x,
+					cr.position.z - target.z).length()
+	return total
+
+# --- GECE DALGASI — MİNİMAL (yaratik-gece) -------------------------------
+# Kapsam: gece basinda TEK grup dogar, duz cizgide hedefe gider, onune cikan
+# YAPIYI kirar, oyuncuya temasta vurur, safakta erir. A* / tip karisimi /
+# tuzak tetiklenmesi / oz harcama KAPSAM DISI (sonraki turlar).
+# Tum sayilar CreatureBalance'in MIN_* blogunda.
+
+var _night_wave_active: bool = false
+var _night_damage_taken: bool = false  # sabah ozeti icin (hasarsiz gece mi)
+
+## Gece basladi: o gecenin kademesine gore tek grup dogur.
+func _on_night_started() -> void:
+	_night_wave_active = true
+	_night_damage_taken = false
+	_spawn_night_wave(DayNight.day)
+
+## O gecenin yaratiklarini harita kenarindan dogurur.
+func _spawn_night_wave(night: int) -> void:
+	var want: int = CreatureBalance.min_wave_count(night)
+	var room: int = CreatureBalance.MIN_MAX_ACTIVE - _live_creature_count()
+	want = mini(want, maxi(0, room))
+	var hp_mult: float = CreatureBalance.night_hp_mult(night)
+	var made := 0
+	for i in want:
+		var cell := _pick_spawn_cell()
+		if cell == Vector2i(-999, -999):
+			break
+		spawn_creature(cell, "normal", hp_mult)
+		made += 1
+	print("NIGHTWAVE: gece=%d istenen=%d dogan=%d aktif=%d" % [
+		night, want, made, _live_creature_count()])
+
+## Kenar bandinda, oyuncuya ve Ocak'a uzak, yurunebilir bir hucre sec.
+## Bulamazsa (-999,-999) doner. Denemeler ilerledikce mesafe kurali gevser
+## (kucuk haritada hic dogmamasindansa biraz yakin dogsun).
+func _pick_spawn_cell() -> Vector2i:
+	var pc := _player_cell()
+	var hc := get_hearth()
+	var m: int = CreatureBalance.SPAWN_EDGE_MARGIN
+	for attempt in CreatureBalance.SPAWN_TRIES:
+		var relax: float = float(attempt) / float(CreatureBalance.SPAWN_TRIES)
+		var min_p: float = float(CreatureBalance.SPAWN_MIN_DIST_PLAYER) * (1.0 - relax)
+		var min_h: float = float(CreatureBalance.SPAWN_MIN_DIST_HEARTH) * (1.0 - relax)
+		var cell := _random_edge_cell(m)
+		if not is_walkable(cell):
+			continue
+		if Vector2(cell - pc).length() < min_p:
+			continue
+		if hc != Vector2i(-999, -999) and Vector2(cell - hc).length() < min_h:
+			continue
+		return cell
+	return Vector2i(-999, -999)
+
+## Haritanin dort kenarindan birinde, ic bantta rastgele hucre.
+func _random_edge_cell(margin: int) -> Vector2i:
+	var band: int = maxi(1, margin)
+	var xmax: int = maxi(1, _map_w - 2)
+	var ymax: int = maxi(1, _map_h - 2)
+	var side := randi() % 4
+	if side == 0:   # ust kenar
+		return Vector2i(randi_range(1, xmax), randi_range(1, band))
+	if side == 1:   # alt kenar
+		return Vector2i(randi_range(1, xmax), randi_range(maxi(1, ymax - band), ymax))
+	if side == 2:   # sol kenar
+		return Vector2i(randi_range(1, band), randi_range(1, ymax))
+	return Vector2i(randi_range(maxi(1, xmax - band), xmax), randi_range(1, ymax))
+
+func _live_creature_count() -> int:
+	var n := 0
+	for cr in _creatures:
+		if is_instance_valid(cr) and cr.is_alive():
+			n += 1
+	return n
+
+## Her kare: hedefe DUZ git, engelde vur, temasta saldir, takilirsa yana kay.
+func _tick_creatures(delta: float) -> void:
+	if _creatures.is_empty():
+		return
+	var ppos := player.position
+	var hearth := get_hearth()
+	for cr in _creatures:
+		if not is_instance_valid(cr) or not cr.is_alive():
+			continue
+		_tick_one_creature(cr, delta, ppos, hearth)
+
+## NOT: `cr` BILEREK tipsiz — `cr: Node3D` yazilirsa attack_cd/lunge/cell
+## gibi creature.gd uyeleri Node3D'de bulunamaz ve TUM dosya parse hatasi
+## verir (ayni tuzaga bir kez dusuldu).
+func _tick_one_creature(cr, delta: float, ppos: Vector3,
+		hearth: Vector2i) -> void:
+	# UZAKTAKILERI BASITLESTIR (mobil): goz isigi kapanir.
+	var dist_to_player: float = Vector2(cr.position.x - ppos.x,
+			cr.position.z - ppos.z).length()
+	cr.set_simplified(dist_to_player > CreatureBalance.FAR_SIMPLIFY_DIST)
+	# HEDEF: yakinda oyuncu varsa oyuncu, yoksa Ocak; Ocak yoksa yine oyuncu.
+	var target := ppos
+	var target_is_player := true
+	if dist_to_player > CreatureBalance.AGGRO_RANGE \
+			and hearth != Vector2i(-999, -999):
+		target = _cell_center(hearth)
+		target_is_player = false
+	# OYUNCUYA TEMAS: menzildeyse vur (bekleme suresiyle).
+	cr.attack_cd = maxf(0.0, cr.attack_cd - delta)
+	if target_is_player and dist_to_player <= CreatureBalance.CONTACT_RANGE:
+		if cr.attack_cd <= 0.0:
+			cr.attack_cd = CreatureBalance.ATTACK_COOLDOWN
+			var dmg: float = float(cr.damage) \
+					* CreatureBalance.night_damage_mult(DayNight.day)
+			Health.damage(dmg)
+			_night_damage_taken = true
+			cr.lunge(Vector3(ppos.x - cr.position.x, 0.0, ppos.z - cr.position.z))
+		return
+	var dir := Vector3(target.x - cr.position.x, 0.0, target.z - cr.position.z)
+	if dir.length() < 0.01:
+		return
+	dir = dir.normalized()
+	var speed: float = cr.speed
+	if cr.side_time > 0.0:
+		cr.side_time -= delta
+		dir = Vector3(-dir.z, 0.0, dir.x) * cr.side_sign
+		speed *= CreatureBalance.STUCK_SIDE_SPEED
+	# `cr` tipsiz -> cr.position Variant; ACIK tip sart (yoksa parse hatasi).
+	var next_pos: Vector3 = cr.position + dir * speed * delta
+	var next_cell := Vector2i(floori(next_pos.x), floori(next_pos.z))
+	# ONUNE ENGEL CIKTI MI? Ciktiysa DUR ve VUR — duvar kirma boylece yol
+	# bulmaya gerek kalmadan dogal olarak calisir.
+	if next_cell != cr.cell() and not is_walkable(next_cell):
+		cr.struct_cd = maxf(0.0, cr.struct_cd - delta)
+		if _placed.has(next_cell) or _objects.has(next_cell):
+			if cr.struct_cd <= 0.0:
+				cr.struct_cd = CreatureBalance.STRUCT_ATTACK_COOLDOWN
+				_structure_take_hit(next_cell, CreatureBalance.STRUCT_DAMAGE, dir)
+				cr.lunge(dir)
+		_bump_stuck(cr, delta)
+		return
+	var before: Vector3 = cr.position
+	cr.position = Vector3(next_pos.x,
+			ground_height(next_pos.x, next_pos.z), next_pos.z)
+	if Vector2(cr.position.x - before.x, cr.position.z - before.z).length() \
+			< CreatureBalance.STEP_EPSILON:
+		_bump_stuck(cr, delta)
+	else:
+		cr.stuck_time = 0.0
+	cr.face_direction(dir)
+
+## Ilerleyemedi: sayaci isle, esigi gecince bir sure YANA kay (A* yerine).
+func _bump_stuck(cr, delta: float) -> void:
+	cr.stuck_time += delta
+	if cr.stuck_time >= CreatureBalance.STUCK_SECONDS:
+		cr.stuck_time = 0.0
+		cr.side_time = CreatureBalance.STUCK_SIDE_SECONDS
+		cr.side_sign = 1.0 if randf() < 0.5 else -1.0
+
+## Safak: gece bitti, kalan yaratiklar erir; sabah pili.
+func _on_dawn_clear_creatures() -> void:
+	var left := _live_creature_count()
+	for cr in _creatures:
+		if is_instance_valid(cr) and cr.is_alive():
+			cr.melt(CreatureBalance.DAWN_MELT_SECONDS)
+	_creatures.clear()
+	if _night_wave_active:
+		_night_wave_active = false
+		var night: int = maxi(1, DayNight.day - 1)
+		if hud != null:
+			hud.flash_pill("Gece %d atlatıldı" % night)
+		print("NIGHTCLEAR: gece=%d kalan=%d hasar_aldi=%s" % [
+			night, left, str(_night_damage_taken)])
 
 ## Tum yaratiklari temizle (reset/reload/safak temizligi ortak yol).
 func _clear_creatures() -> void:
