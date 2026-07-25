@@ -52,6 +52,7 @@ const TOOL_GLB_OVERRIDE := {
 	"kazma": "res://assets/models/test/pickaxe.glb",
 	"kurek": "res://assets/models/test/shovel.glb",
 	"sulama_kabi": "res://assets/models/test/clay_watering_can.glb",
+	"capa": "res://assets/models/test/hoe.glb",
 }
 
 ## ELLE AYARLANAN ALET KAVRAMASI (veri; render'a bakip ayarlanir).
@@ -98,9 +99,19 @@ const TOOL_HOLD := {
 			"rot_deg": Vector3(24.6, 73.5, -148.1),
 			"grip_pt": Vector3(0.45, 0.06, 0.0),
 			"extra": Vector3.ZERO},
-	"kurek": {"axis": 2, "grip": 0.15, "scale": 0.5, "rot_deg": Vector3(-129.1, 0, 0),
-			"grip_pt": Vector3(0, 0.36, -0.45),
-			"extra": Vector3(-0.011, -0.038, -0.030)},
+	# hoe.glb OLCULDU: sap uzun ekseni Y (-0.5..0.5), kafa X'te genis (0.52),
+	# Z ince (0.26) -> balta/kazma ailesiyle AYNI duzen. Baslangic olarak
+	# kazmanin elde ayarlanmis degerleri verildi; ince ayar Grip Ayar
+	# Modu'ndan yapilir (butonlarla, kod dokunmadan).
+	"capa": {"axis": 1, "grip": 0.18, "scale": 0.5,
+			"rot_deg": Vector3(-166.0, 79.0, -96.0),
+			"extra": Vector3(0.021, 0.072, 0.045)},
+	# ELDE AYARLANDI (Grip Ayar Modu, kullanici onayi): capraz modellenmis
+	# kurek icin hesapla bulunamayan poz, ekran yonu butonlariyla oturtuldu.
+	"kurek": {"axis": 2, "grip": 0.15, "scale": 0.5,
+			"rot_deg": Vector3(-169.1, -76.0, -8.0),
+			"grip_pt": Vector3(0.0, 0.36, -0.45),
+			"extra": Vector3(-0.091, -0.097, 0.045)},
 }
 
 ## STIL: esya id -> karakterin GOVDE saldiri animasyonu (character_animated).
@@ -170,7 +181,7 @@ const GRIP_OVERRIDE_PATH := "user://grip_overrides.json"
 ## Kayitli ofsetler TOOL_HOLD'un UZERINE biner. Bir ayar koda islenince
 ## cihazdaki eski kayit AYNI farki bir daha uygular (cift donme!). Bu sayi
 ## koda deger islendiginde ARTIRILIR; eski surumlu kayit yok sayilir/silinir.
-const GRIP_VERSION := 2
+const GRIP_VERSION := 3
 var _grip_over: Dictionary = {}
 var _hat_id: String = ""
 var _face_path: String = ""

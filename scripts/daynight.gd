@@ -91,6 +91,36 @@ func sleep_to_morning() -> void:
 	day_started.emit()
 	changed.emit()
 
+# --- ELLE FAZ ATLAMA (gelistirme araci) ----------------------------------
+# Bir tam gun 15,5 dakika; geceyi denemek icin ~11 dakika beklemek gerekiyordu.
+# Ayarlar'daki "Gece/Gunduz" butonlari buraya baglanir.
+# ONEMLI: gecise bagli TUM sinyaller normal akistaki gibi yayinlanir
+# (yaratik dalgasi, safak temizligi, tarim gun tick'i). Yoksa "elle gece
+# yaptim ama yaratik gelmedi" gibi yaniltici bir durum olusurdu.
+
+## Hemen geceye atla (yaratik dalgasi dogar).
+func jump_to_night() -> void:
+	if phase == "night":
+		return
+	phase = "night"
+	elapsed = 0.0
+	is_night = true
+	night_started.emit()
+	changed.emit()
+
+## Hemen gunduze atla. Geceden cikiliyorsa bu YENI GUN demektir: safak
+## sinyali de yayinlanir (yaratiklar erir, ekinler bir gun buyur).
+func jump_to_day() -> void:
+	var was_night := phase == "night"
+	phase = "day"
+	elapsed = 0.0
+	is_night = false
+	if was_night:
+		day += 1
+		dawn_started.emit()
+	day_started.emit()
+	changed.emit()
+
 ## Kayittan yukleme (geriye uyum imzası): is_night -> faz.
 func load_state(new_day: int, new_is_night: bool, new_elapsed: float) -> void:
 	day = maxi(1, new_day)
