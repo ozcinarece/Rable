@@ -17,6 +17,7 @@ const MapBalance = preload("res://scripts/map_balance.gd")
 const TimeBalance = preload("res://scripts/time_balance.gd")  # gunduz/gece
 const Player3DScript = preload("res://scripts/player3d.gd")
 const DigRules = preload("res://scripts/dig_rules.gd")
+const EnvModels = preload("res://scripts/env_models.gd")
 const WaterRules = preload("res://scripts/water_rules.gd")
 const WaterSim = preload("res://scripts/water_sim.gd")
 const ToolProfiles = preload("res://scripts/tool_profiles.gd")
@@ -2628,6 +2629,127 @@ func _build_decor(grass_cells: Array) -> void:
 		var node := _make_mesh_multimesh(pool[idx], groups[idx], false)
 		add_child(node)
 		_decor_nodes.append(node)
+	_build_env_scatter(grass_cells)
+
+# --- CEVRE SERPINTISI (grass_tuft / pebble_cluster / twig_debris) ---------
+# Kullanicinin GLB'leri; TUR BASINA TEK MultiMesh (3 ek cizim cagrisi).
+# Yogunluk KALITE KADEMESINE bagli (dusuk telefonda seyrelir).
+# Baglam kurali basit: cimde ot tutami, su/kaya kenarinda cakil, agac
+# dibinde dal. Konum/donme/olcek deterministik hash -> yeniden kurulunca
+# ayni yerde kalir.
+func _build_env_scatter(grass_cells: Array) -> void:
+	var mult: float = float(EnvModels.SCATTER_TIER_MULT.get(_quality_tier, 1.0))
+	var groups: Dictionary = {"grass_tuft": [], "pebble_cluster": [], "twig_debris": []}
+	for cell: Vector2i in grass_cells:
+		if _objects.has(cell) or cell == _spawn_cell:
+			continue
+		if int(_depth.get(cell, 0)) != 0 or Farming.plots.has(cell):
+			continue
+		var id := _scatter_kind_for(cell)
+		if id == "":
+			continue
+		var roll := int(EnvModels.hash01(cell.x, cell.y, 101) * 100.0)
+		var chance: int = int(float(_scatter_chance(id)) * mult)
+		if roll >= chance:
+			continue
+		var rr: float = EnvModels.hash01(cell.x, cell.y, 103)
+		var rs: float = EnvModels.hash01(cell.x, cell.y, 107)
+		var ox: float = (EnvModels.hash01(cell.x, cell.y, 109) - 0.5) * 2.0
+		var oz: float = (EnvModels.hash01(cell.x, cell.y, 113) - 0.5) * 2.0
+		var sc: float = EnvModels.SCATTER_SCALE_MIN + rs \
+				* (EnvModels.SCATTER_SCALE_MAX - EnvModels.SCATTER_SCALE_MIN)
+		var off := Vector3(ox * EnvModels.SCATTER_OFFSET, 0.0,
+				oz * EnvModels.SCATTER_OFFSET)
+		var basis := Basis().rotated(Vector3.UP, rr * TAU).scaled(Vector3(sc, sc, sc))
+		groups[id].append(Transform3D(basis, _cell_center(cell) + off))
+	for id: String in groups:
+		var list: Array = groups[id]
+		if list.is_empty():
+			continue
+		var node := _env_scatter_node(id, list)
+		if node == null:
+			continue
+		add_child(node)
+		_decor_nodes.append(node)  # dekorla ayni omur (yeniden kurulumda silinir)
+
+## Hucre baglamina gore serpinti turu ("" = serpinti yok).
+func _scatter_kind_for(cell: Vector2i) -> String:
+	for dy in range(-1, 2):
+		for dx in range(-1, 2):
+			var n := cell + Vector2i(dx, dy)
+			var o := String(_objects.get(n, ""))
+			if o == "T":
+				return "twig_debris"      # agac dibi: dal parcasi
+			if o == "#":
+				return "pebble_cluster"   # kaya kenari: cakil
+			if is_swimmable(n):
+				return "pebble_cluster"   # su kenari: cakil
+	return "grass_tuft"                   # acik cim: ot tutami
+
+func _scatter_chance(id: String) -> int:
+	match id:
+		"pebble_cluster": return EnvModels.CHANCE_PEBBLE
+		"twig_debris": return EnvModels.CHANCE_TWIG
+		_: return EnvModels.CHANCE_TUFT
+
+## Model + olcek onbellegi; GLB yoksa proseduerel fallback (gorev sarti).
+var _env_mesh_cache: Dictionary = {}
+
+func _env_scatter_node(id: String, list: Array) -> Node3D:
+	var mesh := _env_mesh(id)
+	if mesh == null:
+		return null
+	var target: float = EnvModels.scale_of(id)
+	var aabb := mesh.get_aabb()
+	var span: float = maxf(0.001, maxf(aabb.size.x, aabb.size.z))
+	var k: float = target / span            # KOK olcegi (ic dugum yok)
+	var bottom: float = aabb.position.y     # zemine oturma telafisi
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = list.size()
+	for i in list.size():
+		var t: Transform3D = list[i]
+		var s := t.basis.get_scale().x * k
+		var b := Basis().rotated(Vector3.UP, t.basis.get_euler().y).scaled(
+				Vector3(s, s, s))
+		mm.set_instance_transform(i, Transform3D(b,
+				t.origin + Vector3(0.0, -bottom * s, 0.0)))
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
+
+func _env_mesh(id: String) -> Mesh:
+	if _env_mesh_cache.has(id):
+		return _env_mesh_cache[id]
+	var mesh: Mesh = null
+	var glb := EnvModels.path_of(id)
+	if glb != "" and ResourceLoader.exists(glb):
+		var scene: Node = load(glb).instantiate()
+		_tame_meshy_materials(scene)  # Meshy isimasi kapali
+		for mi2: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
+			if mi2.mesh != null:
+				mesh = mi2.mesh
+				break
+		scene.queue_free()
+	if mesh == null:
+		# FALLBACK (doku/model yoksa): duz renk basit sekil
+		var mat := StandardMaterial3D.new()
+		mat.roughness = 0.95
+		var sm := SphereMesh.new()
+		sm.radial_segments = 6
+		sm.rings = 3
+		sm.radius = 0.5
+		sm.height = 1.0
+		match id:
+			"pebble_cluster": mat.albedo_color = EnvModels.FALLBACK_STONE
+			"twig_debris": mat.albedo_color = EnvModels.FALLBACK_WOOD
+			_: mat.albedo_color = EnvModels.FALLBACK_LEAF
+		sm.material = mat
+		mesh = sm
+	_env_mesh_cache[id] = mesh
+	return mesh
 
 ## Bir dunya noktasindaki arazi yuksekligi (oyuncu ve nesneler icin).
 ## 14.4: platform hucresinde deck ust yuzu (arazi + PLATFORM_HEIGHT) doner —

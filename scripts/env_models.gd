@@ -71,3 +71,9 @@ static func path_of(id: String) -> String:
 
 static func scale_of(id: String) -> float:
 	return float(SCALE.get(id, 1.0))
+
+## Deterministik 0..1 gürültü (aynı hücre hep aynı serpintiyi alsın —
+## dekor yeniden kurulunca otlar yer değiştirmesin).
+static func hash01(x: int, y: int, salt: int) -> float:
+	var h := (x * 73856093) ^ (y * 19349663) ^ (salt * 83492791)
+	return float(absi(h) % 100003) / 100003.0
