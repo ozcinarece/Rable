@@ -2785,6 +2785,8 @@ const ROAD_NB: Array[Vector2i] = [Vector2i(0, -1), Vector2i(1, 0),
 
 var _road_nodes: Array = []        # karo + dekor MultiMesh'leri
 var _road_edge_used := 0           # ROADTEST: kac hucrede kenar karosu
+var _road_edge_covered := 0        # ROADTEST: karo kenarina cim BINEN hucre
+var _road_joint_deco := 0          # ROADTEST: derz dekoru alan hucre
 var _road_spill: Dictionary = {}   # cim hucresi -> true (serpinti cakismasin)
 
 ## Bir hucre yol mu?
@@ -2826,6 +2828,8 @@ func _build_road() -> void:
 	# tur -> Array[Transform3D]
 	var tiles: Dictionary = {}
 	_road_edge_used = 0
+	_road_edge_covered = 0
+	_road_joint_deco = 0
 	var moss: Array = []
 	var tufts: Array = []
 	var joint_tufts: Array = []
@@ -2860,6 +2864,7 @@ func _build_road() -> void:
 		if RoadTiles.hash01(cell.x, cell.y, 341) * 100.0 \
 				< float(RoadTiles.JOINT_TUFT_CHANCE) * mult:
 			joint_tufts.append(_road_face_xform(cell, 343))
+			_road_joint_deco += 1
 		var jm: float = float(RoadTiles.JOINT_MOSS_CHANCE) \
 				* RoadTiles.moss_density(age) * mult
 		if RoadTiles.hash01(cell.x, cell.y, 347) * 100.0 < jm:
@@ -2872,6 +2877,7 @@ func _build_road() -> void:
 		if RoadTiles.hash01(cell.x, cell.y, 317) * 100.0 \
 				< float(RoadTiles.EDGE_OVERLAP_CHANCE) * mult:
 			tufts.append(_road_edge_xform(cell, open_dirs, 319, 0.0))
+			_road_edge_covered += 1
 
 		# --- 3) Komsu CIM hucrelerine sacilma ---
 		var mossy_pct := RoadTiles.mossy_chance(age)
@@ -3457,16 +3463,30 @@ func _run_road_test(save_path: String) -> void:
 	camera.look_at(fp + Vector3(0.5, 0.0, 0.0))
 	await get_tree().create_timer(0.7).timeout
 	_snap(save_path.replace(".png", "_yol.png"))
+	# SONUC TESTI (gorev 3b): TAM TEPEDEN bakis. Yol ile cim arasinda net
+	# bir cizgi kalmamali, ama yolun nereye gittigi rahat okunmali. Kare
+	# goz kararina birakiliyor; olcu tarafini asagidaki kenar_ortulu /
+	# derz_ot oranlari veriyor.
+	camera.position = fp + Vector3(0.0, 9.0, 0.01)
+	camera.look_at(fp)
+	await get_tree().create_timer(0.7).timeout
+	_snap(save_path.replace(".png", "_yol_tepe.png"))
 	# Genis kare: kavisin tamami + kampla baglantisi
 	camera.position = _cell_center(_camp_center) + Vector3(2.0, 14.0, 20.0)
 	camera.look_at(_cell_center(_camp_center + Vector2i(1, 9)))
 	await get_tree().create_timer(0.7).timeout
 	_snap(save_path.replace(".png", "_yol_genis.png"))
 	var line := ("ROADTEST: hucre=%d (miras=%d yeni=%d) kenar=%d tek_acik=%d "
-			+ "karo_ornek=%d kenar_karo=%d sacilma=%d edge_glb=%s "
-			+ "moss_glb=%s") % [
+			+ "karo_ornek=%d kenar_karo=%d sacilma=%d "
+			+ "kenar_ortulu=%d/%d (%%%.0f) derz_ot=%d/%d (%%%.0f) "
+			+ "edge_glb=%s moss_glb=%s") % [
 		_path_cells.size(), miras, yeni, kenar, tek_acik, karo, kenar_karo,
-		dekor, str(edge_var), str(moss_var)]
+		dekor,
+		_road_edge_covered, kenar,
+		float(_road_edge_covered) / maxf(1.0, float(kenar)) * 100.0,
+		_road_joint_deco, _path_cells.size(),
+		float(_road_joint_deco) / maxf(1.0, float(_path_cells.size())) * 100.0,
+		str(edge_var), str(moss_var)]
 	print(line)
 	var f := FileAccess.open("res://docs/screens/roadtest.txt", FileAccess.WRITE)
 	if f != null:
