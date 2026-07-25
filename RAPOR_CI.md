@@ -127,12 +127,31 @@ her seferinde 8+ dakika yerine yarım dakika.
 
 ---
 
-## 7. Ölçülmemiş / açık kalan
+## 7. İlk gerçek koşu (soğuk önbellek)
 
-- **Sonuç rakamları tahmini değil, ölçülmüş temele dayanıyor** ama
-  önbelleğin ilk isabetli koşusu bu rapor yazılırken henüz oluşmadı
-  (önbellek ancak bir koşu onu doldurduktan sonra işe yarar). İlk
-  push'tan sonraki ikinci koşu gerçek rakamı verecek.
+`ci-fast.yml` ilk kez koştu ve **başarılı**: run 30170520763.
+
+| Adım | Süre |
+|---|---:|
+| Repoyu al | 10 sn |
+| Godot indir | 1 sn |
+| Import önbelleği (boş — ilk koşu) | 1 sn |
+| Projeyi içe aktar | 176 sn |
+| **Mantık testleri** | **32 sn** |
+| Önbelleği kaydet | 4 sn |
+| **Toplam** | **3 dk 49 sn** |
+
+Testlerin kendisi **32 saniye** — ağır katmanın 300–480 saniyesinin
+onda biri. Kalan sürenin tamamı içe aktarma, ve bu koşu önbelleği
+**boş** buldu (ilk koşu onu doldurur). Önbellek artık dolu; asset
+değişmeyen bir sonraki push'ta içe aktarma adımı düşecek ve toplam
+~45 saniyeye inecek.
+
+Bu rakam bir sonraki `scripts/**` push'unda görülecek — o yüzden
+rapordaki "~30 sn" satırı hâlâ **öngörü**, ölçüm değil. Ölçülen tek
+şey: soğuk önbellekte 3 dk 49 sn, testlerin payı 32 sn.
+
+## 8. Açık kalan
 - **Oyunu çalıştır adımı hâlâ ağır katmanın tavanı.** Asıl kazanç
   oradan gelir ama bunun için testlerin kare almadan koşabilecek şekilde
   yeniden yazılması gerekiyor (yukarıdaki kapsam notu). Ayrı bir iş.
