@@ -1,1 +1,1 @@
-KAMPTEST: merkez=(64, 64) dogus_on=true dogus_bos=true kulube_kati=true kapi_acik=true yol_yon=4/4 ocak_yanmiyor=true isik_yok=true veri_temiz=true tarla=4 kanal=true dolu=%1
+KAMPTEST: merkez=(64, 64) dogus_on=true dogus_bos=true kulube_kati=true kapi_acik=true yol_yon=4/4 ocak_yanmiyor=true isik_yok=true veri_temiz=true tarla=4 aciklik_bos=true halka_dolu=%2
