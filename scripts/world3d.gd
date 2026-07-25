@@ -2145,6 +2145,7 @@ func _build_world() -> void:
 	# Kenar harmani kamptan SONRA: kamp plato hucrelerini duz cime
 	# cevirdigi icin harman guncel zemin karakterlerini gormeli.
 	_build_edge_blend()
+	_build_wet_cells()  # B6: islak kiyi seridi (arazi kurulmadan once)
 
 	# kayit-sistemi: taban nesne anlik goruntusu (seed'den uretilen ilk durum).
 	# Kayitta yalniz bundan FARKLI hucreler yazilir (dosya kucuk kalir).
@@ -2276,6 +2277,28 @@ const EDGE_NB: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0),
 		Vector2i(0, 1), Vector2i(0, -1)]
 var _edge_blend: Dictionary = {}   # cell -> harmanlanmis Color
 
+## B6: suya komsu kara hucreleri (islak serit). Bir kez hesaplanir.
+var _wet_cells: Dictionary = {}
+
+func _build_wet_cells() -> void:
+	_wet_cells.clear()
+	var r: int = DigWaterVisual.WET_BAND_CELLS
+	for cell: Vector2i in _ground_char:
+		if String(_ground_char[cell]) == "~":
+			continue
+		var wet := false
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if dx == 0 and dy == 0:
+					continue
+				if String(_ground_char.get(cell + Vector2i(dx, dy), "")) == "~":
+					wet = true
+					break
+			if wet:
+				break
+		if wet:
+			_wet_cells[cell] = true
+
 func _build_edge_blend() -> void:
 	_edge_blend.clear()
 	for cell: Vector2i in _ground_char:
@@ -2351,7 +2374,17 @@ func _cell_props(cx: int, cy: int) -> Array:
 		var fcol: Color = TarimBalance.TILLED_WET_COLOR \
 				if bool(fplot.get("watered_today", false)) else TarimBalance.TILLED_COLOR
 		return [roll + TarimBalance.TILLED_TOP, fcol]
-	return [roll, _ground_color(Vector2i(cx, cy), def)]
+	# B6 ISLAK KIYI SERIDI: suya komsu KARA hucresi koyulasir (islak
+	# kum/toprak). Su ile kara arasindaki keskin dikey duvar boylece
+	# yumusuyor — kiyi "kesilmis" degil "islanmis" okunuyor.
+	# _edge_blend gibi onceden hesaplanmis bir tabloya bakiyor, komsu
+	# taramasi HER ORNEKTE degil bir kez yapiliyor (_cell_props cok
+	# sik cagriliyor).
+	var gcol := _ground_color(Vector2i(cx, cy), def)
+	if _wet_cells.has(Vector2i(cx, cy)):
+		var w := DigWaterVisual.WET_DARKEN
+		gcol = Color(gcol.r * w, gcol.g * w, gcol.b * w)
+	return [roll, gcol]
 
 # Bir dunya noktasinda yukseklik+renk (4 komsu hucrenin harmani)
 func _sample_terrain(x: float, z: float) -> Array:
