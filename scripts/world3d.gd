@@ -554,6 +554,7 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(Vector3(float(fbase.x) + 1.5, 0.15, float(fbase.y) + 0.5))
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_tarim.png"))
+	await _run_perf_probe(save_path)
 	await _run_camp_test(save_path)
 	await _run_env_showcase(save_path)
 	await _run_night_test(save_path)
@@ -2901,7 +2902,7 @@ func _camp_prop_mound(cell: Vector2i) -> void:
 	_camp_register_field_node(cell, node)
 
 ## Solmus bitki: genc ekin modeli, kurumus tonda ve kucuk.
-const CAMP_WITHER_TINT := Color(0.60, 0.52, 0.34)
+const CAMP_WITHER_TINT := Color(0.52, 0.44, 0.26)
 
 func _camp_prop_withered(cell: Vector2i) -> void:
 	var glb := "res://assets/models/test/small_young_berry.glb"
@@ -2913,7 +2914,7 @@ func _camp_prop_withered(cell: Vector2i) -> void:
 	_tame_meshy_materials(inst, CAMP_WITHER_TINT)
 	var aabb := _scene_aabb(inst)
 	if aabb.size.y > 0.01:
-		var s: float = 0.34 / aabb.size.y
+		var s: float = 0.26 / aabb.size.y
 		inst.scale = Vector3(s, s, s)
 		inst.position.y = -aabb.position.y * s
 	root.position = _cell_center(cell) + Vector3(0.0, 0.06, 0.0)
@@ -2955,6 +2956,49 @@ func _camp_prop_pumpkin(cell: Vector2i) -> void:
 	add_child(root)
 	_camp_nodes.append(root)
 
+
+
+# --- PERF SONDASI (gorsel-tur once/sonra) --------------------------------
+# "Once/sonra FPS" icin AYNI karede iki olcum: bu dalin ekledigi her sey
+# (serpinti + yol taslari + kamp dekoru) ACIK ve KAPALI. Ayri bir main
+# kosusuna gerek kalmiyor, olcum ayni donanim/ayni kare uzerinde.
+func _perf_sample(frames: int) -> Dictionary:
+	var fps_sum := 0.0
+	var draw_sum := 0.0
+	for i in frames:
+		await get_tree().process_frame
+		fps_sum += Performance.get_monitor(Performance.TIME_FPS)
+		draw_sum += Performance.get_monitor(
+				Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME)
+	return {"fps": fps_sum / maxf(1.0, float(frames)),
+			"draw": draw_sum / maxf(1.0, float(frames))}
+
+func _perf_set_visual(on: bool) -> void:
+	for arr: Array in [_env_scatter_nodes, _path_nodes, _camp_nodes]:
+		for n in arr:
+			if is_instance_valid(n) and n is Node3D:
+				(n as Node3D).visible = on
+
+func _run_perf_probe(save_path: String) -> void:
+	var ctr := _cell_center(_camp_center)
+	camera.position = ctr + Vector3(0.0, 9.0, 11.0)
+	camera.look_at(ctr)
+	await get_tree().create_timer(0.5).timeout
+	_perf_set_visual(false)
+	var before: Dictionary = await _perf_sample(45)
+	_perf_set_visual(true)
+	var after: Dictionary = await _perf_sample(45)
+	var line := ("PERFTEST: kamp kamerasi | ONCE fps=%.1f draw=%.0f | "
+			+ "SONRA fps=%.1f draw=%.0f | serpinti_dugum=%d yol_dugum=%d "
+			+ "kamp_dugum=%d") % [
+		float(before["fps"]), float(before["draw"]),
+		float(after["fps"]), float(after["draw"]),
+		_env_scatter_nodes.size(), _path_nodes.size(), _camp_nodes.size()]
+	print(line)
+	var f := FileAccess.open("res://docs/screens/perftest.txt", FileAccess.WRITE)
+	if f != null:
+		f.store_line(line)
+		f.close()
 
 # --- VITRIN: yeni cevre/yapi modelleri (gorsel-tur Asama 1 dogrulamasi) ---
 # Dokuz model, OYUNDAKI GERCEK olcegiyle (EnvModels.SCALE) yan yana. Amac:
@@ -3112,7 +3156,10 @@ func _run_camp_test(save_path: String) -> void:
 # Baglam kurali basit: cimde ot tutami, su/kaya kenarinda cakil, agac
 # dibinde dal. Konum/donme/olcek deterministik hash -> yeniden kurulunca
 # ayni yerde kalir.
+var _env_scatter_nodes: Array = []  # gorsel-tur serpintisi (perf olcumu)
+
 func _build_env_scatter(grass_cells: Array) -> void:
+	_env_scatter_nodes.clear()
 	var mult: float = float(EnvModels.SCATTER_TIER_MULT.get(_quality_tier, 1.0))
 	var groups: Dictionary = {"grass_tuft": [], "pebble_cluster": [], "twig_debris": []}
 	for cell: Vector2i in grass_cells:
@@ -3154,6 +3201,7 @@ func _build_env_scatter(grass_cells: Array) -> void:
 			continue
 		add_child(node)
 		_decor_nodes.append(node)  # dekorla ayni omur (yeniden kurulumda silinir)
+		_env_scatter_nodes.append(node)  # perf olcumu icin ayri liste
 
 ## Hucre baglamina gore serpinti turu ("" = serpinti yok).
 func _scatter_kind_for(cell: Vector2i) -> String:
@@ -5137,6 +5185,14 @@ const MOUND_GLB := [
 const MOUND_EMPTY := {"path": "res://assets/models/crops/planting_mound.glb",
 		"rot_deg": Vector3.ZERO}
 const MOUND_FOOTPRINT := 0.92  # hucreye sigacak taban genisligi (m)
+## Meshy hoyugu neredeyse BEYAZ geliyordu (kamp karesinde 4 beyaz kubbe).
+## Toprak tonuna cekilir.
+const MOUND_TINT := Color(0.50, 0.39, 0.29)
+## Model kubbe gibi sisman; 0.92 m tabanda ~45 cm boy cikiyor — surulmus
+## bir sirt icin cok yuksek. Kok dugumde Y ezilir.
+## (Karakterdeki "node scale yasak" dersi SKINNED modellerin IC dugumleri
+## icindi; bu prop skinned degil, ezme guvenli.)
+const MOUND_FLATTEN := 0.55
 
 func _update_mound_node(cell: Vector2i) -> void:
 	_camp_clear_field_decor(cell)  # kamp dekoru gercek tarlaya yer birakir
@@ -5173,14 +5229,14 @@ func _build_mound_from(cfg: Dictionary) -> Node3D:
 	var inst: Node3D = load(glb).instantiate()
 	inst.rotation_degrees = cfg.get("rot_deg", Vector3.ZERO)
 	root.add_child(inst)
-	_tame_meshy_materials(inst)  # Meshy isimasi kapali (toprak parlamasin)
+	_tame_meshy_materials(inst, MOUND_TINT)  # isima kapali + toprak tonu
 	# Tabani hucreye sigdir + zemine otur (donme SONRASI olculur)
 	var aabb := _scene_aabb(inst)
 	var span: float = maxf(aabb.size.x, aabb.size.z)
 	if span > 0.01:
 		var s: float = MOUND_FOOTPRINT / span
-		inst.scale = Vector3(s, s, s)
-		inst.position.y = -aabb.position.y * s
+		inst.scale = Vector3(s, s * MOUND_FLATTEN, s)
+		inst.position.y = -aabb.position.y * s * MOUND_FLATTEN
 	return root
 
 func _update_crop_node(cell: Vector2i) -> void:
