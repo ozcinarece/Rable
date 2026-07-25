@@ -778,6 +778,7 @@ const GRIP_LONG_PRESS := 0.35 # bu sureden sonra dondurmeye gecer
 const GRIP_REPEAT := 0.09     # dondurme tekrar araligi
 
 var _grip_panel: PanelContainer
+var _grip_check: CheckButton  # Ayarlar'daki anahtar (✕ ile senkron)
 var _grip_status: Label
 var _grip_code: Label
 var _grip_hold_axis: int = -1
@@ -793,23 +794,48 @@ func _on_grip_tuner_toggled(on: bool) -> void:
 	if on:
 		grip_tuner_opened.emit()  # guncel alet/ofset hemen yazilsin
 
+## Paneli kendi ✕ butonundan kapat. Ayarlar'daki anahtar da geri alinir,
+## yoksa anahtar "acik" gorunup panel kapali kalirdi (tekrar acmak icin
+## iki kez basmak gerekirdi).
+func _close_grip_panel() -> void:
+	if _grip_panel != null:
+		_grip_panel.visible = false
+	if _grip_check != null:
+		_grip_check.set_pressed_no_signal(false)
+
 func _build_grip_panel() -> void:
 	_grip_panel = PanelContainer.new()
 	_grip_panel.theme = load("res://theme_main.tres")
-	_grip_panel.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+	# CIHAZ HATASI: panel CENTER_RIGHT + grow BOTH idi; "Kaydet"ten sonra
+	# kod satiri eklenince panel YUKARI da buyuyup sag ustteki "Ayarlar"
+	# butonunu ortuyordu -> paneli kapatip oyuna donmek IMKANSIZ oluyordu.
+	# Artik Ayarlar butonunun ALTINDAN baslar ve yalniz ASAGI buyur.
+	_grip_panel.set_anchors_preset(Control.PRESET_TOP_RIGHT)
 	_grip_panel.grow_horizontal = Control.GROW_DIRECTION_BEGIN
-	_grip_panel.grow_vertical = Control.GROW_DIRECTION_BOTH
+	_grip_panel.grow_vertical = Control.GROW_DIRECTION_END
+	_grip_panel.offset_top = 96.0   # "Ayarlar" butonunun altinda kalsin
 	_grip_panel.custom_minimum_size = Vector2(250, 0)
 	_grip_panel.visible = false
 	add_child(_grip_panel)
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 6)
 	_grip_panel.add_child(vb)
+	# Baslik satiri: basligin sagina KAPAT (panel kendi basina kapanabilsin;
+	# Ayarlar'a ulasmaya gerek kalmasin).
+	var hrow := HBoxContainer.new()
+	vb.add_child(hrow)
 	var hdr := Label.new()
 	hdr.text = "Grip Ayarı"
 	hdr.theme_type_variation = "HeaderLabel"
+	hdr.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hdr.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	vb.add_child(hdr)
+	hrow.add_child(hdr)
+	var xbtn := Button.new()
+	xbtn.text = "✕"
+	xbtn.custom_minimum_size = Vector2(40, 36)
+	xbtn.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+	xbtn.pressed.connect(_close_grip_panel)
+	hrow.add_child(xbtn)
 	var tip := Label.new()
 	tip.theme_type_variation = "SubtleLabel"
 	tip.text = "kısa bas: kaydır · uzun bas: döndür"
@@ -867,6 +893,8 @@ func _build_grip_panel() -> void:
 	_grip_code = Label.new()
 	_grip_code.theme_type_variation = "SubtleLabel"
 	_grip_code.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	# Kucuk punto: kod satiri uzun, buyuk puntoda panel asiri uzuyordu.
+	_grip_code.add_theme_font_size_override("font_size", 11)
 	_grip_code.visible = false
 	vb.add_child(_grip_code)
 
@@ -982,10 +1010,10 @@ func _build_settings_menu() -> void:
 	# derlendiginden tarayicida hic cikmiyordu. TestMode.ENABLED=false
 	# yapilinca yayin surumunden yine kaybolur.)
 	if OS.is_debug_build() or TestMode.ENABLED:
-		var grip_check := CheckButton.new()
-		grip_check.text = "Grip Ayarı (aleti elde hizala)"
-		grip_check.toggled.connect(_on_grip_tuner_toggled)
-		vb.add_child(grip_check)
+		_grip_check = CheckButton.new()
+		_grip_check.text = "Grip Ayarı (aleti elde hizala)"
+		_grip_check.toggled.connect(_on_grip_tuner_toggled)
+		vb.add_child(_grip_check)
 		# ZAMAN KONTROLU: bir tam gun 15,5 dk; geceyi denemek icin ~11 dk
 		# beklemek gerekiyordu. Bu iki buton faza ANINDA atlar (gecise bagli
 		# tum sinyaller normal akistaki gibi yayinlanir).
