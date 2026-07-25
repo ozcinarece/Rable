@@ -2419,7 +2419,7 @@ func _run_dig_perf_test() -> void:
 	var kc := _player_cell() + Vector2i(-4, 0)
 	var ck := Vector2i(floori(kc.x / float(CHUNK_CELLS)),
 			floori(kc.y / float(CHUNK_CELLS)))
-	var runs := 12
+	var runs := 4
 	_scatter_usec = 0.0
 	var t0 := Time.get_ticks_usec()
 	for r in runs:
@@ -2428,12 +2428,12 @@ func _run_dig_perf_test() -> void:
 	var scat := _scatter_usec / float(runs)
 	# FPS ornegi (birkac kare bekleyip oku)
 	var fps_sum := 0.0
-	for f in 20:
+	for f in 10:
 		await get_tree().process_frame
 		fps_sum += Performance.get_monitor(Performance.TIME_FPS)
 	var line := ("KAZITEST: chunk_kurulum=%.0fus serpinti=%.0fus (%%%.1f) " +
 			"serpintisiz=%.0fus fps=%.1f") % [total, scat,
-			(scat / maxf(1.0, total)) * 100.0, total - scat, fps_sum / 20.0]
+			(scat / maxf(1.0, total)) * 100.0, total - scat, fps_sum / 10.0]
 	print(line)
 	var f2 := FileAccess.open("res://docs/screens/kazitest.txt", FileAccess.WRITE)
 	if f2 != null:
