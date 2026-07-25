@@ -2785,9 +2785,19 @@ func _env_mesh(id: String) -> Mesh:
 		var scene: Node = load(glb).instantiate()
 		_tame_meshy_materials(scene, EnvModels.tint_of(id))  # isima kapali + ton
 		for mi2: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
-			if mi2.mesh != null:
-				mesh = mi2.mesh
-				break
+			if mi2.mesh == null:
+				continue
+			mesh = mi2.mesh
+			# ONEMLI: GLTF import'u materyali cogu zaman MeshInstance3D'nin
+			# surface_override'ina koyuyor. MultiMesh yalniz MESH'i kullanir;
+			# materyali mesh'e TASIMAZSAK model BEMBEYAZ cikar (ilk CI
+			# karesinde yol taslari boyle ciktı). Aktif materyali mesh'e yaz.
+			if mesh is ArrayMesh:
+				for si in mesh.get_surface_count():
+					var sm2 := mi2.get_active_material(si)
+					if sm2 != null:
+						(mesh as ArrayMesh).surface_set_material(si, sm2)
+			break
 		scene.queue_free()
 	if mesh == null:
 		# FALLBACK (doku/model yoksa): duz renk basit sekil

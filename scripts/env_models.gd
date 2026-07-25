@@ -21,8 +21,8 @@ const SCALE := {
 	"pebble_cluster": 0.18,  # ölçüldü w=1.90 -> ~34 cm çakıl öbeği
 	"twig_debris": 0.40,     # ölçüldü w=0.99 -> ~40 cm dal parçası
 	# yol taşı
-	"path_stone": 0.55,
-	"path_stone_mossy": 0.55,
+	"path_stone": 0.45,
+	"path_stone_mossy": 0.45,
 	# yapılar (kulübe ~2.8 m: karakterin ~3 katı)
 	"ruined_hut": 2.80,
 	"repaired_hut": 2.80,
