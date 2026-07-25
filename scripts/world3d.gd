@@ -18,6 +18,7 @@ const TimeBalance = preload("res://scripts/time_balance.gd")  # gunduz/gece
 const Player3DScript = preload("res://scripts/player3d.gd")
 const DigRules = preload("res://scripts/dig_rules.gd")
 const EnvModels = preload("res://scripts/env_models.gd")
+const DigWaterVisual = preload("res://scripts/dig_water_visual.gd")
 const WaterRules = preload("res://scripts/water_rules.gd")
 const WaterSim = preload("res://scripts/water_sim.gd")
 const ToolProfiles = preload("res://scripts/tool_profiles.gd")
@@ -2323,14 +2324,22 @@ func _cell_props(cx: int, cy: int) -> Array:
 	# olusur; derin katman kaya rengine doner.
 	var d: int = _depth.get(Vector2i(cx, cy), 0)
 	if d != 0:
-		var col: Color = def["color"]
-		if d >= 3:
-			col = Color(0.42, 0.39, 0.34)   # kaya katmani
-		elif d > 0:
-			col = Color(0.44, 0.31, 0.20)   # kazilmis toprak
-		else:
-			col = Color(0.47, 0.34, 0.22)   # toprak tumsegi
-		return [roll - float(d) * DigRules.DEPTH_STEP, col]
+		# A3 KATMAN RENKLERI + A4 DERINLIK KARARTMASI.
+		# Once uc kaba kademe vardi (>=3 tas, >0 toprak); gecisler
+		# okunmuyordu. Simdi her derinligin kendi rengi var (bitkisel
+		# toprak -> alt toprak -> tas -> kaya) ve uzerine derinlikle
+		# artan bir KARARTMA carpani biniyor.
+		# Karartma vertex renginde, isik hesabi DEGIL: bedava ve mobil
+		# dostu (gorevin "veri tabanli cozum" sarti). depth 4'te 0.42
+		# carpaniyla "dibi gorunmuyor" hissi olusuyor.
+		if d > 0:
+			var col: Color = DigWaterVisual.wall_color(d)
+			var k: float = DigWaterVisual.depth_darken(d)
+			return [roll - float(d) * DigRules.DEPTH_STEP,
+					Color(col.r * k, col.g * k, col.b * k)]
+		# d < 0: kazilan toprak geri yigilmis tumsek (karartma yok)
+		return [roll - float(d) * DigRules.DEPTH_STEP,
+				Color(0.47, 0.34, 0.22)]
 	# YOL: zemin RENGI DEGISTIRILMIYOR. Once yolun altina koyu bir toprak
 	# halesi konuyordu; karolarin cevresinde kirli/bulanik bir leke
 	# yapiyordu ve "yol dagilmis" gorunumunu besliyordu. Kenar gecisini
