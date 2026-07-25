@@ -41,6 +41,25 @@ const PATHS := {
 	"ruined_well": "res://assets/models/structures/ruined_well.glb",
 }
 
+## MESHY TON ÇARPANI: dokular "ışık pişmiş" gibi çok AÇIK geliyor
+## (ekinlerde CROP_TINT ile çözülmüştü). İlk CI karesinde ot tutamı sarı
+## saman, çakıl bembeyaz çıktı -> albedo bu çarpanlarla sahne paletine
+## çekilir. 1.0 = dokunma.
+const TINT := {
+	"grass_tuft": Color(0.66, 0.80, 0.52),      # sarıdan yeşile
+	"pebble_cluster": Color(0.72, 0.70, 0.66),  # beyazdan sıcak griye
+	"twig_debris": Color(0.78, 0.66, 0.52),     # ahşap kahveye
+	"path_stone": Color(0.80, 0.78, 0.74),
+	"path_stone_mossy": Color(0.74, 0.78, 0.66),
+	"planting_mound": Color(0.86, 0.80, 0.72),
+	"ruined_hut": Color(0.86, 0.82, 0.76),
+	"repaired_hut": Color(0.90, 0.86, 0.80),
+	"ruined_well": Color(0.84, 0.82, 0.78),
+}
+
+static func tint_of(id: String) -> Color:
+	return TINT.get(id, Color.WHITE)
+
 ## Doku gelmezse düz renk fallback paleti (görevdeki palet).
 const FALLBACK_LEAF := Color(0.42, 0.52, 0.34)   # yaprak adaçayı
 const FALLBACK_STONE := Color(0.55, 0.52, 0.48)  # taş sıcak gri

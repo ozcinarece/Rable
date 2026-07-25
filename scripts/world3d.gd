@@ -2108,7 +2108,14 @@ func _build_world() -> void:
 	_base_objects = _objects.duplicate()
 
 	_recompute_water()  # 11.2: haritadaki hazir cukurlar havuz olur (kuru)
+	# YOL IZI (gorsel-tur): spawn'dan IKI yone ornek asinmis serit.
+	# Dunya uretiminde SABIT (her Yeni Oyun'da ayni), terreni kurmadan
+	# once tanimlanir ki renk lekesi ilk chunk'ta gorunsun.
+	_path_cells.clear()
+	_add_path_strip(_spawn_cell, Vector2i(0, 1), 7)   # guneye
+	_add_path_strip(_spawn_cell, Vector2i(1, 0), 6)   # doguya
 	_build_terrain()
+	_build_path_stones()
 	_build_sea()
 	_build_lake_surface()
 	_build_sea_rocks()
@@ -2241,6 +2248,11 @@ func _cell_props(cx: int, cy: int) -> Array:
 		else:
 			col = Color(0.47, 0.34, 0.22)   # toprak tumsegi
 		return [roll - float(d) * DigRules.DEPTH_STEP, col]
+	# YOL IZI (gorsel-tur): asinmis patika lekesi. GROUND char EKLENMEDI —
+	# yalniz RENK harmani; yurume/mekanik etkisi YOK (patika sistemi degil).
+	if _path_cells.has(Vector2i(cx, cy)):
+		var pc: Color = def["color"]
+		return [roll, pc.lerp(EnvModels.PATH_TINT, 0.75)]
 	# TARIM: surulu tarla rengi (veri Farming'de; GROUND char EKLENMEDI —
 	# kayit/uretec varsayimlari bozulmasin). Islakken koyulasir.
 	var fplot: Variant = Farming.plots.get(Vector2i(cx, cy))
@@ -2631,6 +2643,50 @@ func _build_decor(grass_cells: Array) -> void:
 		_decor_nodes.append(node)
 	_build_env_scatter(grass_cells)
 
+# --- ASINMIS YOL SERIDI (gorsel dekor; patika SISTEMI DEGIL) -------------
+# Zemine soluk toprak lekesi (_cell_props okur) + uzerine tas serpintisi.
+# %30 tas eksik (asinmislik), %40 yosunlu varyant. TEK MultiMesh / varyant.
+var _path_cells: Dictionary = {}   # cell -> true (renk lekesi)
+var _path_nodes: Array = []        # tas MultiMesh dugumleri
+
+## Bir noktadan verilen yonde `len` hucrelik yol seridi tanimlar.
+func _add_path_strip(from: Vector2i, dir: Vector2i, len_cells: int) -> void:
+	for i in range(1, len_cells + 1):
+		var c := from + dir * i
+		if c.x < 1 or c.y < 1 or c.x >= _map_w - 1 or c.y >= _map_h - 1:
+			break
+		_path_cells[c] = true
+
+## Yol taslarini kurar (renk lekesini _cell_props zaten veriyor).
+func _build_path_stones() -> void:
+	for n in _path_nodes:
+		if is_instance_valid(n):
+			n.queue_free()
+	_path_nodes.clear()
+	var groups := {"path_stone": [], "path_stone_mossy": []}
+	for cell: Vector2i in _path_cells:
+		# %30 TAS EKSIK: asinmis yol hissi
+		if int(EnvModels.hash01(cell.x, cell.y, 201) * 100.0) < EnvModels.PATH_STONE_MISS:
+			continue
+		var mossy: bool = int(EnvModels.hash01(cell.x, cell.y, 203) * 100.0) \
+				< EnvModels.PATH_MOSSY_CHANCE
+		var id := "path_stone_mossy" if mossy else "path_stone"
+		var rr: float = EnvModels.hash01(cell.x, cell.y, 207)
+		var rs: float = EnvModels.hash01(cell.x, cell.y, 211)
+		var sc: float = EnvModels.SCATTER_SCALE_MIN + rs \
+				* (EnvModels.SCATTER_SCALE_MAX - EnvModels.SCATTER_SCALE_MIN)
+		var basis := Basis().rotated(Vector3.UP, rr * TAU).scaled(Vector3(sc, sc, sc))
+		groups[id].append(Transform3D(basis, _cell_center(cell)))
+	for id: String in groups:
+		var list: Array = groups[id]
+		if list.is_empty():
+			continue
+		var node := _env_scatter_node(id, list)
+		if node == null:
+			continue
+		add_child(node)
+		_path_nodes.append(node)
+
 # --- CEVRE SERPINTISI (grass_tuft / pebble_cluster / twig_debris) ---------
 # Kullanicinin GLB'leri; TUR BASINA TEK MultiMesh (3 ek cizim cagrisi).
 # Yogunluk KALITE KADEMESINE bagli (dusuk telefonda seyrelir).
@@ -2727,7 +2783,7 @@ func _env_mesh(id: String) -> Mesh:
 	var glb := EnvModels.path_of(id)
 	if glb != "" and ResourceLoader.exists(glb):
 		var scene: Node = load(glb).instantiate()
-		_tame_meshy_materials(scene)  # Meshy isimasi kapali
+		_tame_meshy_materials(scene, EnvModels.tint_of(id))  # isima kapali + ton
 		for mi2: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
 			if mi2.mesh != null:
 				mesh = mi2.mesh
