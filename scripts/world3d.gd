@@ -5203,7 +5203,8 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 		cr.side_time -= delta
 		dir = Vector3(-dir.z, 0.0, dir.x) * cr.side_sign
 		speed *= CreatureBalance.STUCK_SIDE_SPEED
-	var next_pos := cr.position + dir * speed * delta
+	# `cr` tipsiz -> cr.position Variant; ACIK tip sart (yoksa parse hatasi).
+	var next_pos: Vector3 = cr.position + dir * speed * delta
 	var next_cell := Vector2i(floori(next_pos.x), floori(next_pos.z))
 	# ONUNE ENGEL CIKTI MI? Ciktiysa DUR ve VUR — duvar kirma boylece yol
 	# bulmaya gerek kalmadan dogal olarak calisir.
@@ -5216,7 +5217,7 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 				cr.lunge(dir)
 		_bump_stuck(cr, delta)
 		return
-	var before := cr.position
+	var before: Vector3 = cr.position
 	cr.position = Vector3(next_pos.x,
 			ground_height(next_pos.x, next_pos.z), next_pos.z)
 	if Vector2(cr.position.x - before.x, cr.position.z - before.z).length() \
