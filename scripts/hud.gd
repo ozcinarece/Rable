@@ -765,6 +765,9 @@ signal grip_nudge_requested(axis: int, delta: float)
 signal grip_rotate_requested(axis: int, deg: float)
 signal grip_reset_requested
 signal grip_save_requested
+## Ekran yonunde kaydirma: "yukari" | "asagi" | "sol" | "sag".
+## (X/Y/Z el cercevesinde; goz ile eslesmiyordu.)
+signal grip_move_requested(dir_id: String)
 
 const GRIP_STEP_M := 0.005    # kisa basis: 5 mm
 const GRIP_STEP_DEG := 2.0    # uzun basis: her tekrarda 2 derece
@@ -825,6 +828,23 @@ func _build_grip_panel() -> void:
 			b.button_down.connect(_on_grip_down.bind(axis, sign_i))
 			b.button_up.connect(_on_grip_up)
 			row.add_child(b)
+	# EKRAN YONU (kurek gibi capraz aletlerde X/Y/Z gozle eslesmiyor):
+	# tek sirada 4 yon; DAIMA kaydirir (dondurme X/Y/Z'de kalir).
+	var dirs_lbl := Label.new()
+	dirs_lbl.theme_type_variation = "SubtleLabel"
+	dirs_lbl.text = "ekran yönü (kaydır)"
+	vb.add_child(dirs_lbl)
+	var drow := HBoxContainer.new()
+	drow.add_theme_constant_override("separation", 6)
+	vb.add_child(drow)
+	for d in [["←", "sol"], ["↑", "yukari"], ["↓", "asagi"], ["→", "sag"]]:
+		var db := Button.new()
+		db.text = String(d[0])
+		db.custom_minimum_size = Vector2(0, 44)
+		db.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		db.action_mode = BaseButton.ACTION_MODE_BUTTON_PRESS
+		db.pressed.connect(_on_grip_dir.bind(String(d[1])))
+		drow.add_child(db)
 	var brow := HBoxContainer.new()
 	brow.add_theme_constant_override("separation", 6)
 	vb.add_child(brow)
@@ -844,6 +864,9 @@ func _build_grip_panel() -> void:
 	_grip_code.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_grip_code.visible = false
 	vb.add_child(_grip_code)
+
+func _on_grip_dir(dir_id: String) -> void:
+	grip_move_requested.emit(dir_id)
 
 func _on_grip_down(axis: int, sign_v: float) -> void:
 	_grip_hold_axis = axis

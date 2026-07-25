@@ -72,12 +72,17 @@ const TOOL_HOLD := {
 	# +X 0.069=kut sirt) ASAGI doner. grip 0.18: el sapin ucuna yakin.
 	# extra: govde-asagi yonunde 10cm (el cercevesinde) -> sap elin ALTINDA
 	# durur, el ustte kalir (kullanici: "el yukarida olmali" + "biraz daha").
-	"balta": {"axis": 1, "grip": 0.18, "scale": 0.5, "rot_deg": Vector3(0, 109, 0),
-			"extra": Vector3(0.021, 0.077, 0.060)},
+	# ELDE AYARLANDI (Grip Ayar Modu, kullanici onayi): rot_deg/extra artik
+	# oyun icinde bulunan degerler. Onceki tahmin: rot(0,109,0).
+	"balta": {"axis": 1, "grip": 0.18, "scale": 0.5,
+			"rot_deg": Vector3(18.0, 87.0, -48.0),
+			"extra": Vector3(0.021, 0.077, 0.065)},
 	# pickaxe.glb baltayla AYNI duzen (olculdu: sap Y -0.5..+0.1, kafa
 	# +0.1..+0.5, kafa duzlemi X) -> ayni tarif.
-	"kazma": {"axis": 1, "grip": 0.18, "scale": 0.5, "rot_deg": Vector3(0, 109, 0),
-			"extra": Vector3(0.021, 0.077, 0.060)},
+	# ELDE AYARLANDI (Grip Ayar Modu, kullanici onayi).
+	"kazma": {"axis": 1, "grip": 0.18, "scale": 0.5,
+			"rot_deg": Vector3(-166.0, 79.0, -96.0),
+			"extra": Vector3(0.021, 0.072, 0.045)},
 	# shovel.glb CAPRAZ modellenmis (yaslanmis kurek: sap -Z/+Y ucunda,
 	# agiz +Z/-Y ucunda; sap->agiz v=(0,-0.63,0.78)). X etrafinda -129.1
 	# derece donus v'yi el ekseni +Y'ye getirir (agiz asagi-on). Tutus
@@ -162,6 +167,10 @@ var _held_tool_path: String = ""  # karakter degisince yeniden takmak icin
 ## ve her aciliste geri yuklenir. Kalici hale getirmek icin uretilen
 ## TOOL_HOLD satiri koda yapistirlir (bkz. grip_code_line).
 const GRIP_OVERRIDE_PATH := "user://grip_overrides.json"
+## Kayitli ofsetler TOOL_HOLD'un UZERINE biner. Bir ayar koda islenince
+## cihazdaki eski kayit AYNI farki bir daha uygular (cift donme!). Bu sayi
+## koda deger islendiginde ARTIRILIR; eski surumlu kayit yok sayilir/silinir.
+const GRIP_VERSION := 2
 var _grip_over: Dictionary = {}
 var _hat_id: String = ""
 var _face_path: String = ""
@@ -402,6 +411,20 @@ func grip_nudge(axis: int, delta: float) -> void:
 	e["extra"] = v
 	set_held_tool(_held_tool_path)
 
+## Aleti DUNYA yonunde kaydir (yukari/asagi/sag/sol). X/Y/Z butonlari el
+## cercevesinde calisiyor ve gozle eslesmiyordu (kullanici: "kurek icin
+## asagi-yukari, sag-sol ekle"). Verilen dunya yonu, aletin bagli oldugu
+## el cercevesine cevrilip ofset olarak eklenir.
+func grip_nudge_world(world_dir: Vector3, amount: float) -> void:
+	var e := _grip_entry()
+	if e.is_empty() or _tool_attach == null or world_dir.length() < 0.001:
+		return
+	var b := _tool_attach.global_transform.basis.orthonormalized()
+	var local: Vector3 = b.inverse() * (world_dir.normalized() * amount)
+	var v: Vector3 = e["extra"]
+	e["extra"] = v + local
+	set_held_tool(_held_tool_path)
+
 ## Aleti eksen etrafinda DONDUR (derece).
 func grip_rotate(axis: int, deg: float) -> void:
 	var e := _grip_entry()
@@ -452,7 +475,7 @@ func grip_code_line() -> String:
 ## player3d dosyasina DOGRUDAN yazilamaz; bu yuzden ayarlar user:// altina
 ## yazilir (telefonda kalici) ve kod satiri ayrica uretilir.
 func grip_save() -> String:
-	var data := {}
+	var data := {"_v": GRIP_VERSION}
 	for k: String in _grip_over:
 		var e: Dictionary = _grip_over[k]
 		var ex: Vector3 = e.get("extra", Vector3.ZERO)
@@ -482,7 +505,15 @@ func _load_grip_overrides() -> void:
 	f.close()
 	if not (parsed is Dictionary):
 		return
+	# SURUM KILIDI: koda deger islendiyse eski kayit ayni farki bir daha
+	# uygulardi (cift donme). Eski surumlu dosyayi yok say ve sil.
+	if int((parsed as Dictionary).get("_v", 1)) != GRIP_VERSION:
+		DirAccess.remove_absolute(ProjectSettings.globalize_path(GRIP_OVERRIDE_PATH))
+		print("GRIP: eski surumlu ayar dosyasi temizlendi (koda islendi)")
+		return
 	for k: String in parsed:
+		if k == "_v":
+			continue
 		var e: Dictionary = parsed[k]
 		var ex: Array = e.get("extra", [0, 0, 0])
 		var ro: Array = e.get("rot", [0, 0, 0])
