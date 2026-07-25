@@ -27,9 +27,10 @@ const RIM_CHAMFER := 0.07
 const RIM_TUFT_CHANCE := 0.30
 
 # --- Serpinti (soil_clump / rock_shard) ----------------------------------
-## Kullanıcı GLB'leri buraya gelecek; yoksa prosedürel fallback kullanılır.
-const SCATTER_SHALLOW_GLB := "res://assets/models/env/soil_clump.glb"
-const SCATTER_DEEP_GLB := "res://assets/models/env/rock_shard.glb"
+## Kullanıcı GLB'leri (models/test altında; diğer Meshy varlıklarıyla aynı
+## klasör). Yoksa prosedürel fallback kullanılır.
+const SCATTER_SHALLOW_GLB := "res://assets/models/test/soil_clump.glb"
+const SCATTER_DEEP_GLB := "res://assets/models/test/rock_shard.glb"
 ## Bu derinlikten itibaren taş kıymığı serpilir (altında toprak öbeği).
 const SCATTER_DEEP_FROM := 3
 ## Hücre başına serpinti adedi (0..MAX, deterministik hash ile).

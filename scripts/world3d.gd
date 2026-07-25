@@ -2454,13 +2454,22 @@ var _scatter_usec: float = 0.0
 
 func _build_dig_scatter(ck: Vector2i, x0: int, y0: int, x1: int, y1: int) -> void:
 	var _t0 := Time.get_ticks_usec()
-	var xf: Array[Transform3D] = []
-	var shallow := 0
+	# Tip HUCRE BASINA belirlenir (sig -> toprak obegi, derin -> tas kiymigi).
+	# Bir MultiMesh tek mesh tasidigi icin iki liste toplanir; en fazla 2
+	# ek cizim cagrisi olur (yine de chunk basina sabit).
+	var xf_shallow: Array[Transform3D] = []
+	var xf_deep: Array[Transform3D] = []
+	# Zemine TAM otursunlar: modellerin tabani merkezin altinda (olculdu:
+	# soil_clump y_min -0.20, rock_shard -0.35) -> AABB'den telafi edilir.
+	var bot_shallow := _dig_scatter_bottom(false)
+	var bot_deep := _dig_scatter_bottom(true)
 	for cy in range(y0, y1):
 		for cx in range(x0, x1):
 			var d: int = _depth.get(Vector2i(cx, cy), 0)
 			if d <= 0:
 				continue  # yalniz KAZILMIS hucre (yigin degil)
+			var deep: bool = d >= DigVisual.SCATTER_DEEP_FROM
+			var bot: float = bot_deep if deep else bot_shallow
 			var n: int = int(DigVisual.hash01(cx, cy, 7)
 					* float(DigVisual.SCATTER_MAX_PER_CELL + 1))
 			for k in n:
@@ -2473,27 +2482,44 @@ func _build_dig_scatter(ck: Vector2i, x0: int, y0: int, x1: int, y1: int) -> voi
 						+ (ry - 0.5) * 2.0 * DigVisual.SCATTER_SIZE_JITTER)
 				var t := Transform3D(Basis().rotated(Vector3.UP, ry * TAU)
 						.scaled(Vector3(s, s, s)),
-						Vector3(px, ground_height(px, pz) + s * 0.4, pz))
-				xf.append(t)
-				if d < DigVisual.SCATTER_DEEP_FROM:
-					shallow += 1
-	if xf.is_empty():
+						Vector3(px, ground_height(px, pz) - bot * s, pz))
+				if deep:
+					xf_deep.append(t)
+				else:
+					xf_shallow.append(t)
+	if xf_shallow.is_empty() and xf_deep.is_empty():
 		_scatter_usec += float(Time.get_ticks_usec() - _t0)
 		return
-	# Tip: chunk'ta cogunluk sig ise toprak obegi, derinse tas kiymigi.
-	var deep: bool = shallow * 2 < xf.size()
-	var mm := MultiMesh.new()
-	mm.transform_format = MultiMesh.TRANSFORM_3D
-	mm.mesh = _dig_scatter_mesh(deep)
-	mm.instance_count = xf.size()
-	for i in xf.size():
-		mm.set_instance_transform(i, xf[i])
-	var mi := MultiMeshInstance3D.new()
-	mi.multimesh = mm
-	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # ucuz
-	add_child(mi)
-	_dig_scatter[ck] = mi
+	var root := Node3D.new()
+	add_child(root)
+	for pair in [[xf_shallow, false], [xf_deep, true]]:
+		var list: Array[Transform3D] = pair[0]
+		if list.is_empty():
+			continue
+		var mm := MultiMesh.new()
+		mm.transform_format = MultiMesh.TRANSFORM_3D
+		mm.mesh = _dig_scatter_mesh(bool(pair[1]))
+		mm.instance_count = list.size()
+		for i in list.size():
+			mm.set_instance_transform(i, list[i])
+		var mi := MultiMeshInstance3D.new()
+		mi.multimesh = mm
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF  # ucuz
+		root.add_child(mi)
+	_dig_scatter[ck] = root
 	_scatter_usec += float(Time.get_ticks_usec() - _t0)
+
+## Serpinti mesh'inin tabani (model biriminde, merkeze gore). Zemine
+## oturtmak icin kullanilir; mesh gibi onbelleklenir.
+var _scatter_bottom_cache: Dictionary = {}
+
+func _dig_scatter_bottom(deep: bool) -> float:
+	if _scatter_bottom_cache.has(deep):
+		return _scatter_bottom_cache[deep]
+	var m := _dig_scatter_mesh(deep)
+	var b := m.get_aabb().position.y
+	_scatter_bottom_cache[deep] = b
+	return b
 
 ## Serpinti mesh'i: kullanicinin GLB'si varsa o, yoksa proseduerel.
 var _scatter_mesh_cache: Dictionary = {}
