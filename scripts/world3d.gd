@@ -2729,9 +2729,12 @@ var _path_nodes: Array = []        # (eski tas serpintisi; perf sondasi okur)
 ## sinandigi yer de burasi.
 func _add_road_curve(from: Vector2i, steps: int, width: int,
 		age: String) -> void:
+	# TEK YONLU kavis (ceyrek daire). Ilk denemede sin(t*PI*1.4) kullanildi:
+	# egri gidip GERI donunce yol kendi uzerine kivrilip karede catallanmis
+	# bir "lambda" gibi gorundu. Monoton kavis okunakli.
 	for i in steps:
 		var t := float(i) / maxf(1.0, float(steps - 1))
-		var off := int(round(sin(t * PI * 1.4) * 4.0))
+		var off := int(round(sin(t * PI * 0.5) * 5.0))
 		var c := from + Vector2i(off, i)
 		if c.x < 1 or c.y < 1 or c.x >= _map_w - 1 or c.y >= _map_h - 1:
 			break
@@ -2740,7 +2743,7 @@ func _add_road_curve(from: Vector2i, steps: int, width: int,
 		# Kaymanin atladigi hucreyi doldur ki yolda delik kalmasin
 		if i > 0:
 			var prev := int(round(sin((float(i - 1) / maxf(1.0, float(steps - 1)))
-					* PI * 1.4) * 4.0))
+					* PI * 0.5) * 5.0))
 			var step := 1 if off > prev else -1
 			var x := prev
 			while x != off:
@@ -3151,7 +3154,10 @@ func _camp_plan() -> void:
 	# uzaklasir. Auto-tiling ve kenar erimesi ancak GENIS ve EGRI bir
 	# yolda okunur — dar duz seritte her hucrenin iki yani birden acik
 	# oldugu icin kenar karosu hic devreye girmez (bkz. RAPOR).
-	_add_road_curve(hearth + Vector2i(0, 6), 16, 2, "miras")
+	# Genislik 3: 2 genislikte HER hucrenin en az iki yani acik oluyordu,
+	# yani IC karo (dort komsusu da yol) hic olusmuyordu ve auto-tiling'in
+	# yarisi sinanmiyordu.
+	_add_road_curve(hearth + Vector2i(-1, 6), 16, 3, "miras")
 	# OYUNCUNUN DOSEDIGI kisa yeni yol: ayni sistem, yosun neredeyse yok.
 	# Eski/yeni farki tek bir arayuz olmadan gorselden okunur.
 	_add_path_strip(hearth + Vector2i(2, 2), Vector2i(1, 0), 5, "yeni", 2)
