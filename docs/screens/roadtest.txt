@@ -1,1 +1,1 @@
-ROADTEST: hucre=72 (miras=62 yeni=10) kenar=71 tek_acik=15 karo_ornek=158 sacilma=39 edge_glb=false moss_glb=false
+ROADTEST: hucre=72 (miras=62 yeni=10) kenar=71 tek_acik=15 karo_ornek=133 sacilma=39 edge_glb=false moss_glb=false
