@@ -20,6 +20,9 @@ const SCALE := {
 	"grass_tuft": 0.33,      # ölçüldü h=0.90 -> ~30 cm ot tutamı
 	"pebble_cluster": 0.18,  # ölçüldü w=1.90 -> ~34 cm çakıl öbeği
 	"twig_debris": 0.40,     # ölçüldü w=0.99 -> ~40 cm dal parçası
+	# Kazı taban serpintisi (A6): sığda toprak öbeği, derinde taş kıymığı
+	"soil_clump": 0.22,
+	"rock_shard": 0.20,
 	# yol taşı
 	"path_stone": 0.45,
 	"path_stone_mossy": 0.45,
@@ -34,6 +37,8 @@ const PATHS := {
 	"grass_tuft": "res://assets/models/env/grass_tuft.glb",
 	"pebble_cluster": "res://assets/models/env/pebble_cluster.glb",
 	"twig_debris": "res://assets/models/env/twig_debris.glb",
+	"soil_clump": "res://assets/models/test/soil_clump.glb",
+	"rock_shard": "res://assets/models/test/rock_shard.glb",
 	"path_stone": "res://assets/models/env/path_stone.glb",
 	"path_stone_mossy": "res://assets/models/env/path_stone_mossy.glb",
 	"ruined_hut": "res://assets/models/structures/ruined_hut.glb",
@@ -49,6 +54,8 @@ const TINT := {
 	"grass_tuft": Color(0.66, 0.80, 0.52),      # sarıdan yeşile
 	"pebble_cluster": Color(0.58, 0.55, 0.50),  # beyazdan sıcak griye
 	"twig_debris": Color(0.78, 0.66, 0.52),     # ahşap kahveye
+	"soil_clump": Color(0.52, 0.40, 0.28),
+	"rock_shard": Color(0.58, 0.56, 0.53),
 	# 4. CI karesinde taslar HALA bembeyaz lekeydi: dokusu neredeyse beyaz,
 	# 0.80 carpani yetmiyor. Sicak griye sert cekildi.
 	"path_stone": Color(0.56, 0.53, 0.49),
