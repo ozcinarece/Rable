@@ -23,6 +23,7 @@ const ToolProfiles = preload("res://scripts/tool_profiles.gd")
 const HittableDummy = preload("res://scripts/hittable_dummy.gd")
 const StructureManager = preload("res://scripts/structure_manager.gd")
 const EngBalance = preload("res://scripts/engineering_balance.gd")
+const HudScript = preload("res://scripts/hud.gd")
 const CreatureScript = preload("res://scripts/creature.gd")
 const CreatureBalance = preload("res://scripts/creature_balance.gd")
 const Recipes = preload("res://scripts/recipes.gd")
@@ -339,6 +340,8 @@ func _ready() -> void:
 	hud.grip_rotate_requested.connect(_on_grip_rotate)
 	hud.grip_reset_requested.connect(_on_grip_reset)
 	hud.grip_save_requested.connect(_on_grip_save)
+	hud.grip_move_requested.connect(_on_grip_move)
+	hud.grip_tuner_opened.connect(func(): hud.set_grip_status(player.grip_status()))
 	hud.settings_toggled.connect(func(o: bool): _cam_layer.visible = o)
 	hud.move_toggled.connect(func(on: bool): _move_mode = on)
 	hud.drop_item_requested.connect(_on_drop_item)
@@ -550,6 +553,14 @@ func _setup_screenshot(save_path: String) -> void:
 	_snap(save_path.replace(".png", "_tarim.png"))
 	await _run_night_test(save_path)
 	hud.visible = true
+	# GRIP PANELI karesi: yeni "ekran yonu" satiri eklendi; panelin ekrandan
+	# tasmadigini gormek icin (daha once Ayarlar'da tam bu hata yasandi).
+	player.set_held_tool("kurek")
+	hud._on_grip_tuner_toggled(true)
+	await get_tree().create_timer(0.4).timeout
+	_snap(save_path.replace(".png", "_grip_panel.png"))
+	hud._on_grip_tuner_toggled(false)
+	player.set_held_tool("balta")
 	# Ikinci kare: kusbakisi tum ada (teshis icin)
 	# harita-v2: kusbakisi tum 128x128 adayi kapsar (yukseklik boyutla olcekli)
 	camera.position = Vector3(_map_w / 2.0, _map_w * 0.85,
@@ -5772,6 +5783,26 @@ func _on_grip_nudge(axis: int, delta: float) -> void:
 
 func _on_grip_rotate(axis: int, deg: float) -> void:
 	player.grip_rotate(axis, deg)
+	hud.set_grip_status(player.grip_status())
+
+## EKRAN YONU: kameraya gore yukari/asagi/sag/sol -> dunya vektoru.
+## Kurek gibi capraz modellenen aletlerde X/Y/Z el cercevesinde kaldigi
+## icin gozle eslesmiyordu; bu butonlar GORDUGUN yonde kaydirir.
+func _on_grip_move(dir_id: String) -> void:
+	var right: Vector3 = camera.global_transform.basis.x
+	right.y = 0.0
+	if right.length() < 0.001:
+		right = Vector3.RIGHT
+	right = right.normalized()
+	var world := Vector3.ZERO
+	match dir_id:
+		"yukari": world = Vector3.UP
+		"asagi": world = Vector3.DOWN
+		"sag": world = right
+		"sol": world = -right
+	# NOT: `hud` CanvasLayer olarak tipli -> hud.GRIP_STEP_M static hata verir;
+	# sabit script kaynagindan okunur (tek dogruluk kaynagi korunur).
+	player.grip_nudge_world(world, HudScript.GRIP_STEP_M)
 	hud.set_grip_status(player.grip_status())
 
 func _on_grip_reset() -> void:
