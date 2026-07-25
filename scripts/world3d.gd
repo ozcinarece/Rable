@@ -3043,23 +3043,35 @@ func _run_env_showcase(save_path: String) -> void:
 		root.add_child(holder)
 		var scene: Node3D = load(glb).instantiate()
 		holder.add_child(scene)
-		_tame_meshy_materials(scene, EnvModels.tint_of(id))
-		# KOK olcegi (ic dugume dokunulmaz) — oyundaki ile AYNI hesap
+		# Hoyuk oyunda AYRI yoldan kuruluyor (toprak tonu + ezme + taban
+		# genisligine gore olcek). Vitrin de ayni degerleri kullanmali,
+		# yoksa "vitrinde beyaz kubbe, oyunda kahve sirt" gibi yaniltir.
+		var is_mound: bool = id == "planting_mound"
+		_tame_meshy_materials(scene,
+				MOUND_TINT if is_mound else EnvModels.tint_of(id))
 		var aabb := _scene_aabb(scene)
-		if aabb.size.y > 0.01:
-			var s: float = EnvModels.scale_of(id) / aabb.size.y
-			scene.scale = Vector3(s, s, s)
-			scene.position = Vector3(-aabb.get_center().x * s, -aabb.position.y * s,
-					-aabb.get_center().z * s)
+		var sy := 1.0
+		var s := 1.0
+		if is_mound:
+			var span: float = maxf(aabb.size.x, aabb.size.z)
+			if span > 0.01:
+				s = MOUND_FOOTPRINT / span
+				sy = MOUND_FLATTEN
+		elif aabb.size.y > 0.01:
+			s = EnvModels.scale_of(id) / aabb.size.y
+		# KOK olcegi (ic dugume dokunulmaz) — oyundaki ile AYNI hesap
+		scene.scale = Vector3(s, s * sy, s)
+		scene.position = Vector3(-aabb.get_center().x * s, -aabb.position.y * s * sy,
+				-aabb.get_center().z * s)
 		var label := Label3D.new()
 		label.text = "%s\n%.2f m" % [id, EnvModels.scale_of(id)]
 		label.font_size = 48
 		label.pixel_size = 0.004
-		label.position = Vector3(0, -0.35, 0.9)
+		label.position = Vector3(0, 0.15, 0.9)
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		holder.add_child(label)
-	camera.position = base + Vector3(-1.0, 3.4, 11.5)
-	camera.rotation_degrees = Vector3(-13, 0, 0)
+	camera.position = base + Vector3(-1.0, 4.2, 14.5)
+	camera.rotation_degrees = Vector3(-12, 0, 0)
 	await get_tree().create_timer(1.0).timeout
 	_snap(save_path.replace(".png", "_vitrin_env.png"))
 	# Gece karesi (ayni aci); dalga vitrin karesinde gereksiz
