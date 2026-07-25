@@ -2438,8 +2438,21 @@ func _sample_terrain(x: float, z: float) -> Array:
 	# ornekleniyor; smoothstep bandina denk gelen kose %50 karisik deger
 	# alir ve GPU bunu iki quad boyunca dogrusal yayar = bulanik leke.
 	# Sert adimda her kose ya A ya B degerini alir; gecis tek quad'a siner.
-	var hfx := (0.0 if fx < 0.5 else 1.0) if sharp else fx
-	var hfz := (0.0 if fz < 0.5 else 1.0) if sharp else fz
+	# A2 DUVAR EGIMI: duvar tam dikey degil, ustte hafifce disa acilir.
+	# Sert adim (0/1) yerine DAR bir smoothstep bandi kullaniliyor; bandin
+	# genisligi egim aciligindan turuyor. Bant cok genis olursa kazi
+	# okunakliligi bozulur ("bulanik leke" tuzagi, bkz. asagidaki yorum),
+	# o yuzden dar tutuldu.
+	# BASAMAK: derinlik STEP_AT_DEPTH'i gectiginde bandin ortasina kucuk
+	# bir duzluk giriyor -> duvarda bir cikinti olusuyor. Hem dogal
+	# duruyor hem "buradan tirmanilir" okumasi veriyor.
+	var slope_w: float = tan(deg_to_rad(DigWaterVisual.WALL_SLOPE_DEG))
+	var band: float = clampf(slope_w, 0.05, 0.30)
+	var stepped: bool = sharp and dmax >= DigWaterVisual.STEP_AT_DEPTH
+	if stepped:
+		band = clampf(band + DigWaterVisual.STEP_WIDTH, 0.05, 0.45)
+	var hfx := (smoothstep(0.5 - band, 0.5 + band, fx) if sharp else fx)
+	var hfz := (smoothstep(0.5 - band, 0.5 + band, fz) if sharp else fz)
 	# Renk gecisi normalde dar bantta (0.2..0.8) tutuluyor ki dokular
 	# bulanmasin; ama zemin TURU degisen sinirda bu dar bant merdiveni
 	# gorunur birakiyordu -> orada tam hucre genisliginde yumusatilir.
