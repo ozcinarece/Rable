@@ -1014,6 +1014,15 @@ func _build_settings_menu() -> void:
 		_grip_check.text = "Grip Ayarı (aleti elde hizala)"
 		_grip_check.toggled.connect(_on_grip_tuner_toggled)
 		vb.add_child(_grip_check)
+		# YERLESIM EDITORU: ayni debug kapisinin ardinda. Yayin surumunde
+		# bu blok hic calismadigi icin anahtar OLUSTURULMAZ -- editor
+		# koduna erisim yolu kalmaz.
+		_editor_check = CheckButton.new()
+		_editor_check.text = "Yerleşim Editörü (geliştirici)"
+		_editor_check.toggled.connect(func(on: bool):
+			reset_button.button_pressed = false   # ayar paneli kapansin
+			editor_toggled.emit(on))
+		vb.add_child(_editor_check)
 		# ZAMAN KONTROLU: bir tam gun 15,5 dk; geceyi denemek icin ~11 dk
 		# beklemek gerekiyordu. Bu iki buton faza ANINDA atlar (gecise bagli
 		# tum sinyaller normal akistaki gibi yayinlanir).
@@ -2340,3 +2349,171 @@ func shake_action_button() -> void:
 	var tw := create_tween()
 	for dx in [-6.0, 6.0, -4.0, 4.0, 0.0]:
 		tw.tween_property(action_button, "position:x", base + dx, 0.05)
+
+# =======================================================================
+# YERLESIM EDITORU CUBUGU (gelistirici araci)
+# =======================================================================
+# Ayarlar > gelistirici bolumundeki anahtar acinca: oyun HUD'i gizlenir,
+# ustte ince bir editor cubugu cikar. Cubuk UI dilinde (mevcut buton
+# stilleri, ayni renk paleti) — ayri bir "editor teması" YOK, cunku bu
+# arac oyunun icinde yasiyor ve iki dil ogrenmek gereksiz.
+
+const LayoutEditorUI = preload("res://scripts/layout_editor.gd")
+
+signal editor_toggled(on: bool)
+signal editor_tool_selected(arac: String)
+signal editor_item_selected(kat: String, id: String)
+signal editor_rotate_requested
+signal editor_scale_changed(v: float)
+signal editor_undo_requested
+signal editor_export_requested
+signal editor_load_requested
+signal editor_eraser_toggled(on: bool)
+
+var _editor_bar: PanelContainer = null
+var _editor_status: Label = null
+var _editor_scale_slider: HSlider = null
+var _editor_tool_buttons: Dictionary = {}
+var _editor_check: CheckButton = null
+var _editor_item_row: HBoxContainer = null
+
+func set_editor_mode(on: bool) -> void:
+	if _editor_bar == null:
+		_build_editor_bar()
+	_editor_bar.visible = on
+	# HUD sadelesir: barlar/hotbar/dock gizlenir. Ayni yardimci panel
+	# acilislarinda da kullaniliyor -> tek yerden yonetiliyor.
+	for node in _hud_game_nodes():
+		if node != null:
+			node.visible = not on
+	if not on:
+		attack_button.visible = _ctx_weapon
+	if _editor_check != null:
+		_editor_check.set_pressed_no_signal(on)
+
+func set_editor_status(text: String) -> void:
+	if _editor_status != null:
+		_editor_status.text = text
+
+## Olcek kaydiricisi YALNIZ dekor secildiginde etkin (gorev 2).
+func set_editor_scale_enabled(on: bool) -> void:
+	if _editor_scale_slider != null:
+		_editor_scale_slider.editable = on
+		_editor_scale_slider.modulate.a = 1.0 if on else 0.4
+
+func _build_editor_bar() -> void:
+	var bar := PanelContainer.new()
+	bar.name = "EditorBar"
+	bar.visible = false
+	bar.set_anchors_preset(Control.PRESET_TOP_WIDE)
+	bar.offset_top = 4
+	bar.offset_left = 4
+	bar.offset_right = -4
+	add_child(bar)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 4)
+	bar.add_child(col)
+
+	# 1. satir: araclar
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 6)
+	col.add_child(row)
+	for arac: String in [LayoutEditorUI.ARAC_YERLESTIR, LayoutEditorUI.ARAC_SEC,
+			LayoutEditorUI.ARAC_SIL, LayoutEditorUI.ARAC_YOL]:
+		var b := Button.new()
+		b.toggle_mode = true
+		b.text = String(LayoutEditorUI.ARAC_ADI[arac])
+		b.button_pressed = (arac == LayoutEditorUI.ARAC_YERLESTIR)
+		b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		b.pressed.connect(_on_editor_tool.bind(arac))
+		row.add_child(b)
+		_editor_tool_buttons[arac] = b
+	# Silgi anahtari (yalniz yol fircasinda anlamli, hep gorunur tutuluyor:
+	# gizlenip gorunmesi cubugu ziplatiyor)
+	var silgi := CheckButton.new()
+	silgi.text = "Silgi"
+	silgi.toggled.connect(func(on: bool): editor_eraser_toggled.emit(on))
+	row.add_child(silgi)
+
+	# 2. satir: kategori + oge listesi
+	var krow := HBoxContainer.new()
+	krow.add_theme_constant_override("separation", 6)
+	col.add_child(krow)
+	for kat: Dictionary in LayoutEditorUI.KATEGORILER:
+		var kb := Button.new()
+		kb.text = String(kat["ad"])
+		kb.pressed.connect(_on_editor_kategori.bind(kat))
+		krow.add_child(kb)
+	_editor_item_row = HBoxContainer.new()
+	_editor_item_row.add_theme_constant_override("separation", 4)
+	col.add_child(_editor_item_row)
+	_on_editor_kategori(LayoutEditorUI.KATEGORILER[0])
+
+	# 3. satir: dondur / olcek / geri al / yukle / disa aktar
+	var arow := HBoxContainer.new()
+	arow.add_theme_constant_override("separation", 6)
+	col.add_child(arow)
+	var rb := Button.new()
+	rb.text = "90° Döndür"
+	rb.pressed.connect(func(): editor_rotate_requested.emit())
+	arow.add_child(rb)
+	var sl := Label.new()
+	sl.text = "Ölçek"
+	arow.add_child(sl)
+	_editor_scale_slider = HSlider.new()
+	_editor_scale_slider.min_value = LayoutEditorUI.OLCEK_MIN
+	_editor_scale_slider.max_value = LayoutEditorUI.OLCEK_MAX
+	_editor_scale_slider.step = 0.01
+	_editor_scale_slider.value = 1.0
+	_editor_scale_slider.custom_minimum_size = Vector2(120, 0)
+	_editor_scale_slider.value_changed.connect(
+			func(v: float): editor_scale_changed.emit(v))
+	arow.add_child(_editor_scale_slider)
+	set_editor_scale_enabled(false)
+	var ub := Button.new()
+	ub.text = "↶ Geri Al"
+	ub.pressed.connect(func(): editor_undo_requested.emit())
+	arow.add_child(ub)
+	var lb := Button.new()
+	lb.text = "Yükle"
+	lb.pressed.connect(func(): editor_load_requested.emit())
+	arow.add_child(lb)
+	var eb := Button.new()
+	eb.theme_type_variation = "PrimaryButton"
+	eb.text = "Düzeni Dışa Aktar"
+	eb.pressed.connect(func(): editor_export_requested.emit())
+	arow.add_child(eb)
+	# Isik onizlemesi: zaman donuk oldugu icin faz elle degistirilir
+	var nb := Button.new()
+	nb.text = "🌙"
+	nb.pressed.connect(DayNight.jump_to_night)
+	arow.add_child(nb)
+	var db := Button.new()
+	db.text = "☀"
+	db.pressed.connect(DayNight.jump_to_day)
+	arow.add_child(db)
+	var xb := Button.new()
+	xb.text = "✕ Çık"
+	xb.pressed.connect(func(): editor_toggled.emit(false))
+	arow.add_child(xb)
+
+	_editor_status = Label.new()
+	_editor_status.theme_type_variation = "SubtleLabel"
+	_editor_status.text = "Editör hazır"
+	col.add_child(_editor_status)
+	_editor_bar = bar
+
+func _on_editor_tool(arac: String) -> void:
+	for a: String in _editor_tool_buttons:
+		var b: Button = _editor_tool_buttons[a]
+		b.set_pressed_no_signal(a == arac)
+	editor_tool_selected.emit(arac)
+
+func _on_editor_kategori(kat: Dictionary) -> void:
+	for c in _editor_item_row.get_children():
+		c.queue_free()
+	for id: String in kat["ogeler"]:
+		var b := Button.new()
+		b.text = id
+		b.pressed.connect(func(): editor_item_selected.emit(String(kat["id"]), id))
+		_editor_item_row.add_child(b)

@@ -357,6 +357,17 @@ func _ready() -> void:
 	hud.grip_save_requested.connect(_on_grip_save)
 	hud.grip_move_requested.connect(_on_grip_move)
 	hud.grip_tuner_opened.connect(func(): hud.set_grip_status(player.grip_status()))
+	# YERLESIM EDITORU (gelistirici araci). Sinyaller yalniz debug
+	# build'de yayinlanir; yayin surumunde anahtar hic olusturulmuyor.
+	hud.editor_toggled.connect(editor_set_enabled)
+	hud.editor_tool_selected.connect(editor_set_tool)
+	hud.editor_item_selected.connect(editor_set_item)
+	hud.editor_rotate_requested.connect(editor_rotate)
+	hud.editor_scale_changed.connect(editor_set_olcek)
+	hud.editor_undo_requested.connect(editor_undo)
+	hud.editor_export_requested.connect(editor_disa_aktar)
+	hud.editor_load_requested.connect(editor_yukle)
+	hud.editor_eraser_toggled.connect(editor_set_firca_silgi)
 	hud.settings_toggled.connect(func(o: bool): _cam_layer.visible = o)
 	hud.move_toggled.connect(func(on: bool): _move_mode = on)
 	hud.drop_item_requested.connect(_on_drop_item)
@@ -1134,6 +1145,7 @@ func _run_fast_tests() -> void:
 	_run_creature_type_test()
 	_run_creature_combat_test()
 	_run_road_scatter_test()
+	_run_editor_test()
 	_run_water_color_test()
 	_run_time_selftest()
 	_run_muhendislik_selftest()
@@ -1701,7 +1713,9 @@ func _process(delta: float) -> void:
 	_autosave_timer += delta
 	if _autosave_timer >= AUTOSAVE_INTERVAL:
 		_autosave_timer = 0.0
-		if _dirty:
+		# EDITOR: kayit KAPALI (gorev 4 -- editor degisiklikleri normal
+		# oyun kaydina yazilmaz). Cikista dunya kayittan yeniden yuklenir.
+		if _dirty and not _editor_on:
 			SaveManager.save()
 
 # Uygulama arka plana alininca / kapatilinca son durumu kaydet.
@@ -1711,7 +1725,8 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_PAUSED \
 			or what == NOTIFICATION_WM_CLOSE_REQUEST \
 			or what == NOTIFICATION_WM_GO_BACK_REQUEST:
-		if _map_w > 0 and not OS.has_environment("RABLE_SCREENSHOT"):
+		if _map_w > 0 and not OS.has_environment("RABLE_SCREENSHOT") \
+				and not _editor_on:
 			SaveManager.save()
 
 func is_walkable(cell: Vector2i) -> bool:
@@ -2104,8 +2119,18 @@ func _unhandled_input(event: InputEvent) -> void:
 			if _pinch_last > 0.0:
 				_save_settings()
 			_pinch_last = -1.0
+			# Firca vurusu bitti: bir sonraki surukleme ayni hucreleri
+			# yeniden isleyebilsin.
+			_editor_firca_dokunulan.clear()
 	elif event is InputEventScreenDrag:
 		_touches[event.index] = event.position
+		# EDITOR YOL FIRCASI: basili tut-suruk -> gecilen hucrelere yol.
+		# Tek parmakla (ikinci parmak varsa o pinch'tir, firca calismaz).
+		if _editor_on and _editor_tool == LayoutEditor.ARAC_YOL \
+				and _touches.size() == 1:
+			var bc := _screen_to_cell(event.position)
+			if bc != Vector2i(-999, -999):
+				_editor_yol(bc, true)
 		if _touches.has(0) and _touches.has(1):
 			var dist: float = _touches[0].distance_to(_touches[1])
 			if _pinch_last > 0.0 and dist > 1.0:
@@ -2502,6 +2527,7 @@ func _build_world() -> void:
 	_build_rim_cells()   # A1: kenar yigini (arazi ornegi bunu okur)
 	_build_dig_decor()   # A5 + A6: kazi agzi ve tabani
 	_build_spawn_camp()  # kamp dekoru (nesneler kurulduktan sonra)
+	_kamp_duzenini_uygula()  # data/camp_layout.json VARSA uzerine kurar
 	_build_ground_markers()  # harita-v2: kil işaretleri + yüzey cevher ipuçları
 
 ## harita-v2: kil-işaretli kum hücrelerine kil-rengi yassı yama (kürek ipucu)
@@ -5202,6 +5228,13 @@ func _screen_to_cell(screen_pos: Vector2) -> Vector2i:
 	return Vector2i(floori(hit.x), floori(hit.z))
 
 func _on_world_tapped(screen_pos: Vector2) -> void:
+	# EDITOR: tum dunya dokunuslari editore gider. Mesafe siniri YOK —
+	# uzaga yerlestirebilmek editorun asil isi (oyunda 1 hucre sinir var).
+	if _editor_on:
+		var ec := _screen_to_cell(screen_pos)
+		if ec != Vector2i(-999, -999):
+			_editor_tap(ec)
+		return
 	# Yerlestirme modunda dunya dokunuslari yok sayilir (Onayla butonu kurar)
 	if _place_mode:
 		return
@@ -8136,3 +8169,590 @@ func _spawn_floating_text(cell: Vector2i, text: String, color: Color) -> void:
 	tween.tween_property(label, "position:y", label.position.y + 0.8, 0.7)
 	tween.parallel().tween_property(label, "modulate:a", 0.0, 0.7)
 	tween.tween_callback(label.queue_free)
+
+# =======================================================================
+# YERLESIM EDITORU (gelistirici araci)
+# =======================================================================
+# Amaç: kampi/yollari OYUN ICINDE elle duzenleyip sonucu bir veri
+# dosyasina aktarmak; dunya uretimi o dosyayi okuyup baslangic kampini
+# ondan kurmak.
+#
+# UC KURAL, uculu de bilincli:
+#  1) YALNIZ DEBUG. Anahtar hud.gd'de OS.is_debug_build() / TestMode
+#     kapisinin ardinda; yayin surumunde hic olusturulmuyor.
+#  2) OYUN MANTIGINA DOKUNMAZ. Editor mevcut yerlestirme sistemini
+#     (_place_valid / _set_placed / lay_road) OLDUGU GIBI kullanir;
+#     tek atlanan sey MALZEME MALIYETI. Boylece editorde gecerli olan
+#     yerlesim oyunda da gecerli — iki ayri kural seti olusmuyor.
+#  3) KAYDA YAZMAZ. Editor acikken otomatik kayit durur; cikista dunya
+#     kayittan yeniden yuklenir. Yani editorde yaptigin hicbir sey
+#     oyun kaydina sizmaz (gorev 4).
+const LayoutEditor = preload("res://scripts/layout_editor.gd")
+
+var _editor_on: bool = false
+var _editor_tool: String = LayoutEditor.ARAC_YERLESTIR
+var _editor_kat: String = "yapi"
+var _editor_item: String = "ocak"
+var _editor_rot: int = 0
+var _editor_olcek: float = 1.0
+## Editorde konulan ogeler: hucre -> kayit sozlugu. Disa aktarim bunu yazar.
+var _editor_ogeler: Dictionary = {}
+## Geri al yigini: son UNDO_MAX islem.
+var _editor_undo: Array = []
+var _editor_sel := Vector2i(-999, -999)
+var _editor_ring: Node3D = null
+## Editor oncesi zaman durumu (cikista geri verilir)
+var _editor_eski_proc: int = Node.PROCESS_MODE_INHERIT
+
+func editor_aktif() -> bool:
+	return _editor_on
+
+## Editor modunu ac/kapa.
+func editor_set_enabled(on: bool) -> void:
+	if on == _editor_on:
+		return
+	_editor_on = on
+	if on:
+		# Zaman DONUK: gece gelmesin, aclik/susuzluk islemesin, yaratik
+		# olmasin. Isik onizlemesi icin gunduz/gece butonlari calisiyor
+		# (DayNight.jump_to_* islem dongusunden bagimsiz).
+		_editor_eski_proc = DayNight.process_mode
+		DayNight.process_mode = Node.PROCESS_MODE_DISABLED
+		Thirst.process_mode = Node.PROCESS_MODE_DISABLED
+		_clear_creatures()
+		_exit_place_mode()
+		_editor_ogeler.clear()
+		_editor_undo.clear()
+		_editor_sel = Vector2i(-999, -999)
+		hud.set_editor_mode(true)
+		hud.set_editor_status("Editör açık — zaman donuk, kayıt kapalı")
+	else:
+		DayNight.process_mode = _editor_eski_proc
+		Thirst.process_mode = Node.PROCESS_MODE_INHERIT
+		_editor_temizle_halka()
+		hud.set_editor_mode(false)
+		# Editor degisiklikleri oyuna SIZMASIN: dunya kayittan yeniden
+		# yuklenir. Kayit yoksa (yeni oyun) sahne oldugu gibi kalir —
+		# zaten kaydedilmedigi icin bir sonraki acilista temiz baslar.
+		if SaveManager.has_save():
+			SaveManager.load_game()
+
+## Arac secimi (HUD cubugu cagirir).
+func editor_set_tool(arac: String) -> void:
+	_editor_tool = arac
+	_editor_sel = Vector2i(-999, -999)
+	_editor_temizle_halka()
+	hud.set_editor_status("Araç: %s" % String(LayoutEditor.ARAC_ADI.get(arac, arac)))
+
+## YERLESTIR listesinden oge secimi.
+func editor_set_item(kat: String, id: String) -> void:
+	_editor_kat = kat
+	_editor_item = id
+	_editor_rot = 0
+	_editor_olcek = 1.0
+	_editor_tool = LayoutEditor.ARAC_YERLESTIR
+	# Hayalet onizleme: yalniz YAPI kategorisinde mevcut sistem kullanilir
+	# (dekor/yol/tarla tek hucrelik, hayalete gerek yok — hedef halkasi
+	# zaten hucreyi gosteriyor).
+	if kat == "yapi" and PLACE_MODELS.has(id):
+		_place_mode = true
+		_place_item = id
+		_place_rot = 0
+		_build_ghost()
+		hud.set_place_mode(false)   # oyun icindeki Onayla/Iptal cubugu YOK
+	else:
+		_exit_place_mode()
+	hud.set_editor_status("Seçili: %s" % id)
+
+func editor_rotate() -> void:
+	_editor_rot = (_editor_rot + 90) % 360
+	if _place_mode and _ghost != null:
+		_place_rot = _editor_rot
+		_ghost.rotation_degrees.y = float(_editor_rot)
+	# Secili oge varsa onu dondur
+	if _editor_sel != Vector2i(-999, -999):
+		_editor_dondur(_editor_sel)
+	hud.set_editor_status("Dönüş: %d°" % _editor_rot)
+
+func editor_set_olcek(v: float) -> void:
+	_editor_olcek = clampf(v, LayoutEditor.OLCEK_MIN, LayoutEditor.OLCEK_MAX)
+	if _editor_sel != Vector2i(-999, -999):
+		var kayit: Dictionary = _editor_ogeler.get(_editor_sel, {})
+		# Olcek YALNIZ dekor ogelerinde: yapilar hucreye oturuyor,
+		# olcekleri degisirse carpisma ile gorsel ayrisir.
+		if String(kayit.get("tur", "")) == "dekor":
+			kayit["olcek"] = _editor_olcek
+			_editor_ogeler[_editor_sel] = kayit
+			_editor_dekor_ciz(_editor_sel, kayit)
+	hud.set_editor_status("Ölçek: %%%d" % int(_editor_olcek * 100.0))
+
+# --- Editor dokunus yonlendirmesi ---------------------------------------
+## Editor acikken TUM dunya dokunuslari buraya gelir (mesafe siniri YOK:
+## oyuncunun yanina gitmeden uzaga da koyabilmek editorun asil isi).
+func _editor_tap(cell: Vector2i) -> void:
+	match _editor_tool:
+		LayoutEditor.ARAC_YERLESTIR:
+			_editor_koy(cell)
+		LayoutEditor.ARAC_SEC:
+			_editor_sec(cell)
+		LayoutEditor.ARAC_SIL:
+			_editor_sil(cell)
+		LayoutEditor.ARAC_YOL:
+			_editor_yol(cell, false)
+
+## YERLESTIR. Gecerlilik OYUNUN kurallariyla (_place_valid) kontrol edilir;
+## yalniz maliyet atlanir. Ayni hucreye iki yapi konamaz (gorev 4).
+func _editor_koy(cell: Vector2i) -> void:
+	match _editor_kat:
+		"yapi":
+			if not PLACE_MODELS.has(_editor_item):
+				return
+			var eski_item := _place_item
+			_place_item = _editor_item          # _place_valid bunu okur
+			var v := _place_valid(cell)
+			_place_item = eski_item
+			if not bool(v["valid"]):
+				_spawn_floating_text(cell, "Olmaz: %s" % String(v["reason"]),
+						Color(1, 0.6, 0.6))
+				return
+			_set_placed(cell, _editor_item, _editor_rot)
+			_place_pop(cell)
+			_editor_kaydet(cell, "yapi", _editor_item, _editor_rot, 1.0)
+		"yol":
+			if is_road(cell):
+				return
+			lay_road(cell, "miras")
+			_build_road()
+			_editor_kaydet(cell, "yol", "yol_hucresi", 0, 1.0)
+		"dekor":
+			if _editor_ogeler.has(cell):
+				return
+			var kayit := {"tur": "dekor", "id": _editor_item,
+					"rot": _editor_rot, "olcek": _editor_olcek}
+			_editor_ogeler[cell] = kayit
+			_editor_dekor_ciz(cell, kayit)
+			_editor_undo_ekle({"is": "ekle", "hucre": cell})
+		"tarla":
+			if Farming.plots.has(cell) or not _till_valid(cell):
+				return
+			_try_till(cell)
+			_editor_kaydet(cell, "tarla", "tarla_hucresi", 0, 1.0)
+
+func _editor_kaydet(cell: Vector2i, tur: String, id: String,
+		rot: int, olcek: float) -> void:
+	_editor_ogeler[cell] = {"tur": tur, "id": id, "rot": rot, "olcek": olcek}
+	_editor_undo_ekle({"is": "ekle", "hucre": cell})
+	hud.set_editor_status("%s kondu (%d,%d) — toplam %d" % [
+			id, cell.x, cell.y, _editor_ogeler.size()])
+
+## SEC/TASI: ilk dokunus secer, ikinci dokunus SECILIYI o hucreye tasir.
+func _editor_sec(cell: Vector2i) -> void:
+	if _editor_sel == Vector2i(-999, -999):
+		if not _editor_ogeler.has(cell) and not _placed.has(cell):
+			return
+		_editor_sel = cell
+		_editor_halka_goster(cell)
+		var k: Dictionary = _editor_ogeler.get(cell, {})
+		hud.set_editor_status("Seçili: %s — hedefe dokun taşı" % String(
+				k.get("id", _placed.get(cell, "?"))))
+		hud.set_editor_scale_enabled(String(k.get("tur", "")) == "dekor")
+		return
+	if cell == _editor_sel:
+		_editor_sel = Vector2i(-999, -999)
+		_editor_temizle_halka()
+		return
+	_editor_tasi(_editor_sel, cell)
+
+func _editor_tasi(from: Vector2i, to: Vector2i) -> void:
+	var kayit: Dictionary = _editor_ogeler.get(from, {})
+	var tur := String(kayit.get("tur", "yapi" if _placed.has(from) else ""))
+	if tur == "":
+		return
+	var id := String(kayit.get("id", _placed.get(from, "")))
+	# Hedef gecerli mi? Yapida oyunun kendi kurali, digerinde bosluk.
+	if tur == "yapi":
+		var eski := _place_item
+		_place_item = id
+		var v := _place_valid(to)
+		_place_item = eski
+		if not bool(v["valid"]):
+			_spawn_floating_text(to, "Olmaz: %s" % String(v["reason"]),
+					Color(1, 0.6, 0.6))
+			return
+	elif _editor_ogeler.has(to):
+		return
+	_editor_undo_ekle({"is": "tasi", "hucre": to, "eski": from,
+			"kayit": kayit.duplicate()})
+	_editor_kaldir(from, false)
+	_editor_ogeler[to] = kayit
+	match tur:
+		"yapi":
+			_set_placed(to, id, int(kayit.get("rot", 0)))
+		"yol":
+			lay_road(to, "miras")
+			_build_road()
+		"dekor":
+			_editor_dekor_ciz(to, kayit)
+		"tarla":
+			_try_till(to)
+	_editor_sel = to
+	_editor_halka_goster(to)
+
+## SIL — onay yok, geri-al var (gorev 2).
+func _editor_sil(cell: Vector2i) -> void:
+	if not _editor_ogeler.has(cell) and not _placed.has(cell) and not is_road(cell):
+		return
+	var kayit: Dictionary = _editor_ogeler.get(cell, {}).duplicate()
+	if kayit.is_empty() and _placed.has(cell):
+		kayit = {"tur": "yapi", "id": String(_placed[cell]),
+				"rot": _structures.rotation_of(cell), "olcek": 1.0}
+	if kayit.is_empty() and is_road(cell):
+		kayit = {"tur": "yol", "id": "yol_hucresi", "rot": 0, "olcek": 1.0}
+	_editor_undo_ekle({"is": "sil", "hucre": cell, "kayit": kayit})
+	_editor_kaldir(cell, true)
+	hud.set_editor_status("Silindi (%d,%d)" % [cell.x, cell.y])
+
+## Hucredeki editor ogesini sahneden kaldirir (undo yigina DOKUNMAZ).
+func _editor_kaldir(cell: Vector2i, kayittan_da: bool) -> void:
+	if _placed.has(cell):
+		_remove_placed(cell)
+	if is_road(cell):
+		_path_cells.erase(cell)
+		_build_road()
+	if Farming.plots.has(cell):
+		Farming.plots.erase(cell)
+		Farming.plot_changed.emit(cell)   # zemin/bitki dugumu yenilensin
+	_editor_dekor_sil(cell)
+	if kayittan_da:
+		_editor_ogeler.erase(cell)
+	else:
+		_editor_ogeler.erase(cell)
+
+func _editor_dondur(cell: Vector2i) -> void:
+	var kayit: Dictionary = _editor_ogeler.get(cell, {})
+	if kayit.is_empty():
+		return
+	kayit["rot"] = _editor_rot
+	_editor_ogeler[cell] = kayit
+	if String(kayit["tur"]) == "yapi" and _placed.has(cell):
+		var node: Node3D = _placed_nodes.get(cell, null)
+		if node != null:
+			node.rotation_degrees.y = float(_editor_rot)
+		var inst: Dictionary = _structures.get_inst(cell)
+		if not inst.is_empty():
+			inst["rot"] = _editor_rot
+	elif String(kayit["tur"]) == "dekor":
+		_editor_dekor_ciz(cell, kayit)
+
+# --- Editor dekoru (tek tek dugum) --------------------------------------
+## Editor dekoru MultiMesh DEGIL, tek tek Node3D: elle tasinabilmesi,
+## dondurulebilmesi ve olceklenebilmesi gerekiyor. Sayilari onlarca
+## mertebesinde oldugu icin bu maliyet kabul edilebilir; DUNYA
+## uretimindeki serpinti hala MultiMesh (editor ciktisi dosyaya yazilip
+## dunya kurulumunda toplu cizilecek).
+var _editor_dekor_nodes: Dictionary = {}   # hucre -> Node3D
+
+func _editor_dekor_ciz(cell: Vector2i, kayit: Dictionary) -> void:
+	_editor_dekor_sil(cell)
+	var id := String(kayit.get("id", ""))
+	var mesh := _env_mesh(id)
+	if mesh == null:
+		return
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	var aabb := mesh.get_aabb()
+	var span: float = maxf(0.001, maxf(aabb.size.x, aabb.size.z))
+	var k: float = EnvModels.scale_of(id) / span * float(kayit.get("olcek", 1.0))
+	mi.scale = Vector3.ONE * k
+	mi.rotation_degrees.y = float(kayit.get("rot", 0))
+	mi.position = _cell_center(cell) + Vector3(0.0, -aabb.position.y * k, 0.0)
+	add_child(mi)
+	_editor_dekor_nodes[cell] = mi
+
+func _editor_dekor_sil(cell: Vector2i) -> void:
+	var n: Node = _editor_dekor_nodes.get(cell, null)
+	if n != null and is_instance_valid(n):
+		n.queue_free()
+	_editor_dekor_nodes.erase(cell)
+
+# --- Secim halkasi ------------------------------------------------------
+func _editor_halka_goster(cell: Vector2i) -> void:
+	_editor_temizle_halka()
+	var mi := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.42
+	tm.outer_radius = 0.50
+	mi.mesh = tm
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.98, 0.82, 0.30)
+	m.emission_enabled = true
+	m.emission = Color(0.98, 0.82, 0.30)
+	m.emission_energy_multiplier = 1.4
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	mi.material_override = m
+	mi.position = _cell_center(cell) + Vector3(0, 0.06, 0)
+	add_child(mi)
+	_editor_ring = mi
+
+func _editor_temizle_halka() -> void:
+	if _editor_ring != null and is_instance_valid(_editor_ring):
+		_editor_ring.queue_free()
+	_editor_ring = null
+
+# --- Yol fircasi --------------------------------------------------------
+var _editor_firca_silgi: bool = false
+var _editor_firca_dokunulan: Dictionary = {}
+
+func editor_set_firca_silgi(on: bool) -> void:
+	_editor_firca_silgi = on
+	hud.set_editor_status("Fırça: %s" % ("silgi" if on else "döşe"))
+
+## Firca hucresi. Surukleme sirasinda ayni hucre defalarca gelir; tekrar
+## isleme alinmaz (yoksa geri-al yigini tek surukleyisle dolardi).
+func _editor_yol(cell: Vector2i, surukleme: bool) -> void:
+	if surukleme and _editor_firca_dokunulan.has(cell):
+		return
+	_editor_firca_dokunulan[cell] = true
+	if _editor_firca_silgi:
+		if not is_road(cell):
+			return
+		_editor_undo_ekle({"is": "sil", "hucre": cell,
+				"kayit": {"tur": "yol", "id": "yol_hucresi", "rot": 0, "olcek": 1.0}})
+		_path_cells.erase(cell)
+		_editor_ogeler.erase(cell)
+	else:
+		if is_road(cell):
+			return
+		lay_road(cell, "miras")
+		_editor_ogeler[cell] = {"tur": "yol", "id": "yol_hucresi",
+				"rot": 0, "olcek": 1.0}
+		_editor_undo_ekle({"is": "ekle", "hucre": cell})
+	# Uc kurallari (kuculme rampasi) _build_road icinde OTOMATIK: firca
+	# yalniz hucre ekler/cikarir, "uc" hesabini yol sistemi kendi yapar.
+	_build_road()
+
+# --- Geri al ------------------------------------------------------------
+func _editor_undo_ekle(kayit: Dictionary) -> void:
+	_editor_undo.append(kayit)
+	while _editor_undo.size() > LayoutEditor.UNDO_MAX:
+		_editor_undo.pop_front()
+
+func editor_undo() -> void:
+	if _editor_undo.is_empty():
+		hud.set_editor_status("Geri alınacak işlem yok")
+		return
+	var son: Dictionary = _editor_undo.pop_back()
+	var cell: Vector2i = son["hucre"]
+	match String(son["is"]):
+		"ekle":
+			_editor_kaldir(cell, true)
+		"sil":
+			_editor_geri_koy(cell, son["kayit"])
+		"tasi":
+			var eski: Vector2i = son["eski"]
+			_editor_kaldir(cell, true)
+			_editor_geri_koy(eski, son["kayit"])
+	_editor_sel = Vector2i(-999, -999)
+	_editor_temizle_halka()
+	hud.set_editor_status("Geri alındı (%d kaldı)" % _editor_undo.size())
+
+func _editor_geri_koy(cell: Vector2i, kayit: Dictionary) -> void:
+	if kayit.is_empty():
+		return
+	_editor_ogeler[cell] = kayit
+	match String(kayit.get("tur", "")):
+		"yapi":
+			_set_placed(cell, String(kayit["id"]), int(kayit.get("rot", 0)))
+		"yol":
+			lay_road(cell, "miras")
+			_build_road()
+		"dekor":
+			_editor_dekor_ciz(cell, kayit)
+		"tarla":
+			_try_till(cell)
+
+# --- Disa aktar / yukle -------------------------------------------------
+## Sahnedeki TUM editor ogelerini user://camp_layout.json'a yazar.
+## Hucreler KAMP MERKEZINE GORE ofset: kamp merkezi tohuma bagli oldugu
+## icin mutlak hucre yazmak duzeni tek tohuma hapsederdi.
+func editor_disa_aktar() -> void:
+	var duzen := LayoutEditor.bos_duzen()
+	var merkez := _camp_center if _camp_center != Vector2i(-999, -999) \
+			else _player_cell()
+	duzen["merkez_not"] = ("Hucreler kamp merkezine GORE ofsettir; "
+			+ "disa aktarim aninda merkez (%d,%d) idi.") % [merkez.x, merkez.y]
+	var liste: Array = []
+	for cell: Vector2i in _editor_ogeler:
+		var k: Dictionary = _editor_ogeler[cell]
+		liste.append(LayoutEditor.oge(String(k.get("tur", "")),
+				String(k.get("id", "")), cell - merkez,
+				int(k.get("rot", 0)), float(k.get("olcek", 1.0))))
+	duzen["ogeler"] = liste
+	if LayoutEditor.yaz(LayoutEditor.USER_PATH, duzen):
+		hud.set_editor_status("Dışa aktarıldı: %d öğe -> %s" % [
+				liste.size(), LayoutEditor.USER_PATH])
+		print("EDITOR: disa aktarildi ogeler=%d dosya=%s" % [
+				liste.size(), ProjectSettings.globalize_path(
+						LayoutEditor.USER_PATH)])
+	else:
+		hud.set_editor_status("Dışa aktarma BAŞARISIZ (dosya açılamadı)")
+
+## Var olan duzeni acip uzerinde duzenleme (once user://, yoksa res://).
+func editor_yukle() -> void:
+	var duzen := LayoutEditor.oku(LayoutEditor.USER_PATH)
+	if duzen.is_empty():
+		duzen = LayoutEditor.oku(LayoutEditor.RES_PATH)
+	if duzen.is_empty():
+		hud.set_editor_status("Yüklenecek düzen yok")
+		return
+	# Sahnedeki editor ogelerini temizle, dosyadakini kur
+	for cell: Vector2i in _editor_ogeler.keys():
+		_editor_kaldir(cell, true)
+	_editor_ogeler.clear()
+	_editor_undo.clear()
+	var merkez := _camp_center if _camp_center != Vector2i(-999, -999) \
+			else _player_cell()
+	var n := _duzen_uygula(duzen, merkez, true)
+	hud.set_editor_status("Yüklendi: %d öğe" % n)
+
+## Bir duzeni dunyaya kurar. editor_katmani=true ise ogeler editor
+## listesine de yazilir (uzerinde duzenleme yapilabilsin).
+## Doner: kurulan oge sayisi.
+func _duzen_uygula(duzen: Dictionary, merkez: Vector2i,
+		editor_katmani: bool) -> int:
+	var n := 0
+	for o: Dictionary in duzen.get("ogeler", []):
+		var cell: Vector2i = merkez + LayoutEditor.ofset_of(o)
+		if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
+			continue
+		var tur := String(o.get("tur", ""))
+		var id := String(o.get("id", ""))
+		var rot := int(o.get("rot", 0))
+		var olcek := float(o.get("olcek", 1.0))
+		match tur:
+			"yapi":
+				if not PLACE_MODELS.has(id) or _placed.has(cell):
+					continue
+				_set_placed(cell, id, rot)
+			"yol":
+				lay_road(cell, "miras")
+			"dekor":
+				var kayit := {"tur": "dekor", "id": id, "rot": rot,
+						"olcek": olcek}
+				_editor_dekor_ciz(cell, kayit)
+			"tarla":
+				if _till_valid(cell):
+					Farming.till_cell(cell)
+			_:
+				continue
+		if editor_katmani:
+			_editor_ogeler[cell] = {"tur": tur, "id": id, "rot": rot,
+					"olcek": olcek}
+		n += 1
+	_build_road()
+	return n
+
+## DUNYA URETIMI KANCASI: res://data/camp_layout.json VARSA baslangic
+## kampi ONDAN kurulur. Dosya yoksa hicbir sey olmaz ve kodlanmis kamp
+## (_build_spawn_camp) tek basina kalir — yani fallback SILINMEDI,
+## dosya opsiyonel bir KATMAN.
+##
+## Sira onemli: kodlanmis kamp once kurulur, duzen dosyasi USTUNE biner.
+## Boylece dosyada olmayan seyler (kulube, kuyu, tarla dekoru) yerinde
+## kalir; dosyada olanlar da eklenir.
+var _duzen_oge_sayisi := 0   # EDITORTEST okur
+
+func _kamp_duzenini_uygula() -> void:
+	_duzen_oge_sayisi = 0
+	var duzen := LayoutEditor.oyun_duzeni()
+	if duzen.is_empty():
+		return
+	if _camp_center == Vector2i(-999, -999):
+		return
+	_duzen_oge_sayisi = _duzen_uygula(duzen, _camp_center, false)
+	print("KAMPDUZEN: %s okundu, %d oge kuruldu (merkez %d,%d)" % [
+			LayoutEditor.RES_PATH, _duzen_oge_sayisi,
+			_camp_center.x, _camp_center.y])
+
+# --- EDITORTEST ---------------------------------------------------------
+## Gorevdeki dogrulama zinciri, kod tarafinda: editorde kamp kur ->
+## disa aktar -> dosyayi oku -> TEMIZ dunyaya uygula -> AYNI MI.
+## Ekran goruntusu degil SAYI ile karsilastiriliyor; "birebir kuruldu mu"
+## sorusunun cevabi goz karari olmamali.
+##
+## Neden yeni oyun acmiyor: yeni oyun acmak sahneyi bastan kuruyor ve
+## test icinde beklemeye zorluyor. Bunun yerine ayni sahnede ogeler
+## kaldirilip duzen dosyasindan yeniden kuruluyor — okunan sey ayni:
+## "disa aktarilan dosya, dunyayi ayni hale getiriyor mu".
+func _run_editor_test() -> void:
+	var merkez := _camp_center if _camp_center != Vector2i(-999, -999) \
+			else _player_cell()
+	# 1) Editorde birkac oge kur (dogrudan editor katmanina, UI'siz)
+	_editor_ogeler.clear()
+	_editor_undo.clear()
+	var kuruldu := 0
+	var plan := [
+		{"tur": "yapi", "id": "sandik", "ofs": Vector2i(3, 3)},
+		{"tur": "yapi", "id": "yatak", "ofs": Vector2i(4, 3)},
+		{"tur": "yol", "id": "yol_hucresi", "ofs": Vector2i(3, 4)},
+		{"tur": "yol", "id": "yol_hucresi", "ofs": Vector2i(3, 5)},
+		{"tur": "dekor", "id": "grass_tuft", "ofs": Vector2i(5, 3)},
+	]
+	for p: Dictionary in plan:
+		var c: Vector2i = merkez + Vector2i(p["ofs"])
+		# Hucreyi temizle ki test arazinin rastgele dolulugundan
+		# etkilenmesin (dogrulanan sey EDITOR, harita degil).
+		_objects.erase(c)
+		_placed.erase(c)
+		_solid_cells.erase(c)
+		_editor_kat = String(p["tur"])
+		_editor_item = String(p["id"])
+		_editor_rot = 90
+		_editor_koy(c)
+		if _editor_ogeler.has(c):
+			kuruldu += 1
+	# 2) Geri al: son islem geri gelmeli
+	var once := _editor_ogeler.size()
+	editor_undo()
+	var undo_ok: bool = _editor_ogeler.size() == once - 1
+	# 3) Disa aktar
+	editor_disa_aktar()
+	var yazildi := LayoutEditor.oku(LayoutEditor.USER_PATH)
+	var yazildi_n: int = yazildi.get("ogeler", []).size()
+	# 4) Sahneden hepsini kaldir, dosyadan yeniden kur
+	var beklenen: Array = []
+	for cell: Vector2i in _editor_ogeler:
+		var k: Dictionary = _editor_ogeler[cell]
+		beklenen.append("%s:%s@%d,%d" % [String(k["tur"]), String(k["id"]),
+				cell.x - merkez.x, cell.y - merkez.y])
+	beklenen.sort()
+	for cell: Vector2i in _editor_ogeler.keys():
+		_editor_kaldir(cell, true)
+	_editor_ogeler.clear()
+	var n := _duzen_uygula(yazildi, merkez, true)
+	var kuruldu_liste: Array = []
+	for cell: Vector2i in _editor_ogeler:
+		var k2: Dictionary = _editor_ogeler[cell]
+		kuruldu_liste.append("%s:%s@%d,%d" % [String(k2["tur"]),
+				String(k2["id"]), cell.x - merkez.x, cell.y - merkez.y])
+	kuruldu_liste.sort()
+	var birebir: bool = beklenen == kuruldu_liste
+	# 5) Temizlik: test dunyayi kalici bozmasin
+	for cell: Vector2i in _editor_ogeler.keys():
+		_editor_kaldir(cell, true)
+	_editor_ogeler.clear()
+	_editor_undo.clear()
+
+	var line := ("EDITORTEST: kuruldu=%d/%d undo_ok=%s disa_aktarilan=%d "
+			+ "geri_kurulan=%d birebir=%s kayit_kapali=%s") % [
+		kuruldu, plan.size(), str(undo_ok), yazildi_n, n, str(birebir),
+		str(not _editor_on)]
+	print(line)
+	if kuruldu != plan.size():
+		push_error("EDITOR: ogelerin hepsi kurulamadi")
+	if not undo_ok:
+		push_error("EDITOR: geri al calismadi")
+	if yazildi_n == 0:
+		push_error("EDITOR: disa aktarim bos")
+	if not birebir:
+		push_error("EDITOR: dosyadan kurulan duzen orijinaliyle AYNI DEGIL")
