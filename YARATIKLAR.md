@@ -13,7 +13,7 @@ yeni tip eklemek = tabloya bir satır eklemek.
 
 | Tip | Ad | Can | Hız | Hasar | Öz | İlk gece | Yetenek | Yapı çarpanı | Ölçek | Göz | GLB | Rol |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| normal | Gölge | 10 | 2.0 | 6 | 1 | 1 | — | 1 | 1.00 | turkuaz | `creature_normal.glb` | Omurga; tehdidin taban ölçüsü |
+| normal | Gölge | 10 | 2.0 | 6 | 1 | 1 | — | 1 | 1.00 | turkuaz | `creature_normal.glb` **VAR** | Omurga; tehdidin taban ölçüsü |
 | tirmanici | Tırmanıcı | 6 | 2.2 | 4 | 1 | 4 | **climb** | 1 | 0.90 | mor | `creature_tirmanici.glb` | Duvarı kırmaz, aşar |
 | yuzucu | Yüzücü | 8 | 1.8 | 5 | 1 | 5 | **swim** | 1 | 0.95 | turkuaz | `creature_yuzucu.glb` | Hendeği geçer |
 | kirici | Kırıcı | 24 | 1.2 | 10 | 2 | 7 | — | **3** | 1.35 | turkuaz | `creature_kirici.glb` | Kuşatma; yavaş ama duvar yıkar |
@@ -80,28 +80,34 @@ peşine takılıyordu ve gecenin derdi "kaç" oluyordu; şimdi dert
 Örnek ilerleme (gece → o gece açılan): 1 normal · 4 tırmanıcı ·
 5 yüzücü · 7 kırıcı · 10 hızlı.
 
-## MODELLER — DURUM: DOSYALAR HENÜZ YOK
+## MODELLER — 1/5 GELDİ
 
-Beş tipin de GLB yolu tabloda tanımlı, **ama dosyaların hiçbiri repoda
-yok**. Kod bunu hata saymıyor: `ResourceLoader.exists()` ile bakıyor,
-yoksa prosedürel gövdeyi (küre + tek parlak göz) çiziyor. Oyun şu an
-bu hâlde çalışıyor.
+`creature_normal.glb` **yüklendi ve kullanılıyor** (ölçüldü: 0,830 ×
+1,000 × 0,740 — Y-up, ~1 birim boyunda, gövde merkezli). Kalan dört
+tip hâlâ prosedürel gövde (küre + tek parlak göz) ile çiziliyor; kod
+bunu hata saymıyor.
 
-Dosya yüklendiği anda **kod değişikliği olmadan** devreye girer:
+**Klasör esnek:** kod önce tablodaki yola, bulamazsa
+`assets/models/test/` altına bakıyor (`creature.gd::_resolve_glb`).
+GitHub web arayüzünden yükleme pratikte `test/` altına düştüğü için
+bu gerekliydi — dosya hangisine düşerse düşsün bulunur.
+
+Kalan dosyalar:
 
 ```
-assets/models/creatures/creature_normal.glb
-assets/models/creatures/creature_tirmanici.glb
-assets/models/creatures/creature_yuzucu.glb
-assets/models/creatures/creature_kirici.glb
-assets/models/creatures/creature_hizli.glb
+creature_tirmanici.glb
+creature_yuzucu.glb
+creature_kirici.glb
+creature_hizli.glb
 ```
 
 Model isterleri (diğer Meshy varlıklarıyla aynı hat):
 
-- **~1 birim** yüksekliğinde, **merkezli** (ölçek tablodaki `scale` ile
-  kök düğüme verilir — iç düğümlere asla dokunulmaz, karakterde rig'i
-  bozan hata oydu).
+- **~1 birim** yüksekliğinde. Merkezli gelmesi sorun değil: kod
+  AABB'nin alt kenarını ölçüp modeli yere oturtuyor (merkezli model
+  olduğu gibi eklenseydi yaratığın yarısı zeminin altında kalırdı —
+  `creature_normal` tam olarak öyle geldi). Ölçek tablodaki `scale`
+  ile **kök düğüme** verilir; iç düğümlere asla dokunulmaz.
 - Karakterle aynı üslup: düşük poligon, sade siluet, **soğuk palet**.
   Ayırt edicilik silüetten gelsin: tırmanıcı ince/uzun kollu, kırıcı
   iri ve ağır, hızlı küçük ve dar.

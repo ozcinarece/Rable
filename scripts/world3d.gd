@@ -87,12 +87,19 @@ const PLACE_MODELS := {
 			"behavior": "station", "max_hp": 120},
 	"sandik": {"model": "res://assets/models/test/storege_box.glb",
 			"h": 0.55, "solid": true, "behavior": "station", "max_hp": 60},
-	# h 0.9 karaktere gore devasa bir odun yiginiydi -> 0.38 (ates cukuru
-	# insanin dizine gelir, gogsune degil). "tint": Meshy dokusu fazla
-	# aciktı, sonuk bir ocak icin koyu yanmis odun tonuna cekilir.
-	"ocak": {"model": "res://assets/models/tools/campfire-pit.glb",
-			"h": 0.38, "solid": true, "behavior": "hearth", "max_hp": 400,
-			"tint": Color(0.52, 0.42, 0.34)},
+	# OCAK = ancient_heart. Onceki model campfire-pit.glb (odun yigini)
+	# idi; Ocak artik gecenin merkezi -- yaratiklar HER ZAMAN ona
+	# yuruyor, yani bir kamp atesinden fazlasi olmali.
+	# OLCULDU: 1.000 x 0.326 x 0.959 -> model zaten Y-up, dondurme yok.
+	# "long" 1.0: en uzun eksen tam 1 hucre. "h" ile olceklenseydi
+	# (0.38 / 0.326 = 1.17) ayak izi hucreyi tasardi. Boylece kendi
+	# oranini koruyor: 1 m eninde, 33 cm yuksekliginde alcak tas kalp.
+	# tint: Meshy dokulari "isik pismis" ve emissive 1,1,1 ile geliyor
+	# (beyaz parlama tuzagi). _tame_meshy_materials isimayi kapatir;
+	# ton hafif tutuldu, ilk kareden sonra ayarlanabilir.
+	"ocak": {"model": "res://assets/models/test/ancient_heart.glb",
+			"long": 1.0, "h": 0.33, "solid": true, "behavior": "hearth",
+			"max_hp": 400, "tint": Color(0.86, 0.84, 0.86)},
 	"platform": {"model": "platform", "h": 1.5, "solid": false,
 			"behavior": "platform", "max_hp": 100, "rotatable": true},
 	"kamp_evi": {"model": "res://assets/models/tools/tent.glb",
@@ -919,8 +926,11 @@ func _run_creature_type_test() -> void:
 		for k: String in ["hp", "speed", "damage", "essence", "first_night", "glb"]:
 			if not d.has(k):
 				alan_eksik.append("%s.%s" % [t, k])
+		# Modeller GitHub web arayuzunden cogunlukla assets/models/test/
+		# altina yukleniyor; creature.gd ikisine de bakiyor, test de oyle.
 		var g := String(d.get("glb", ""))
-		if g == "" or not ResourceLoader.exists(g):
+		var alt := "res://assets/models/test/" + g.get_file()
+		if g == "" or not (ResourceLoader.exists(g) or ResourceLoader.exists(alt)):
 			eksik_glb.append(t)
 
 	# 2) Yetenek -> yol bulma baglantisi. Sag tarafa gecmek icin TEK
@@ -3612,6 +3622,7 @@ var _road_scatter_cells := 0   # ROADTEST
 var _road_end_cells := 0
 var _road_stray_cells := 0
 var _road_tuft_cells := 0
+var _road_seam_count := 0   # derz dolgusu ornek sayisi
 
 func _build_road_scatter() -> void:
 	var tier: Dictionary = RoadScatter.tier_of(_quality_tier)
@@ -3625,6 +3636,7 @@ func _build_road_scatter() -> void:
 	_road_end_cells = 0
 	_road_stray_cells = 0
 	_road_tuft_cells = 0
+	_road_seam_count = 0
 
 	for cell: Vector2i in _path_cells:
 		var age := String(_path_cells[cell])
@@ -3658,6 +3670,30 @@ func _build_road_scatter() -> void:
 				* 2.0 * RoadScatter.TINT_JITTER
 		tonlar.append(Color(j, j, j))
 		_road_scatter_cells += 1
+
+		# --- DERZ DOLGUSU: iki yol hucresinin ARASINA kucuk obek ---
+		# Izgarayi asil kiran sey bu. Yalniz olcek buyutmek yetmiyordu:
+		# 1 hucre genisligindeki yolda komsuluk KENAR uzerinden oluyor,
+		# iki hucrenin tam ortasi bos kaliyor ve tepeden bakista yol
+		# noktali bir dizi gibi goruluyordu.
+		if RoadScatter.SEAM_ON:
+			for sd: Vector2i in [Vector2i(1, 0), Vector2i(0, 1)]:
+				if not _path_cells.has(cell + sd):
+					continue
+				var mid := _cell_center(cell) \
+						+ Vector3(float(sd.x) * 0.5, 0.0, float(sd.y) * 0.5)
+				var sy: float = float(int(RoadScatter.hash01(cell.x, cell.y,
+						561 + sd.x) * 4.0) % 4) * 90.0
+				var ss2: float = RoadScatter.SEAM_SCALE_MIN \
+						+ RoadScatter.hash01(cell.x, cell.y, 563 + sd.y) \
+						* (RoadScatter.SEAM_SCALE_MAX - RoadScatter.SEAM_SCALE_MIN)
+				tas.append(Transform3D(
+						Basis().rotated(Vector3.UP, deg_to_rad(sy))
+						.scaled(Vector3(ss2, ss2, ss2)), mid))
+				var j2: float = 1.0 + (RoadScatter.hash01(cell.x, cell.y, 567)
+						- 0.5) * 2.0 * RoadScatter.TINT_JITTER
+				tonlar.append(Color(j2, j2, j2))
+				_road_seam_count += 1
 
 		# --- Taslarin USTUNE yosun ---
 		if bool(tier.get("moss", true)) \
@@ -4296,6 +4332,15 @@ func _run_road_test(save_path: String) -> void:
 			continue
 		ornek += mm.instance_count
 	var moss_var: bool = RoadTiles.has_model("moss_patch")
+	# ZEMIN KONTROLU (gorev 1): yol hucresinde zemin CIM kalmali, toprak
+	# boyama/serit OLMAMALI. Gozle bakmak yaniltir — ilk karede yolun
+	# altinda kahverengi bir bant vardi ama olculdugunde o bandin YOLDAN
+	# GELMEDIGI, arazinin kendi toprak lekesi oldugu goruldu. Sayi:
+	# yol hucrelerinin zemin karakteri dagilimi.
+	var zemin: Dictionary = {}
+	for cell: Vector2i in _path_cells:
+		var gch := String(_ground_char.get(cell, "?"))
+		zemin[gch] = int(zemin.get(gch, 0)) + 1
 	# Model olculeri (yukseklik kaniti rakamla)
 	var kalinlik := 0.0
 	var mesh := _road_scatter_mesh()
@@ -4347,14 +4392,16 @@ func _run_road_test(save_path: String) -> void:
 	await get_tree().create_timer(0.4).timeout
 
 	var line := ("ROADTEST: model=serpinti hucre=%d (miras=%d yeni=%d) "
-			+ "kenar=%d serpinti_hucre=%d uc_hucre=%d tutam=%d kacak_tas=%d "
-			+ "ornek_toplam=%d kalinlik=%.3fm disarida=%.3fm "
-			+ "tint=#%s jitter=%%%.0f moss_glb=%s karo_modu=%s") % [
+			+ "kenar=%d serpinti_hucre=%d derz=%d uc_hucre=%d tutam=%d "
+			+ "kacak_tas=%d ornek_toplam=%d kalinlik=%.3fm disarida=%.3fm "
+			+ "olcek=%.2f-%.2f tint=#%s jitter=%%%.0f "
+			+ "yol_zemin=%s moss_glb=%s karo_modu=%s") % [
 		_path_cells.size(), miras, yeni, kenar,
-		_road_scatter_cells, _road_end_cells, _road_tuft_cells,
-		_road_stray_cells, ornek, kalinlik, RoadScatter.TOP_ABOVE,
+		_road_scatter_cells, _road_seam_count, _road_end_cells,
+		_road_tuft_cells, _road_stray_cells, ornek, kalinlik,
+		RoadScatter.TOP_ABOVE, RoadScatter.SCALE_MIN, RoadScatter.SCALE_MAX,
 		RoadScatter.TINT.to_html(false), RoadScatter.TINT_JITTER * 100.0,
-		str(moss_var), str(RoadTiles.TILE_MODE_ON)]
+		str(zemin), str(moss_var), str(RoadTiles.TILE_MODE_ON)]
 	print(line)
 	var f := FileAccess.open("res://docs/screens/roadtest.txt", FileAccess.WRITE)
 	if f != null:

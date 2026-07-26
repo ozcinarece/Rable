@@ -25,6 +25,10 @@ const ESSENCE_ITEM := "oz"
 ## glb: her tipin kendi modeli. DOSYA YOKSA proseduerel govde cizilir
 ## (kod ResourceLoader ile kontrol eder) — model gelince kendiliginden
 ## devreye girer, kod degisikligi gerekmez.
+## Yol assets/models/creatures/ altini gosterir ama modeller pratikte
+## GitHub web arayuzunden assets/models/test/ altina yukleniyor;
+## creature.gd IKI KLASORE de bakiyor (bkz. _resolve_glb), yani dosya
+## hangisine dusrse dussun bulunur.
 const TYPES := {
 	"normal": {
 		"hp": 10, "speed": 2.0, "damage": 6, "essence": 1,

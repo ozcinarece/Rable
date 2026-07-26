@@ -57,6 +57,33 @@ func traits() -> Dictionary:
 		"swim": bool(Balance.stat(type, "swim", false)),
 	}
 
+## Model yolu cozumleyici. Tabloda yol assets/models/creatures/ altini
+## gosteriyor ama modeller GitHub web arayuzunden cogunlukla
+## assets/models/test/ altina yukleniyor. Ikisine de bakiliyor: dosya
+## hangi klasordeyse oradan alinir, yoksa "" doner (proseduerel govde).
+func _resolve_glb(yol: String) -> String:
+	if yol == "":
+		return ""
+	if ResourceLoader.exists(yol):
+		return yol
+	var alt := "res://assets/models/test/" + yol.get_file()
+	return alt if ResourceLoader.exists(alt) else ""
+
+## Sahnedeki tum MeshInstance3D'lerin birlesik AABB'si (yerel uzayda).
+func _aabb_of(node: Node) -> AABB:
+	var out := AABB()
+	var ilk := true
+	for mi: MeshInstance3D in node.find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh == null:
+			continue
+		var a := mi.mesh.get_aabb()
+		if ilk:
+			out = a
+			ilk = false
+		else:
+			out = out.merge(a)
+	return out
+
 func _build_visual() -> void:
 	_body = Node3D.new()
 	add_child(_body)
@@ -64,10 +91,17 @@ func _build_visual() -> void:
 	# GLB varsa yükle, yoksa prosedürel low-poly. Yol artık TABLODAN
 	# geliyor (Balance.TYPES[...].glb) — dosya adı kodda sabit değil,
 	# YARATIKLAR.csv'deki satırla aynı yeri gösteriyor.
-	var glb := String(Balance.stat(type, "glb", ""))
-	if glb != "" and ResourceLoader.exists(glb):
+	var glb := _resolve_glb(String(Balance.stat(type, "glb", "")))
+	if glb != "":
 		var inst: Node3D = load(glb).instantiate()
 		inst.scale = Vector3.ONE * scl
+		# MERKEZLI MODEL TUZAGI: Meshy modelleri origin'i GOVDE
+		# MERKEZINDE veriyor (olculdu: creature_normal Y [-0.5 .. +0.5]).
+		# Oldugu gibi eklenirse yaratigin YARISI zeminin altinda kalir.
+		# AABB'nin alt kenari kadar yukari kaldiriliyor.
+		var ab := _aabb_of(inst)
+		if ab.size.y > 0.001:
+			inst.position.y = -ab.position.y * scl
 		_body.add_child(inst)
 		return
 	# Gövde: yuvarlak küre, soğuk mor-gri

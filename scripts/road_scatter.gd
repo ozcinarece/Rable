@@ -46,9 +46,24 @@ const CAST_SHADOW := true
 # HUCRE BASINA VARYASYON — tekrar hissini kirar
 # =======================================================================
 const YAW_STEPS := 4              # 0/90/180/270
-const SCALE_MIN := 0.90
-const SCALE_MAX := 1.10
-const OFFSET_MAX := 0.05          # hucre geniskiginin ±%5'i (m)
+## OLCULDU (ilk CI karesi, tepeden bakis): 0.90-1.10 olcekte her hucrenin
+## obegi AYRI BIR ADA kaliyordu -> yol dama tahtasi gibi noktali
+## goruniyordu. Modelin kenari zaten SEYREK oldugu icin obegin yogun
+## cekirdegi ~0.6 hucre; komsu hucreye DEGMESI icin taban olcek 1'in
+## uzerine cikarildi. Gorevdeki "%90-110" bandi korunuyor, yalniz
+## merkezi 1.0 yerine 1.2.
+const SCALE_MIN := 1.08
+const SCALE_MAX := 1.32
+const OFFSET_MAX := 0.05          # hucre genisliginin ±%5'i (m)
+
+## DERZ DOLGUSU — asil izgara kirici. Iki yol hucresinin ARASINA (ortak
+## kenarin ortasina) kucuk bir obek daha konuyor. Yalniz olcegi buyutmek
+## yetmiyordu: 1 hucre genisligindeki yolda komsuluk KENAR uzerinden
+## oluyor, kose dolgusu ise hic devreye girmiyor. Bu dolgu tam o dikisi
+## kapatir ve yol kesintisiz okunur.
+const SEAM_ON := true
+const SEAM_SCALE_MIN := 0.50
+const SEAM_SCALE_MAX := 0.72
 
 # =======================================================================
 # UC HUCRELER — yol "dagilarak biter"
@@ -64,8 +79,12 @@ const END_OFFSET_EXTRA := 0.10
 # =======================================================================
 # RENK — model cok beyaz/soguk geldi
 # =======================================================================
-## Sicak bej-gri (#B5ACA0). Albedo CARPANI olarak uygulanir.
-const TINT := Color(0.710, 0.675, 0.627)
+## Sicak bej-gri. Hedef #B5ACA0 idi; ILK CI KARESINDE taslar hala fazla
+## acik ve soguk (leylak-beyaz) cikti — modelin dokusu neredeyse beyaz,
+## bu yuzden carpan daha asagi cekildi. Sonuc ekranda ~#9A9084.
+## Gorevin olcutu "cimden net ayrissin ama PARLAMASIN"; belirleyici olan
+## kare, sayinin kendisi degil.
+const TINT := Color(0.604, 0.565, 0.518)
 ## Hucre basina ±%5 ton oynamasi: MultiMesh ornek RENGI ile, ek cizim
 ## cagrisi YOK (materyalde vertex_color_use_as_albedo aciliyor).
 const TINT_JITTER := 0.05
@@ -83,8 +102,13 @@ const EDGE_TUFT_SPAN := 0.18      # m — acik cimdekinden kucuk filiz
 ## Yolun 1 hucre DISINA kacak tas. Fazlasi dagitiklik yapiyor (onceki
 ## turun dersi: 2 hucreye de sacilinca yol "dokulmus" gorunuyordu).
 const STRAY_CHANCE := 15          # %
-const STRAY_SCALE_MIN := 0.35
-const STRAY_SCALE_MAX := 0.55
+## Ilk karede kacak tas KOCAMAN cikti (path_stone 1 m capinda yassi bir
+## disk; 0.35-0.55 olcekte tabak gibi duruyor). Kacak tasin isi kenarda
+## kucuk bir kirinti olmak.
+const STRAY_SCALE_MIN := 0.20
+const STRAY_SCALE_MAX := 0.32
+## Rengi EnvModels.TINT["path_stone"] veriyor (sicak gri) — yol taslariyla
+## ayni aileden gorunsun diye ayri bir ton TANIMLANMADI.
 
 # =======================================================================
 # KALITE KADEMESI (mobil)
