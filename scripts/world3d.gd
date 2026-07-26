@@ -28,6 +28,7 @@ const EngBalance = preload("res://scripts/engineering_balance.gd")
 const HudScript = preload("res://scripts/hud.gd")
 const CreatureScript = preload("res://scripts/creature.gd")
 const CreatureBalance = preload("res://scripts/creature_balance.gd")
+const CreatureAI = preload("res://scripts/creature_ai.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const ChestStore = preload("res://scripts/inventory.gd")  # 14.1 sandik deposu
@@ -813,6 +814,66 @@ func _setup_screenshot(save_path: String) -> void:
 	_run_save_load_selftest()
 	get_tree().quit()
 
+## YOL BULMA TESTI (Asama 2) — kare gerektirmez, hizli katmanda kosar.
+## Uc sey sinaniyor:
+##  1) Bos alanda yol en kisa (Manhattan) uzunlukta mi?
+##  2) Araya DUVAR orunce yaratik DOLASIYOR mu (yol duvardan gecmiyor,
+##     uzunluk artiyor)?
+##  3) Dolasmak cok uzunsa KIRIYOR mu (yol duvarin ustunden geciyor)?
+## Ucuncusu kritik: "kir ya da dolas" karari ayri bir mantik degil,
+## maliyet karsilastirmasinin sonucu — testi de oyle yaziyoruz.
+func _run_ai_path_test() -> void:
+	var a := Vector2i(20, 20)
+	var b := Vector2i(28, 20)
+	# 1) Bos alan: hucreleri temizle
+	for y in range(18, 23):
+		for x in range(19, 30):
+			_solid_cells.erase(Vector2i(x, y))
+			_objects.erase(Vector2i(x, y))
+			_placed.erase(Vector2i(x, y))
+	var p1 := CreatureAI.find_path(self, a, b)
+	var duz_ok: bool = p1.size() == 8
+
+	# 2) KISA duvar: dolasmak ucuz -> yol duvardan GECMEMELI
+	for y in range(19, 22):
+		var c := Vector2i(24, y)
+		_objects[c] = "#"
+		_solid_cells[c] = true
+	var p2 := CreatureAI.find_path(self, a, b)
+	var kisa_duvar_gecti := false
+	for c: Vector2i in p2:
+		if _objects.has(c):
+			kisa_duvar_gecti = true
+	var dolasti: bool = not kisa_duvar_gecti and p2.size() > p1.size()
+
+	# 3) UZUN duvar: dolasmak pahali -> yol duvari KIRMALI
+	for y in range(5, 40):
+		var c2 := Vector2i(24, y)
+		_objects[c2] = "#"
+		_solid_cells[c2] = true
+	var p3 := CreatureAI.find_path(self, a, b)
+	var kirdi := false
+	for c3: Vector2i in p3:
+		if _objects.has(c3):
+			kirdi = true
+
+	# Temizlik: test dunyayi bozmasin
+	for y in range(5, 40):
+		var c4 := Vector2i(24, y)
+		_objects.erase(c4)
+		_solid_cells.erase(c4)
+
+	var line := ("AITEST: duz=%d/8 (%s) kisa_duvar=%d dolasti=%s "
+			+ "uzun_duvar=%d kirdi=%s") % [
+		p1.size(), str(duz_ok), p2.size(), str(dolasti), p3.size(), str(kirdi)]
+	print(line)
+	if not duz_ok:
+		push_error("AI: bos alanda yol en kisa degil")
+	if not dolasti:
+		push_error("AI: kisa duvari dolasmasi gerekirdi")
+	if not kirdi:
+		push_error("AI: uzun duvari kirmasi gerekirdi")
+
 ## SU RENK TESTI — kirmizi bug'in tekrarini yakalamak icin.
 ## Bug sozdizimi hatasi DEGILDI: mesh yazici ile shader'in sozlesmesi
 ## ayrisinca kod parse-temiz kaldi ama ekran cop cizdi. O yuzden burada
@@ -846,6 +907,7 @@ func _run_water_color_test() -> void:
 ## yaratik, kayit/yukleme. Kazi/su/tarim/UI testleri kare alma ve
 ## bekleme ile ic ice oldugu icin AGIR katmanda kaldi (bkz. RAPOR_CI).
 func _run_fast_tests() -> void:
+	_run_ai_path_test()
 	_run_water_color_test()
 	_run_time_selftest()
 	_run_muhendislik_selftest()
@@ -1430,6 +1492,20 @@ func is_walkable(cell: Vector2i) -> bool:
 	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
 		return false
 	return not _solid_cells.has(cell)
+
+## YOL BULMA MALIYETI (Asama 2): yurunemeyen bir hucreye girmenin
+## bedeli. Kirilabilir engel (yapi/agac/kaya) yola KAPALI degil, sadece
+## PAHALI — boylece "dolas mi, kir mi" karari ayri bir mantik degil,
+## maliyet karsilastirmasinin dogal sonucu oluyor.
+## Kirilamaz olanlar (harita kenari, su, plato) gercekten kapali.
+func creature_break_cost(cell: Vector2i) -> int:
+	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
+		return CreatureBalance.BLOCK_IMPASSABLE
+	# Oyuncunun yapisi ya da toplanabilir nesne: kirilabilir
+	if _placed.has(cell) or _objects.has(cell):
+		return CreatureBalance.BREAK_COST
+	# Su / yuksek plato / diger kati arazi: kirilamaz
+	return CreatureBalance.BLOCK_IMPASSABLE
 
 ## 11.5 MERDIVEN KURALI: from->to adimina izin var mi? Derin cukurdan
 ## (depth >= LADDER_DEEP_MIN) daha sig bir hucreye CIKMAK ancak merdiven
@@ -6801,7 +6877,31 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 			_night_damage_taken = true
 			cr.lunge(Vector3(ppos.x - cr.position.x, 0.0, ppos.z - cr.position.z))
 		return
-	var dir := Vector3(target.x - cr.position.x, 0.0, target.z - cr.position.z)
+	# --- YOL BULMA (Asama 2) --------------------------------------------
+	# Once duz cizgi vardi; engelde yana kayiyordu, yani duvar dolasamiyor
+	# ve onunde sikisiyordu. Artik A* ile hucre yolu cikariliyor ve
+	# yaratik yolun bir sonraki DUGUMUNE yoneliyor.
+	var goal := Vector2i(floori(target.x), floori(target.z))
+	cr.repath_cd = maxf(0.0, cr.repath_cd - delta)
+	# Yeniden planlama: sure dolduysa YA DA hedef belirgin kaydiysa.
+	# Ikincisi olmadan oyuncu kosarak uzaklasinca yaratik eski yolu
+	# takip edip aptal gorunurdu.
+	var goal_shift: int = absi(goal.x - cr.path_goal.x) \
+			+ absi(goal.y - cr.path_goal.y)
+	if cr.repath_cd <= 0.0 or cr.path.is_empty() \
+			or goal_shift >= CreatureBalance.REPATH_TARGET_SHIFT:
+		cr.repath_cd = CreatureBalance.REPATH_SECONDS
+		cr.path_goal = goal
+		cr.path = CreatureAI.find_path(self, cr.cell(), goal)
+	# Ulasilan dugumleri yoldan dus
+	while not cr.path.is_empty() and Vector2i(cr.path[0]) == cr.cell():
+		cr.path.remove_at(0)
+	# Yol varsa bir sonraki dugume, yoksa hedefe dogru (son care)
+	var aim := target
+	if not cr.path.is_empty():
+		var nc: Vector2i = cr.path[0]
+		aim = Vector3(float(nc.x) + 0.5, cr.position.y, float(nc.y) + 0.5)
+	var dir := Vector3(aim.x - cr.position.x, 0.0, aim.z - cr.position.z)
 	if dir.length() < 0.01:
 		return
 	dir = dir.normalized()
@@ -6813,8 +6913,9 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 	# `cr` tipsiz -> cr.position Variant; ACIK tip sart (yoksa parse hatasi).
 	var next_pos: Vector3 = cr.position + dir * speed * delta
 	var next_cell := Vector2i(floori(next_pos.x), floori(next_pos.z))
-	# ONUNE ENGEL CIKTI MI? Ciktiysa DUR ve VUR — duvar kirma boylece yol
-	# bulmaya gerek kalmadan dogal olarak calisir.
+	# ONUNE ENGEL CIKTI MI? Yol zaten kirilabilir engelleri PAHALI sayip
+	# gecerli buluyor; yani buraya gelmek "yol beni bilerek duvarin
+	# ustunden gecirdi" demek. Dur ve vur.
 	if next_cell != cr.cell() and not is_walkable(next_cell):
 		cr.struct_cd = maxf(0.0, cr.struct_cd - delta)
 		if _placed.has(next_cell) or _objects.has(next_cell):

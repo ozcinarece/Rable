@@ -83,6 +83,25 @@ const SPAWN_MIN_DIST_HEARTH := 8  # Ocak'a en az bu kadar hucre
 const SPAWN_TRIES := 40           # uygun hucre arama denemesi
 
 ## Hedefleme: oyuncu bu menzildeyse oyuncuyu, degilse Ocak'i kovalar.
+# --- YOL BULMA (Asama 2) ------------------------------------------------
+## Arama butcesi: mobilde kare basina birden fazla yaratik yol arayabilir.
+## 900 dugum, 128x128 haritada tipik bir kamp-kenar mesafesini rahat
+## kapsiyor; dolarsa kismi yol donuyor (yaratik durmuyor).
+const PATH_MAX_NODES := 900
+## Yeniden planlama araligi (sn). Her karede yol aramak gereksiz: hedef
+## yavas hareket ediyor ve dunya nadiren degisiyor.
+const REPATH_SECONDS := 0.8
+## Hedef bu kadar hucre kaydiysa beklemeden yeniden planla (oyuncu
+## kosarak uzaklasinca yaratigin eski yolu takip etmesi aptalca olurdu).
+const REPATH_TARGET_SHIFT := 3
+## KIRILABILIR engelin yola maliyeti. 1 = bos hucre. Yuksek deger =
+## "once dolasmayi dene". 14: yaklasik 14 hucreden kisa bir dolambac
+## varsa yaratik DOLASIR, yoksa KIRAR. Oyuncunun duvar tasarimi
+## dogrudan bu esikle konusuyor.
+const BREAK_COST := 14
+## Kirilamaz engel (harita kenari, su, plato): yol kapali.
+const BLOCK_IMPASSABLE := -1
+
 const AGGRO_RANGE := 7.0          # metre (hucre ~1 m)
 
 ## Temas ve saldiri

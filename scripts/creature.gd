@@ -27,6 +27,13 @@ var stuck_time: float = 0.0  # kac saniyedir ilerleyemiyor
 var side_time: float = 0.0   # kalan yana kayma suresi
 var side_sign: float = 1.0   # hangi yana kayiyor (+1/-1)
 
+# --- YOL BULMA DURUMU (Asama 2) ----------------------------------------
+## A* ile bulunan hucre yolu; yaratik dugum dugum izler. Her karede
+## yeniden aranmaz (REPATH_SECONDS) — arama pahali, hedef yavas.
+var path: Array = []
+var path_goal := Vector2i(-999, -999)  # yolun hesaplandigi hedef hucre
+var repath_cd: float = 0.0             # yeniden planlamaya kalan sure
+
 var _body: Node3D
 var _mat: StandardMaterial3D
 var _eye_light: OmniLight3D
