@@ -1,1 +1,1 @@
-ROADTEST: model=serpinti hucre=76 (miras=65 yeni=10) kenar=73 serpinti_hucre=76 uc_hucre=5 tutam=21 kacak_tas=17 ornek_toplam=111 kalinlik=0.103m disarida=0.025m tint=#b5aca0 jitter=%5 moss_glb=false karo_modu=false
+ROADTEST: model=serpinti hucre=76 (miras=65 yeni=10) kenar=73 serpinti_hucre=76 derz=91 uc_hucre=5 tutam=21 kacak_tas=17 ornek_toplam=202 kalinlik=0.103m disarida=0.025m olcek=1.08-1.32 tint=#9a9084 jitter=%5 yol_zemin={ ".": 51, "d": 24 } moss_glb=false karo_modu=false
