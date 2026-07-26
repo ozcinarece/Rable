@@ -27,6 +27,13 @@ var stuck_time: float = 0.0  # kac saniyedir ilerleyemiyor
 var side_time: float = 0.0   # kalan yana kayma suresi
 var side_sign: float = 1.0   # hangi yana kayiyor (+1/-1)
 
+# --- YOL BULMA DURUMU (Asama 2) ----------------------------------------
+## A* ile bulunan hucre yolu; yaratik dugum dugum izler. Her karede
+## yeniden aranmaz (REPATH_SECONDS) — arama pahali, hedef yavas.
+var path: Array = []
+var path_goal := Vector2i(-999, -999)  # yolun hesaplandigi hedef hucre
+var repath_cd: float = 0.0             # yeniden planlamaya kalan sure
+
 var _body: Node3D
 var _mat: StandardMaterial3D
 var _eye_light: OmniLight3D
@@ -41,13 +48,24 @@ func setup(creature_type: String, hp_mult: float = 1.0) -> void:
 	essence = int(Balance.stat(type, "essence", 1))
 	_build_visual()
 
+## Yol bulmanin okudugu yetenekler. Tabloda yazmayan yetenek = false.
+## world.creature_break_cost bunlara bakarak ayni engele farkli maliyet
+## verir: tirmanici duvari asar, yuzucu suyu gecer.
+func traits() -> Dictionary:
+	return {
+		"climb": bool(Balance.stat(type, "climb", false)),
+		"swim": bool(Balance.stat(type, "swim", false)),
+	}
+
 func _build_visual() -> void:
 	_body = Node3D.new()
 	add_child(_body)
 	var scl := float(Balance.stat(type, "scale", 1.0))
-	# GLB varsa yükle (ileride Meshy), yoksa prosedürel low-poly.
-	var glb := "res://assets/models/creatures/%s.glb" % type
-	if ResourceLoader.exists(glb):
+	# GLB varsa yükle, yoksa prosedürel low-poly. Yol artık TABLODAN
+	# geliyor (Balance.TYPES[...].glb) — dosya adı kodda sabit değil,
+	# YARATIKLAR.csv'deki satırla aynı yeri gösteriyor.
+	var glb := String(Balance.stat(type, "glb", ""))
+	if glb != "" and ResourceLoader.exists(glb):
 		var inst: Node3D = load(glb).instantiate()
 		inst.scale = Vector3.ONE * scl
 		_body.add_child(inst)

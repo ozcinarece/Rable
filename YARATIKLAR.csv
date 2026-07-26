@@ -1,0 +1,6 @@
+"Tip","Ad (oyunda)","Can","Hız","Hasar","Öz","İlk gece","Yetenek","Yapı hasar çarpanı","Ölçek","Göz","GLB yolu","GLB var mı","Rol / neden var"
+"normal","Gölge","10","2.0","6","1","1","—","1","1.00","turkuaz","assets/models/creatures/creature_normal.glb","HAYIR","Omurga. Her gece çıkar, tehdidin taban ölçüsü. Diğer tiplerin ""normale göre"" okunması için referans."
+"tirmanici","Tırmanıcı","6","2.2","4","1","4","climb (duvar/yapı aşar)","1","0.90","mor","assets/models/creatures/creature_tirmanici.glb","HAYIR","Duvarı KIRMAZ, üstünden geçer. ""Etrafı çevirdim, bitti"" rahatlığını bozar; kapı/çatı düşünmeye iter. Canı düşük — cezası yakalanınca çabuk ölmek."
+"yuzucu","Yüzücü","8","1.8","5","1","5","swim (su geçer)","1","0.95","turkuaz","assets/models/creatures/creature_yuzucu.glb","HAYIR","Hendek savunmasını delen tip. Su, kara yaratığı için duvardır; yüzücü için yavaşlatıcı (hız ×0,30)."
+"kirici","Kırıcı","24","1.2","10","2","7","—","3","1.35","turkuaz","assets/models/creatures/creature_kirici.glb","HAYIR","Kuşatma silahı. Yavaş ama duvara üç kat hasar verir; iki öz düşürür. Yavaşlığı oyuncuya ""önce bunu vur"" fırsatı bırakır."
+"hizli","Hızlı","4","4.0","4","1","10","—","1","0.80","mor","assets/models/creatures/creature_hizli.glb","HAYIR","Kâğıttan koşucu. Kalabalıkta hedef seçimini bozar, ocağa ilk o varır. 4 can = tek vuruşluk."

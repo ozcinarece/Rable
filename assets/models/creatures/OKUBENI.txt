@@ -1,0 +1,12 @@
+# Yaratik modelleri (GLB) buraya.
+#
+# Beklenen dosyalar (adlar creature_balance.gd TYPES tablosundan gelir):
+#   creature_normal.glb
+#   creature_tirmanici.glb
+#   creature_yuzucu.glb
+#   creature_kirici.glb
+#   creature_hizli.glb
+#
+# Dosya yoksa oyun proseduerel govde (kure + tek parlak goz) cizer;
+# dosya gelince kod degisikligi olmadan devreye girer.
+# Isterler ve olcek kurali: YARATIKLAR.md
