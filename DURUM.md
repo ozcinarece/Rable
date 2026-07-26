@@ -86,12 +86,13 @@ Durum değerleri: ÇALIŞIYOR / BRANCH'TE / YARIM / SADECE-PLAN / BOZUK.
 | Gündüz-Gece | night_started → yaratık dalga tetiği | YARIM | main | daynight.gd:14 (sinyal) | yaratık AI | 3D'de KANCA BOŞ (yalnız 2D legacy bağlı) | daynight yorumunda "PLANLI" yazıyor |
 | Yaratık | Yaratık varlığı (can, take_hit, geri tepme) | ÇALIŞIYOR | main | creature.gd | — | yalnız DEBUG spawn (K tuşu / test) | Aşama 1 |
 | Yaratık | Öz düşürme | ÇALIŞIYOR | main | creature.gd | — | özün harcama yeri yok | — |
-| Yaratık | AI (hedef seçimi + yapı kırma, A* YOK) | ÇALIŞIYOR | main | world3d.gd (_tick_one_creature) | gece dalgası | düz yönelme; A* sonraki tur | minimal sürüm |
-| Yaratık | Gece dalga sistemi (tek grup) | ÇALIŞIYOR | main | world3d.gd (_spawn_night_wave) | gün döngüsü | gruplu dalga sonraki tur | NIGHTTEST CI'da |
-| Yaratık | Yaratık tipleri | SADECE-PLAN | — | — | dalga | — | Aşama 5 |
+| Yaratık | AI çekirdeği (A* yol bulma + kır/dolaş kararı) | BRANCH'TE | yaratik-ai | creature_ai.gd, world3d.gd (creature_break_cost) | gece dalgası | — | kırılabilir engel kapalı değil PAHALI; AITEST hızlı CI'da |
+| Yaratık | Gece dalga sistemi (tek grup + tip karışımı) | BRANCH'TE | yaratik-ai | world3d.gd (_spawn_night_wave), creature_balance.gd (wave_mix) | gün döngüsü | gruplu dalga (WAVE_*) hâlâ kullanılmıyor | NIGHTTEST CI'da; karışım kuralları YARATIKLAR.md |
+| Yaratık | Yaratık tipleri (5 tip: normal/tırmanıcı/yüzücü/kırıcı/hızlı) | BRANCH'TE | yaratik-ai | creature_balance.gd (TYPES), YARATIKLAR.md, YARATIKLAR.csv | AI, dalga | modelleri yok (aşağıdaki satır) | climb/swim hem yol bulmada hem harekette; YARATIKTIP hızlı CI'da |
+| Yaratık | Yaratık GLB modelleri (5 tip) | SADECE-PLAN | — | assets/models/creatures/ (BOŞ) | yaratık tipleri | 5 dosyanın hiçbiri yok; prosedürel gövde çiziliyor | yol tabloda tanımlı, dosya gelince kendiliğinden devreye girer |
 | Yaratık | Tuzak/kazık yaratık tetiklenmesi | YARIM | main | world3d.gd | yaratık AI | yapılar yerleşiyor, hedefleri yok | Aşama 5 |
 | Yaratık | Alev hendeği | SADECE-PLAN | — | creature_balance.gd:70 (FLAME_DPS), item_db kaydı | — | veri var, kod yok | — |
-| Yaratık | Ocak hedefi | ÇALIŞIYOR | main | world3d.gd (_tick_one_creature) | dalga | sabah ekonomisi/is_banked HÂLÂ YOK | — |
+| Yaratık | Ocak hedefi (HER ZAMAN ocak; oyuncu yalnız temasta) | ÇALIŞIYOR | main | world3d.gd (_tick_one_creature) | dalga | sabah ekonomisi/is_banked HÂLÂ YOK | oyuncu kovalama kaldırıldı: gecenin derdi "Ocağı koru" |
 | Yaratık | Çiğ et düşüren hayvan | SADECE-PLAN | — | — | — | — | yiyecek zinciri kapısı |
 | UI | HUD (barlar, dock, ana/saldırı butonu, bağlam) | ÇALIŞIYOR | main | hud.gd | — | — | — |
 | UI | Ayarlar (kalite/FPS/Yeni Oyun/Kapat) | ÇALIŞIYOR | main | hud.gd | — | Kapat taşması 01:19 APK'da düzeltildi | CLICKTEST ✓ |
@@ -122,12 +123,12 @@ Durum değerleri: ÇALIŞIYOR / BRANCH'TE / YARIM / SADECE-PLAN / BOZUK.
 
 | Durum | Adet |
 |---|---|
-| ÇALIŞIYOR | 82 |
-| BRANCH'TE | 11 |
+| ÇALIŞIYOR | 80 |
+| BRANCH'TE | 14 |
 | YARIM | 3 |
 | SADECE-PLAN | 13 |
 | BOZUK | 0 |
-| **TOPLAM** | **109** |
+| **TOPLAM** | **110** |
 
 (BOZUK 0: bilinen iki cihaz hatası — Ayarlar Kapat taşması ve sandık
 overlay'i — bu denetim sırasında düzeltilip 01:19 APK'da yayınlandı.)

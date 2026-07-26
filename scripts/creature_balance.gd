@@ -14,27 +14,119 @@ const ESSENCE_ITEM := "oz"
 # --- Tipler (15.4): can / hız / hasar / özellik / ilk görülme -------------
 ## essence: ölünce düşen öz adedi. struct_mult: yapıya hasar çarpanı.
 ## first_night: bu tip ilk hangi gecede karışıma girer.
+## YARATIK TIPLERI — tam liste ve anlamlari YARATIKLAR.md / .csv'de.
+## Buradaki tablo TEK KAYNAK; oyun ve tablo ayni satirlari okur.
+##
+## YETENEKLER yol bulmaya dogrudan bagli (creature_break_cost):
+##   climb  -> duvar/yapi tirmanilir, maliyeti dusuk (dolasmaz, asar)
+##   swim   -> su gecilebilir (kara yaratigi icin su duvar gibidir)
+##   struct_mult -> yapiya vurus hasari carpani
+##
+## glb: her tipin kendi modeli. DOSYA YOKSA proseduerel govde cizilir
+## (kod ResourceLoader ile kontrol eder) — model gelince kendiliginden
+## devreye girer, kod degisikligi gerekmez.
 const TYPES := {
 	"normal": {
 		"hp": 10, "speed": 2.0, "damage": 6, "essence": 1,
 		"first_night": 1, "eye": "turkuaz", "scale": 1.0,
+		"glb": "res://assets/models/creatures/creature_normal.glb",
 	},
 	"tirmanici": {
-		"hp": 6, "speed": 2.0, "damage": 4, "essence": 1,
-		"first_night": 4, "eye": "mor", "scale": 0.9, "climb_fast": true,
+		"hp": 6, "speed": 2.2, "damage": 4, "essence": 1,
+		"first_night": 4, "eye": "mor", "scale": 0.9,
+		"climb": true,
+		"glb": "res://assets/models/creatures/creature_tirmanici.glb",
+	},
+	"yuzucu": {
+		"hp": 8, "speed": 1.8, "damage": 5, "essence": 1,
+		"first_night": 5, "eye": "turkuaz", "scale": 0.95,
+		"swim": true,
+		"glb": "res://assets/models/creatures/creature_yuzucu.glb",
 	},
 	"kirici": {
-		"hp": 24, "speed": 1.2, "damage": 10, "essence": 2, "struct_mult": 3,
-		"first_night": 7, "eye": "turkuaz", "scale": 1.35, "target_pref": "structure",
+		"hp": 24, "speed": 1.2, "damage": 10, "essence": 2,
+		"first_night": 7, "eye": "turkuaz", "scale": 1.35,
+		"struct_mult": 3,
+		"glb": "res://assets/models/creatures/creature_kirici.glb",
 	},
 	"hizli": {
 		"hp": 4, "speed": 4.0, "damage": 4, "essence": 1,
-		"first_night": 10, "eye": "mor", "scale": 0.8, "zigzag": true,
+		"first_night": 10, "eye": "mor", "scale": 0.8,
+		"glb": "res://assets/models/creatures/creature_hizli.glb",
 	},
 }
 
+## Tirmanici duvari ASMAYI tercih eder: maliyeti dusuk ama sifir degil
+## (tirmanmak zaman alir, duz zemin hala daha ucuz).
+const CLIMB_COST := 3
+## Yuzucu icin su maliyeti: gecilebilir ama yavas.
+const SWIM_COST := 4
+## Tirmanirken hiz carpani (SWIM_SLOW'un duvar karsiligi). Tirmanmak
+## bedava olsaydi duvar hicbir sey yavaslatmazdi; oyuncu duvardan
+## KAZANC gormeliydi.
+const CLIMB_SLOW := 0.45
+
 static func stat(type: String, key: String, def: Variant = 0) -> Variant:
 	return TYPES.get(type, TYPES["normal"]).get(key, def)
+
+# --- Dalga karisimi (15.4) ----------------------------------------------
+## Bir tip ancak first_night'tan itibaren havuza girer. Havuzda AGIRLIKLA
+## secilir: "normal" omurga, ozel tipler cesni.
+const MIX_WEIGHT := {
+	"normal": 10, "tirmanici": 4, "yuzucu": 3, "kirici": 2, "hizli": 3,
+}
+## Ozel tipler gecenin en fazla bu oranini kaplar. Sinir OLMASA acilan
+## tip sayisi arttikca normal yaratik kaybolur ve her gece "ozel gecesi"
+## gibi hissettirirdi; omurga korunuyor.
+const MIX_SPECIAL_MAX := 0.5
+
+## O gece hangi tipler cikabilir.
+static func unlocked_types(night: int) -> Array:
+	var out: Array = []
+	for t: String in TYPES:
+		if night >= int(TYPES[t].get("first_night", 1)):
+			out.append(t)
+	return out
+
+## Gecenin yaratik listesi. Bir tip ILK acildigi gece MUTLAKA gorunur —
+## yeni tehdit sessizce degil, farkedilerek girsin diye.
+static func wave_mix(night: int, count: int, rng: RandomNumberGenerator = null) -> Array:
+	var out: Array = []
+	if count <= 0:
+		return out
+	var pool: Array = unlocked_types(night)
+	# Bu gece acilan tip(ler) once garanti kontenjan alir.
+	for t: String in pool:
+		if out.size() >= count:
+			break
+		if t != "normal" and int(TYPES[t].get("first_night", 1)) == night:
+			out.append(t)
+	var ozel_limit: int = int(floor(float(count) * MIX_SPECIAL_MAX))
+	var toplam: int = 0
+	for t: String in pool:
+		toplam += int(MIX_WEIGHT.get(t, 1))
+	if toplam <= 0:
+		while out.size() < count:
+			out.append("normal")
+		return out
+	while out.size() < count:
+		var ozel: int = 0
+		for t: String in out:
+			if t != "normal":
+				ozel += 1
+		if ozel >= ozel_limit:
+			out.append("normal")
+			continue
+		var r: int = (rng.randi_range(0, toplam - 1) if rng != null
+				else randi_range(0, toplam - 1))
+		var sec: String = "normal"
+		for t: String in pool:
+			r -= int(MIX_WEIGHT.get(t, 1))
+			if r < 0:
+				sec = t
+				break
+		out.append(sec)
+	return out
 
 # --- Dalga eğrisi (15.2): gece kademesi = gün sayısı ---------------------
 ## İLK 3 GECE bilerek kolay (14.9): az sayı, sadece normal, düşük hasar.

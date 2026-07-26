@@ -26,15 +26,16 @@ const DIRS: Array[Vector2i] = [Vector2i(1, 0), Vector2i(-1, 0),
 
 ## Bir hücreye girme maliyeti. -1 = geçilemez (harita dışı / su).
 ## world: is_walkable(cell) ve break_cost(cell) sağlayan nesne.
-static func _enter_cost(world, cell: Vector2i) -> int:
+static func _enter_cost(world, cell: Vector2i, traits: Dictionary) -> int:
 	if world.is_walkable(cell):
 		return 1
-	return world.creature_break_cost(cell)
+	return world.creature_break_cost(cell, traits)
 
 ## A* — start'tan goal'e hücre listesi (start HARİÇ, goal DAHİL).
 ## Yol yoksa boş dizi. Bütçe dolarsa hedefe EN YAKIN düğüme kadar
 ## kısmi yol.
 static func find_path(world, start: Vector2i, goal: Vector2i,
+		traits: Dictionary = {},
 		max_nodes: int = Balance.PATH_MAX_NODES) -> Array:
 	if start == goal:
 		return []
@@ -59,7 +60,7 @@ static func find_path(world, start: Vector2i, goal: Vector2i,
 			best = cur
 		for d: Vector2i in DIRS:
 			var nb: Vector2i = cur + d
-			var step := _enter_cost(world, nb)
+			var step := _enter_cost(world, nb, traits)
 			if step < 0:
 				continue
 			var ng: int = int(gscore[cur]) + step

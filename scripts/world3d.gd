@@ -901,6 +901,127 @@ func _run_water_color_test() -> void:
 	if kirmizi_baskin:
 		push_error("SU RENGI BOZUK: kirmizi kanal maviyi geciyor")
 
+## YARATIK TIPLERI TESTI — "cesitlilik" tek bir veri tablosuna baglandi;
+## test de o tabloyu dogruluyor:
+##  1) Her tipin alani tam mi, GLB dosyasi var mi (yoksa proseduerel
+##     govde cizilir — eksik model HATA DEGIL, raporlanacak durum).
+##  2) YETENEK yol bulmaya GERCEKTEN ulasiyor mu: ayni engelde yuzucu
+##     suyu geciyor mu, tirmanici duvari asiyor mu, normal geciyor mu.
+##     Bu onemli: yetenekleri tabloya yazmak kolay, davranisa BAGLAMAK
+##     zor — kopukluk sessizce olusur.
+##  3) Dalga karisimi: gece 1 sadece normal, acildigi gece yeni tip
+##     mutlaka var, ozel oran yariyi gecmiyor.
+func _run_creature_type_test() -> void:
+	var eksik_glb: Array = []
+	var alan_eksik: Array = []
+	for t: String in CreatureBalance.TYPES:
+		var d: Dictionary = CreatureBalance.TYPES[t]
+		for k: String in ["hp", "speed", "damage", "essence", "first_night", "glb"]:
+			if not d.has(k):
+				alan_eksik.append("%s.%s" % [t, k])
+		var g := String(d.get("glb", ""))
+		if g == "" or not ResourceLoader.exists(g):
+			eksik_glb.append(t)
+
+	# 2) Yetenek -> yol bulma baglantisi. Sag tarafa gecmek icin TEK
+	# kapi birakiliyor: kapi su ise yalniz yuzucu, duvar ise tirmanici
+	# ucuz gecer.
+	var a := Vector2i(40, 40)
+	var b := Vector2i(46, 40)
+	for y in range(37, 44):
+		for x in range(39, 48):
+			var c := Vector2i(x, y)
+			_solid_cells.erase(c)
+			_objects.erase(c)
+			_placed.erase(c)
+			_depth.erase(c)
+			_water_level.erase(c)
+	# Tam boydan SU seridi (dolasilamaz: ya gecilir ya gecilmez).
+	# Sutunun eski hali saklaniyor: test dunyayi kalici bozmasin
+	# (ayni oturumda kayit/yukleme testi de kosuyor).
+	var eski_kati: Dictionary = {}
+	var eski_derinlik: Dictionary = {}
+	var eski_su: Dictionary = {}
+	for y in range(0, _map_h):
+		var wc := Vector2i(43, y)
+		eski_kati[wc] = _solid_cells.has(wc)
+		eski_derinlik[wc] = _depth.get(wc, 0)
+		eski_su[wc] = _water_level.get(wc, 0.0)
+		_solid_cells[wc] = true
+		_depth[wc] = 2
+		_water_level[wc] = 2.0
+	# Butce dolunca A* KISMI yol dondugu icin "yol uzunlugu" yeterli
+	# olcut degil: hedefe VARDI MI diye bakiliyor.
+	var pn: Array = CreatureAI.find_path(self, a, b, {})
+	var py: Array = CreatureAI.find_path(self, a, b, {"swim": true})
+	var su_normal: int = pn.size()
+	var su_yuzucu: int = py.size()
+	var yuzucu_gecti: bool = not py.is_empty() and py[py.size() - 1] == b
+	var normal_gecemedi: bool = pn.is_empty() or pn[pn.size() - 1] != b
+	for y in range(0, _map_h):
+		var wc2 := Vector2i(43, y)
+		if not bool(eski_kati[wc2]):
+			_solid_cells.erase(wc2)
+		if int(eski_derinlik[wc2]) > 0:
+			_depth[wc2] = int(eski_derinlik[wc2])
+		else:
+			_depth.erase(wc2)
+		if float(eski_su[wc2]) > 0.0:
+			_water_level[wc2] = float(eski_su[wc2])
+		else:
+			_water_level.erase(wc2)
+	# KISA duvar (3 hucre): dolasmak MUMKUN. Normal dolasir (uzun yol),
+	# tirmanici ustunden gecer (kisa yol). Fark yolun UZUNLUGUNDA
+	# gorunur — yetenek gercekten maliyeti degistiriyor mu, olcut bu.
+	for y in range(39, 42):
+		var dc := Vector2i(43, y)
+		_solid_cells[dc] = true
+		_placed[dc] = "duvar"
+	var duvar_normal: int = CreatureAI.find_path(self, a, b, {}).size()
+	var duvar_tirman: int = CreatureAI.find_path(self, a, b, {"climb": true}).size()
+	var ikisi_de_gecti: bool = duvar_normal > 0 and duvar_tirman > 0
+	for y in range(39, 42):
+		var dc2 := Vector2i(43, y)
+		_solid_cells.erase(dc2)
+		_placed.erase(dc2)
+
+	# 3) Dalga karisimi
+	var g1: Array = CreatureBalance.wave_mix(1, 6)
+	var g1_hepsi_normal := true
+	for t1: String in g1:
+		if t1 != "normal":
+			g1_hepsi_normal = false
+	var karisim_ok := true
+	for gece: int in [4, 5, 7, 10]:
+		var say: int = CreatureBalance.min_wave_count(gece)
+		var mix: Array = CreatureBalance.wave_mix(gece, say)
+		var ozel := 0
+		var yeni_var := false
+		for t2: String in mix:
+			if t2 != "normal":
+				ozel += 1
+			if int(CreatureBalance.stat(t2, "first_night", 1)) == gece:
+				yeni_var = true
+		if not yeni_var:
+			karisim_ok = false
+		if float(ozel) > float(say) * CreatureBalance.MIX_SPECIAL_MAX:
+			karisim_ok = false
+
+	print(("YARATIKTIP: tip=%d alan_eksik=%s glb_eksik=%s "
+			+ "su(normal=%d yuzucu=%d) duvar(normal=%d tirmanici=%d) "
+			+ "gece1_normal=%s karisim_ok=%s") % [
+		CreatureBalance.TYPES.size(), str(alan_eksik), str(eksik_glb),
+		su_normal, su_yuzucu, duvar_normal, duvar_tirman,
+		str(g1_hepsi_normal), str(karisim_ok)])
+	if not alan_eksik.is_empty():
+		push_error("YARATIK TABLOSU EKSIK: %s" % str(alan_eksik))
+	if not yuzucu_gecti or not normal_gecemedi:
+		push_error("YUZME yetenegi yol bulmaya baglanmamis")
+	if not ikisi_de_gecti or duvar_tirman >= duvar_normal:
+		push_error("TIRMANMA yetenegi yol bulmaya baglanmamis")
+	if not g1_hepsi_normal or not karisim_ok:
+		push_error("DALGA KARISIMI kurallara uymuyor")
+
 ## HIZLI KATMAN: kare almayan, beklemesiz mantik testleri. Bunlar
 ## --headless'te de kosar; agir gorsel akisin hicbir parcasina dokunmaz.
 ## Kapsam BILEREK dar: harita uretimi, kamera, zaman, muhendislik,
@@ -908,6 +1029,7 @@ func _run_water_color_test() -> void:
 ## bekleme ile ic ice oldugu icin AGIR katmanda kaldi (bkz. RAPOR_CI).
 func _run_fast_tests() -> void:
 	_run_ai_path_test()
+	_run_creature_type_test()
 	_run_water_color_test()
 	_run_time_selftest()
 	_run_muhendislik_selftest()
@@ -1498,13 +1620,22 @@ func is_walkable(cell: Vector2i) -> bool:
 ## PAHALI — boylece "dolas mi, kir mi" karari ayri bir mantik degil,
 ## maliyet karsilastirmasinin dogal sonucu oluyor.
 ## Kirilamaz olanlar (harita kenari, su, plato) gercekten kapali.
-func creature_break_cost(cell: Vector2i) -> int:
+## traits: {"climb": bool, "swim": bool} — yaratigin yetenekleri.
+## Ayni engel farkli yaratik icin farkli maliyet: TIRMANICI duvari asar
+## (ucuz), YUZUCU suyu gecebilir, digerleri icin ikisi de duvar.
+func creature_break_cost(cell: Vector2i, traits: Dictionary = {}) -> int:
 	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
 		return CreatureBalance.BLOCK_IMPASSABLE
-	# Oyuncunun yapisi ya da toplanabilir nesne: kirilabilir
+	# SU: yuzucu gecer (yavas), digerleri icin duvar
+	if is_swimmable(cell):
+		return CreatureBalance.SWIM_COST if bool(traits.get("swim", false)) \
+				else CreatureBalance.BLOCK_IMPASSABLE
+	# Oyuncunun yapisi ya da toplanabilir nesne
 	if _placed.has(cell) or _objects.has(cell):
-		return CreatureBalance.BREAK_COST
-	# Su / yuksek plato / diger kati arazi: kirilamaz
+		# TIRMANICI asar: kirmak yerine ustunden gecer, maliyet dusuk
+		return CreatureBalance.CLIMB_COST if bool(traits.get("climb", false)) \
+				else CreatureBalance.BREAK_COST
+	# Yuksek plato / diger kati arazi: tirmanici bile gecemez
 	return CreatureBalance.BLOCK_IMPASSABLE
 
 ## 11.5 MERDIVEN KURALI: from->to adimina izin var mi? Derin cukurdan
@@ -6787,15 +6918,22 @@ func _spawn_night_wave(night: int) -> void:
 	var room: int = CreatureBalance.MIN_MAX_ACTIVE - _live_creature_count()
 	want = mini(want, maxi(0, room))
 	var hp_mult: float = CreatureBalance.night_hp_mult(night)
+	# Tip karisimi VERIDEN geliyor (CreatureBalance.wave_mix): hangi tipin
+	# hangi geceden itibaren cikacagi TYPES.first_night'ta yaziyor, burada
+	# hicbir tip adi gecmiyor.
+	var mix: Array = CreatureBalance.wave_mix(night, want)
 	var made := 0
+	var sayim: Dictionary = {}
 	for i in want:
 		var cell := _pick_spawn_cell()
 		if cell == Vector2i(-999, -999):
 			break
-		spawn_creature(cell, "normal", hp_mult)
+		var tip: String = String(mix[i]) if i < mix.size() else "normal"
+		spawn_creature(cell, tip, hp_mult)
+		sayim[tip] = int(sayim.get(tip, 0)) + 1
 		made += 1
-	print("NIGHTWAVE: gece=%d istenen=%d dogan=%d aktif=%d" % [
-		night, want, made, _live_creature_count()])
+	print("NIGHTWAVE: gece=%d istenen=%d dogan=%d aktif=%d karisim=%s" % [
+		night, want, made, _live_creature_count(), str(sayim)])
 
 ## Kenar bandinda, oyuncuya ve Ocak'a uzak, yurunebilir bir hucre sec.
 ## Bulamazsa (-999,-999) doner. Denemeler ilerledikce mesafe kurali gevser
@@ -6859,13 +6997,18 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 	var dist_to_player: float = Vector2(cr.position.x - ppos.x,
 			cr.position.z - ppos.z).length()
 	cr.set_simplified(dist_to_player > CreatureBalance.FAR_SIMPLIFY_DIST)
-	# HEDEF: yakinda oyuncu varsa oyuncu, yoksa Ocak; Ocak yoksa yine oyuncu.
-	var target := ppos
-	var target_is_player := true
-	if dist_to_player > CreatureBalance.AGGRO_RANGE \
-			and hearth != Vector2i(-999, -999):
-		target = _cell_center(hearth)
-		target_is_player = false
+	# HEDEF: HER ZAMAN OCAK (kullanici karari). Once "yakinsa oyuncuyu
+	# kovala" vardi; yaratiklar oyuncunun pesine takilip kampi
+	# unutuyordu ve gecenin derdi "kac" oluyordu. Artik dert "OCAGI
+	# KORU": yaratiklar duz ocaga yuruyor, oyuncu araya girmek zorunda.
+	# Ocak yoksa (henuz kurulmamis) oyuncuya yonelirler — yoksa hedefsiz
+	# kalip dururlardi.
+	var target := _cell_center(hearth) if hearth != Vector2i(-999, -999) \
+			else ppos
+	# Oyuncu YOLA GIRDIYSE yine de vurur: bu bir hedef degisimi degil,
+	# temas tepkisi. Olmasaydi yaratik seni doverken bile umursamaz
+	# gorunurdu.
+	var target_is_player: bool = dist_to_player <= CreatureBalance.CONTACT_RANGE
 	# OYUNCUYA TEMAS: menzildeyse vur (bekleme suresiyle).
 	cr.attack_cd = maxf(0.0, cr.attack_cd - delta)
 	if target_is_player and dist_to_player <= CreatureBalance.CONTACT_RANGE:
@@ -6892,7 +7035,7 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 			or goal_shift >= CreatureBalance.REPATH_TARGET_SHIFT:
 		cr.repath_cd = CreatureBalance.REPATH_SECONDS
 		cr.path_goal = goal
-		cr.path = CreatureAI.find_path(self, cr.cell(), goal)
+		cr.path = CreatureAI.find_path(self, cr.cell(), goal, cr.traits())
 	# Ulasilan dugumleri yoldan dus
 	while not cr.path.is_empty() and Vector2i(cr.path[0]) == cr.cell():
 		cr.path.remove_at(0)
@@ -6910,6 +7053,13 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 		cr.side_time -= delta
 		dir = Vector3(-dir.z, 0.0, dir.x) * cr.side_sign
 		speed *= CreatureBalance.STUCK_SIDE_SPEED
+	# YETENEKLER burada da okunuyor. Yol bulmaya baglamak YETMIYOR:
+	# A* yuzucuyu sudan gecirse bile hareket kodu "yurunemez" deyip
+	# durdurursa yaratik suyun kiyisinda takilir kalir. Iki taraf ayni
+	# yetenegi okumali.
+	var yet: Dictionary = cr.traits()
+	var yuzucu: bool = bool(yet.get("swim", false))
+	var tirmanici: bool = bool(yet.get("climb", false))
 	# `cr` tipsiz -> cr.position Variant; ACIK tip sart (yoksa parse hatasi).
 	var next_pos: Vector3 = cr.position + dir * speed * delta
 	var next_cell := Vector2i(floori(next_pos.x), floori(next_pos.z))
@@ -6917,14 +7067,27 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 	# gecerli buluyor; yani buraya gelmek "yol beni bilerek duvarin
 	# ustunden gecirdi" demek. Dur ve vur.
 	if next_cell != cr.cell() and not is_walkable(next_cell):
-		cr.struct_cd = maxf(0.0, cr.struct_cd - delta)
-		if _placed.has(next_cell) or _objects.has(next_cell):
-			if cr.struct_cd <= 0.0:
-				cr.struct_cd = CreatureBalance.STRUCT_ATTACK_COOLDOWN
-				_structure_take_hit(next_cell, CreatureBalance.STRUCT_DAMAGE, dir)
-				cr.lunge(dir)
-		_bump_stuck(cr, delta)
-		return
+		var yapi: bool = _placed.has(next_cell) or _objects.has(next_cell)
+		# GECEBILEN TIP: kirmaz, gecer — ama yavaslayarak (bedava degil).
+		if yuzucu and is_swimmable(next_cell):
+			speed *= CreatureBalance.SWIM_SLOW
+			next_pos = cr.position + dir * speed * delta
+		elif tirmanici and yapi:
+			speed *= CreatureBalance.CLIMB_SLOW
+			next_pos = cr.position + dir * speed * delta
+		else:
+			cr.struct_cd = maxf(0.0, cr.struct_cd - delta)
+			if yapi:
+				if cr.struct_cd <= 0.0:
+					cr.struct_cd = CreatureBalance.STRUCT_ATTACK_COOLDOWN
+					# KIRICI yapiya cok daha sert vurur (struct_mult).
+					var sm: int = int(CreatureBalance.stat(
+							String(cr.type), "struct_mult", 1))
+					_structure_take_hit(next_cell,
+							CreatureBalance.STRUCT_DAMAGE * sm, dir)
+					cr.lunge(dir)
+			_bump_stuck(cr, delta)
+			return
 	var before: Vector3 = cr.position
 	cr.position = Vector3(next_pos.x,
 			ground_height(next_pos.x, next_pos.z), next_pos.z)
