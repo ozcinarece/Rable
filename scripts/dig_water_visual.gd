@@ -69,8 +69,12 @@ const FLOOR_ROCK := "rock_shard"
 ## Referans Longvinter: parlak, doygun, DUZ renk bantlari. Gercekci
 ## derinlik gradyani DEGIL. Bantlar arasi gecis SERT (stilize kademe).
 ## Esikler metre cinsinden su derinligi.
-const BAND_SHALLOW_MAX := 0.18   # m — bu altinda sig
-const BAND_MID_MAX := 0.55       # m — bu altinda orta, ustu derin
+## OLCULDU: gol yuzeyi LAKE_Y = -0.15, gol dibi -0.40 -> EN DERIN NOKTA
+## yalnizca 0.25 m. Ilk esikler (0.18 / 0.55) gercek dunyaya gore
+## secilmisti ve "derin" bandi ULASILAMAZ kaliyordu; gol tek duz acik
+## cyan gorunuyordu. Esikler gercek derinlik araligina olceklendi.
+const BAND_SHALLOW_MAX := 0.08   # m — bu altinda sig
+const BAND_MID_MAX := 0.17       # m — bu altinda orta, ustu derin
 const WATER_SHALLOW := Color(0.498, 0.831, 0.847)  # #7FD4D8 acik turkuaz
 const WATER_MID := Color(0.353, 0.663, 0.902)      # #5AA9E6 canli mavi
 const WATER_DEEP := Color(0.231, 0.490, 0.769)     # #3B7DC4 koyu ama MAVI
@@ -89,8 +93,10 @@ static func water_color(depth_m: float) -> Color:
 ## Referanstaki EN BELIRGIN detay. Hucrenin ~%20'si genisliginde,
 ## kenar boyunca hafif duzensiz (hash ile esik oynatiliyor).
 const FOAM_COLOR := Color(0.918, 0.969, 0.969)   # #EAF7F7
-const FOAM_DEPTH := 0.09          # m — bu sigliktan az yer kopuk
-const FOAM_JITTER := 0.035        # m — esigin duzensizlik payi
+## Kopuk bandi da ayni olcege cekildi: 0.09 m gercek gol derinliginin
+## ucte biriydi, kiyi halkasi kocaman cikiyordu.
+const FOAM_DEPTH := 0.035         # m — bu sigliktan az yer kopuk
+const FOAM_JITTER := 0.012        # m — esigin duzensizlik payi
 
 ## B4. SAYDAMLIK — sigda hafif saydam, derinde opak.
 const WATER_ALPHA_SHALLOW := 0.80
