@@ -122,20 +122,6 @@ const SHORE_SCATTER_CHANCE := 35   # %
 const WET_DARKEN := 0.72        # kara rengi carpani
 const WET_BAND_CELLS := 1       # kac hucre iceri
 
-## B3. HAREKET — cok hafif dalga. Iki sinus, DUSUK genlik, YAVAS.
-## "Titresen jole" degil, "hafif kipirdayan gol".
-const WAVE_AMP := 0.018         # m
-const WAVE_FREQ_A := 0.9
-const WAVE_FREQ_B := 1.7
-const WAVE_SPEED := 0.35
-
-## B5. PARILTI — yuzeyde seyrek parilti noktalari. Gunes yonune gore
-## gunduz soguk beyaz, gece Ocak/mesale isiginda sicak ton.
-const SPARKLE_CHANCE := 6       # % su hucresi basina
-const SPARKLE_DAY := Color(1.0, 1.0, 0.96)
-const SPARKLE_NIGHT := Color(1.0, 0.74, 0.42)
-const SPARKLE_SIZE := 0.12
-
 # =======================================================================
 # C. KALITE KADEMESI
 # =======================================================================

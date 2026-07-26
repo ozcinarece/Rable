@@ -813,12 +813,40 @@ func _setup_screenshot(save_path: String) -> void:
 	_run_save_load_selftest()
 	get_tree().quit()
 
+## SU RENK TESTI — kirmizi bug'in tekrarini yakalamak icin.
+## Bug sozdizimi hatasi DEGILDI: mesh yazici ile shader'in sozlesmesi
+## ayrisinca kod parse-temiz kaldi ama ekran cop cizdi. O yuzden burada
+## sozdizimi degil DEGER kontrol ediliyor: her bantta beklenen renk
+## uretiliyor mu, ve kirmizi kanal yesil/maviyi geciyor mu (gecerse
+## "derinlik R kanalina yaziliyor" hatasi geri gelmis demektir).
+func _run_water_color_test() -> void:
+	var ornek := [
+		{"ad": "kopuk", "d": 0.03},
+		{"ad": "sig", "d": 0.14},
+		{"ad": "orta", "d": 0.35},
+		{"ad": "derin", "d": 0.90},
+	]
+	var satir := "WATERCOLORTEST:"
+	var kirmizi_baskin := false
+	for e: Dictionary in ornek:
+		var c := _water_rgba(float(e["d"]), 10.0, 10.0)
+		satir += " %s(%.2fm)=#%s a=%.2f" % [
+			String(e["ad"]), float(e["d"]), c.to_html(false), c.a]
+		# Su MAVI/TURKUAZ ailesinde: kirmizi asla mavinin onune gecmemeli
+		if c.r > c.b + 0.02:
+			kirmizi_baskin = true
+	satir += " kirmizi_baskin=%s" % str(kirmizi_baskin)
+	print(satir)
+	if kirmizi_baskin:
+		push_error("SU RENGI BOZUK: kirmizi kanal maviyi geciyor")
+
 ## HIZLI KATMAN: kare almayan, beklemesiz mantik testleri. Bunlar
 ## --headless'te de kosar; agir gorsel akisin hicbir parcasina dokunmaz.
 ## Kapsam BILEREK dar: harita uretimi, kamera, zaman, muhendislik,
 ## yaratik, kayit/yukleme. Kazi/su/tarim/UI testleri kare alma ve
 ## bekleme ile ic ice oldugu icin AGIR katmanda kaldi (bkz. RAPOR_CI).
 func _run_fast_tests() -> void:
+	_run_water_color_test()
 	_run_time_selftest()
 	_run_muhendislik_selftest()
 	_run_creature_selftest()
