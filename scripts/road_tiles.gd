@@ -8,6 +8,17 @@ extends RefCounted
 ## X'te -90 derece. Taban zaten hucre boyunda oldugu icin ek olcek yok;
 ## yine de kod AABB'den normalize eder (model degisirse bozulmasin).
 
+## DEVRE DISI — bu sistem artik cizilmiyor. Yerine SERPINTI modeli geldi
+## (road_scatter.gd + stone_scatter_a.glb). Sebep: karo hucreyi TAM
+## dolduruyor, yani her yol hucresi bir kare leke; izgara kenari uc katman
+## dekorla kirilmaya calisildi ama tepeden bakista geri geliyordu.
+## Serpinti modelinde hucrenin ICI bosluklu, aralardan zemin cimi
+## goruluyor ve "kenar cizgisi" diye bir sey olusmuyor.
+##
+## SILINMEDI, KAPATILDI: geri donus sigortasi. true yapmak + road_scatter
+## .SCATTER_ON'u false yapmak eski gorunumu aynen geri getirir.
+const TILE_MODE_ON := false
+
 const PATHS := {
 	"road_tile_a": "res://assets/models/test/road_tile_a.glb",
 	"road_tile_b": "res://assets/models/test/road_tile_b.glb",

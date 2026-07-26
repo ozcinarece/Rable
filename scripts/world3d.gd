@@ -87,12 +87,19 @@ const PLACE_MODELS := {
 			"behavior": "station", "max_hp": 120},
 	"sandik": {"model": "res://assets/models/test/storege_box.glb",
 			"h": 0.55, "solid": true, "behavior": "station", "max_hp": 60},
-	# h 0.9 karaktere gore devasa bir odun yiginiydi -> 0.38 (ates cukuru
-	# insanin dizine gelir, gogsune degil). "tint": Meshy dokusu fazla
-	# aciktı, sonuk bir ocak icin koyu yanmis odun tonuna cekilir.
-	"ocak": {"model": "res://assets/models/tools/campfire-pit.glb",
-			"h": 0.38, "solid": true, "behavior": "hearth", "max_hp": 400,
-			"tint": Color(0.52, 0.42, 0.34)},
+	# OCAK = ancient_heart. Onceki model campfire-pit.glb (odun yigini)
+	# idi; Ocak artik gecenin merkezi -- yaratiklar HER ZAMAN ona
+	# yuruyor, yani bir kamp atesinden fazlasi olmali.
+	# OLCULDU: 1.000 x 0.326 x 0.959 -> model zaten Y-up, dondurme yok.
+	# "long" 1.0: en uzun eksen tam 1 hucre. "h" ile olceklenseydi
+	# (0.38 / 0.326 = 1.17) ayak izi hucreyi tasardi. Boylece kendi
+	# oranini koruyor: 1 m eninde, 33 cm yuksekliginde alcak tas kalp.
+	# tint: Meshy dokulari "isik pismis" ve emissive 1,1,1 ile geliyor
+	# (beyaz parlama tuzagi). _tame_meshy_materials isimayi kapatir;
+	# ton hafif tutuldu, ilk kareden sonra ayarlanabilir.
+	"ocak": {"model": "res://assets/models/test/ancient_heart.glb",
+			"long": 1.0, "h": 0.33, "solid": true, "behavior": "hearth",
+			"max_hp": 400, "tint": Color(0.86, 0.84, 0.86)},
 	"platform": {"model": "platform", "h": 1.5, "solid": false,
 			"behavior": "platform", "max_hp": 100, "rotatable": true},
 	"kamp_evi": {"model": "res://assets/models/tools/tent.glb",
@@ -919,8 +926,11 @@ func _run_creature_type_test() -> void:
 		for k: String in ["hp", "speed", "damage", "essence", "first_night", "glb"]:
 			if not d.has(k):
 				alan_eksik.append("%s.%s" % [t, k])
+		# Modeller GitHub web arayuzunden cogunlukla assets/models/test/
+		# altina yukleniyor; creature.gd ikisine de bakiyor, test de oyle.
 		var g := String(d.get("glb", ""))
-		if g == "" or not ResourceLoader.exists(g):
+		var alt := "res://assets/models/test/" + g.get_file()
+		if g == "" or not (ResourceLoader.exists(g) or ResourceLoader.exists(alt)):
 			eksik_glb.append(t)
 
 	# 2) Yetenek -> yol bulma baglantisi. Sag tarafa gecmek icin TEK
@@ -1077,6 +1087,43 @@ func _run_creature_combat_test() -> void:
 	if not kamp_hedefi:
 		push_error("Ocak yokken yaratiklarin gidecegi yer tanimsiz")
 
+## YOL SERPINTISI OLCU TESTI — "yukseklik pazarliksiz" sartinin SAYISAL
+## kaniti. Ekran goruntusu gozle bakmak icin; bu test yassilastirmayi
+## rakamla yakalar. Modelin kalinligi olculur, dunya olcegine cevrilir ve
+## zeminden ne kadar disarida kaldigi yazilir.
+func _run_road_scatter_test() -> void:
+	var mesh := _road_scatter_mesh()
+	if mesh == null:
+		print("SCATTERTEST: model YOK (%s)" % RoadScatter.MODEL_PATH)
+		push_error("stone_scatter_a.glb bulunamadi")
+		return
+	var aabb := mesh.get_aabb()
+	var span: float = maxf(aabb.size.x, aabb.size.y) if RoadScatter.MODEL_Z_UP \
+			else maxf(aabb.size.x, aabb.size.z)
+	var k: float = RoadScatter.CELL_SPAN / span
+	var kalinlik: float = (aabb.size.z if RoadScatter.MODEL_Z_UP else aabb.size.y) * k
+	var disarida: float = RoadScatter.TOP_ABOVE
+	var gomulu: float = kalinlik - disarida
+	# Z-up dogrulamasi: en INCE eksen hangisi? Model Z-up ise Z olmali.
+	var en_ince := "x"
+	if aabb.size.y < aabb.size.x and aabb.size.y <= aabb.size.z:
+		en_ince = "y"
+	elif aabb.size.z < aabb.size.x and aabb.size.z <= aabb.size.y:
+		en_ince = "z"
+	var z_up_dogru: bool = (en_ince == "z") == RoadScatter.MODEL_Z_UP
+	print(("SCATTERTEST: aabb=%.3fx%.3fx%.3f en_ince=%s z_up_ayari=%s(%s) "
+			+ "k=%.3f kalinlik=%.3fm disarida=%.3fm gomulu=%.3fm golge=%s") % [
+		aabb.size.x, aabb.size.y, aabb.size.z, en_ince,
+		str(RoadScatter.MODEL_Z_UP), str(z_up_dogru), k, kalinlik,
+		disarida, gomulu, str(RoadScatter.CAST_SHADOW)])
+	if not z_up_dogru:
+		push_error("Model yonu yanlis: MODEL_Z_UP ile olculen ince eksen uyusmuyor")
+	# Yassilastirma yasagi: kalinlik olcekten sonra da korunmali.
+	if kalinlik < 0.05:
+		push_error("Tas kalinligi 5 cm'nin altina dustu — ezilmis leke riski")
+	if disarida < 0.015:
+		push_error("Taslar zemine gomuldu (disarida < 1.5 cm)")
+
 ## HIZLI KATMAN: kare almayan, beklemesiz mantik testleri. Bunlar
 ## --headless'te de kosar; agir gorsel akisin hicbir parcasina dokunmaz.
 ## Kapsam BILEREK dar: harita uretimi, kamera, zaman, muhendislik,
@@ -1086,6 +1133,7 @@ func _run_fast_tests() -> void:
 	_run_ai_path_test()
 	_run_creature_type_test()
 	_run_creature_combat_test()
+	_run_road_scatter_test()
 	_run_water_color_test()
 	_run_time_selftest()
 	_run_muhendislik_selftest()
@@ -3353,6 +3401,7 @@ func _add_path_strip(from: Vector2i, dir: Vector2i, len_cells: int,
 #      sinir cizgisini asil kiran budur; karo hizasi disina tastigi icin
 #      goz "izgara" gormez.
 const RoadTiles = preload("res://scripts/road_tiles.gd")
+const RoadScatter = preload("res://scripts/road_scatter.gd")
 
 const ROAD_NB: Array[Vector2i] = [Vector2i(0, -1), Vector2i(1, 0),
 		Vector2i(0, 1), Vector2i(-1, 0)]   # K, D, G, B (yaw 0/90/180/270)
@@ -3389,6 +3438,10 @@ func _road_basis(yaw_deg: float, scale_v: float) -> Basis:
 	b = Basis().rotated(Vector3.UP, deg_to_rad(yaw_deg)) * b
 	return b.scaled(Vector3(scale_v, scale_v, scale_v))
 
+## Yol cizimi. IKI MODEL var, ayni veriyi (_path_cells) okuyorlar:
+##   SERPINTI (aktif)  — road_scatter.gd, stone_scatter_a.glb
+##   KARO (kapali)     — road_tiles.gd, road_tile_a/b/c.glb
+## Karo modeli silinmedi, bayrakla kapatildi (geri donus sigortasi).
 func _build_road() -> void:
 	for n in _road_nodes:
 		if is_instance_valid(n):
@@ -3397,6 +3450,13 @@ func _build_road() -> void:
 	_road_spill.clear()
 	if _path_cells.is_empty():
 		return
+	if RoadScatter.SCATTER_ON:
+		_build_road_scatter()
+		return
+	if RoadTiles.TILE_MODE_ON:
+		_build_road_tiles()
+
+func _build_road_tiles() -> void:
 	var mult: float = float(EnvModels.SCATTER_TIER_MULT.get(_quality_tier, 1.0))
 	var has_edge: bool = RoadTiles.has_model("road_tile_edge")
 	# tur -> Array[Transform3D]
@@ -3522,6 +3582,251 @@ func _build_road() -> void:
 		if sn != null:
 			add_child(sn)
 			_road_nodes.append(sn)
+
+# --- SERPINTI MODELI ----------------------------------------------------
+## Hucrenin kac 4-yon komsusu yol? (0-4)
+func _road_nb_count(cell: Vector2i) -> int:
+	var n := 0
+	for d: Vector2i in ROAD_NB:
+		if _path_cells.has(cell + d):
+			n += 1
+	return n
+
+## Her yol hucresi icin "terminale uzaklik" (hucre). Terminal = 4-yon
+## komsusu 1 ya da 0 olan hucre, yani yolun bittigi yer. Uc kuralinin
+## SON HUCREYE degil son BIRKAC hucreye uygulanmasi bunun icin: yol
+## tek karede degil, birkac hucrede dagilarak bitmeli.
+func _road_end_dist() -> Dictionary:
+	var dist: Dictionary = {}
+	var kuyruk: Array = []
+	for cell: Vector2i in _path_cells:
+		if _road_nb_count(cell) <= 1:
+			dist[cell] = 0
+			kuyruk.append(cell)
+	var i := 0
+	while i < kuyruk.size():
+		var c: Vector2i = kuyruk[i]
+		i += 1
+		var nd: int = int(dist[c]) + 1
+		if nd > RoadScatter.END_RUN:
+			continue
+		for d: Vector2i in ROAD_NB:
+			var g: Vector2i = c + d
+			if not _path_cells.has(g) or dist.has(g):
+				continue
+			dist[g] = nd
+			kuyruk.append(g)
+	return dist
+
+var _road_scatter_cells := 0   # ROADTEST
+var _road_end_cells := 0
+var _road_stray_cells := 0
+var _road_tuft_cells := 0
+var _road_seam_count := 0   # derz dolgusu ornek sayisi
+
+func _build_road_scatter() -> void:
+	var tier: Dictionary = RoadScatter.tier_of(_quality_tier)
+	var end_dist := _road_end_dist()
+	var tas: Array = []          # Transform3D
+	var tonlar: Array = []       # her ornegin renk carpani
+	var moss: Array = []
+	var tufts: Array = []
+	var stray: Array = []
+	_road_scatter_cells = 0
+	_road_end_cells = 0
+	_road_stray_cells = 0
+	_road_tuft_cells = 0
+	_road_seam_count = 0
+
+	for cell: Vector2i in _path_cells:
+		var age := String(_path_cells[cell])
+		var open_dirs: Array[int] = []
+		for i in ROAD_NB.size():
+			if not _path_cells.has(cell + ROAD_NB[i]):
+				open_dirs.append(i)
+
+		# --- Hucre basina varyasyon: donus + olcek + konum ---
+		var yaw: float = float(int(RoadScatter.hash01(cell.x, cell.y, 501)
+				* float(RoadScatter.YAW_STEPS)) % RoadScatter.YAW_STEPS) * 90.0
+		var sc: float = RoadScatter.SCALE_MIN \
+				+ RoadScatter.hash01(cell.x, cell.y, 503) \
+				* (RoadScatter.SCALE_MAX - RoadScatter.SCALE_MIN)
+		var off: float = RoadScatter.OFFSET_MAX
+		# UC RAMPASI: terminale yakin hucreler kucultulur ve daha cok
+		# oynatilir -> yol tek hamlede kesilmez, dagilarak biter.
+		if end_dist.has(cell):
+			var t: float = float(int(end_dist[cell])) / float(RoadScatter.END_RUN)
+			sc *= lerpf(RoadScatter.END_SCALE, 1.0, clampf(t, 0.0, 1.0))
+			off += RoadScatter.END_OFFSET_EXTRA * (1.0 - clampf(t, 0.0, 1.0))
+			if int(end_dist[cell]) == 0:
+				_road_end_cells += 1
+		var ox: float = (RoadScatter.hash01(cell.x, cell.y, 507) - 0.5) * 2.0 * off
+		var oz: float = (RoadScatter.hash01(cell.x, cell.y, 509) - 0.5) * 2.0 * off
+		tas.append(Transform3D(Basis().rotated(Vector3.UP, deg_to_rad(yaw))
+				.scaled(Vector3(sc, sc, sc)),
+				_cell_center(cell) + Vector3(ox, 0.0, oz)))
+		# Ton oynamasi: ±%5, hucreden deterministik.
+		var j: float = 1.0 + (RoadScatter.hash01(cell.x, cell.y, 511) - 0.5) \
+				* 2.0 * RoadScatter.TINT_JITTER
+		tonlar.append(Color(j, j, j))
+		_road_scatter_cells += 1
+
+		# --- DERZ DOLGUSU: iki yol hucresinin ARASINA kucuk obek ---
+		# Izgarayi asil kiran sey bu. Yalniz olcek buyutmek yetmiyordu:
+		# 1 hucre genisligindeki yolda komsuluk KENAR uzerinden oluyor,
+		# iki hucrenin tam ortasi bos kaliyor ve tepeden bakista yol
+		# noktali bir dizi gibi goruluyordu.
+		if RoadScatter.SEAM_ON:
+			for sd: Vector2i in [Vector2i(1, 0), Vector2i(0, 1)]:
+				if not _path_cells.has(cell + sd):
+					continue
+				var mid := _cell_center(cell) \
+						+ Vector3(float(sd.x) * 0.5, 0.0, float(sd.y) * 0.5)
+				var sy: float = float(int(RoadScatter.hash01(cell.x, cell.y,
+						561 + sd.x) * 4.0) % 4) * 90.0
+				var ss2: float = RoadScatter.SEAM_SCALE_MIN \
+						+ RoadScatter.hash01(cell.x, cell.y, 563 + sd.y) \
+						* (RoadScatter.SEAM_SCALE_MAX - RoadScatter.SEAM_SCALE_MIN)
+				tas.append(Transform3D(
+						Basis().rotated(Vector3.UP, deg_to_rad(sy))
+						.scaled(Vector3(ss2, ss2, ss2)), mid))
+				var j2: float = 1.0 + (RoadScatter.hash01(cell.x, cell.y, 567)
+						- 0.5) * 2.0 * RoadScatter.TINT_JITTER
+				tonlar.append(Color(j2, j2, j2))
+				_road_seam_count += 1
+
+		# --- Taslarin USTUNE yosun ---
+		if bool(tier.get("moss", true)) \
+				and RoadScatter.hash01(cell.x, cell.y, 521) * 100.0 \
+				< float(RoadScatter.moss_chance(age)):
+			moss.append(_road_face_xform(cell, 523))
+
+		if open_dirs.is_empty():
+			continue
+
+		# --- Kenar hucresi: 0-1 cim tutami, TAS KENARINA bitisik ---
+		# Yolun ICINE ot konmuyor: zemin cimi zaten aralardan goruluyor.
+		var tc: float = float(RoadScatter.EDGE_TUFT_CHANCE) \
+				* float(tier.get("tuft", 1.0))
+		if RoadScatter.hash01(cell.x, cell.y, 531) * 100.0 < tc:
+			tufts.append(_road_edge_xform(cell, open_dirs, 533, 0.0))
+			_road_tuft_cells += 1
+
+		# --- 1 hucre disina kacak tas ---
+		if not bool(tier.get("stray", true)):
+			continue
+		for i in open_dirs:
+			var g: Vector2i = cell + ROAD_NB[i]
+			if _road_spill.has(g) or not _road_spill_ok(g):
+				continue
+			if RoadScatter.hash01(g.x, g.y, 541) * 100.0 \
+					>= float(RoadScatter.STRAY_CHANCE):
+				continue
+			_road_spill[g] = true
+			var ss: float = RoadScatter.STRAY_SCALE_MIN \
+					+ RoadScatter.hash01(g.x, g.y, 543) \
+					* (RoadScatter.STRAY_SCALE_MAX - RoadScatter.STRAY_SCALE_MIN)
+			var rr: float = RoadScatter.hash01(g.x, g.y, 547) * TAU
+			var gx: float = (RoadScatter.hash01(g.x, g.y, 549) - 0.5) * 0.5
+			var gz: float = (RoadScatter.hash01(g.x, g.y, 551) - 0.5) * 0.5
+			stray.append(Transform3D(
+					Basis().rotated(Vector3.UP, rr).scaled(Vector3(ss, ss, ss)),
+					_cell_center(g) + Vector3(gx, 0.0, gz)))
+			_road_stray_cells += 1
+
+	var sn := _road_scatter_node(tas, tonlar)
+	if sn != null:
+		add_child(sn)
+		_road_nodes.append(sn)
+	if not moss.is_empty():
+		var mn := _road_moss_node(moss)
+		if mn != null:
+			add_child(mn)
+			_road_nodes.append(mn)
+	if not tufts.is_empty():
+		var tn := _env_scatter_node("grass_tuft", tufts,
+				RoadScatter.EDGE_TUFT_SPAN)
+		if tn != null:
+			add_child(tn)
+			_road_nodes.append(tn)
+	if not stray.is_empty():
+		var yn := _env_scatter_node("path_stone", stray)
+		if yn != null:
+			add_child(yn)
+			_road_nodes.append(yn)
+
+## Serpinti MultiMesh'i.
+## YUKSEKLIK KURALI burada uygulaniyor: model Z-up geldigi icin X'te -90
+## yatiriliyor, boylece modelin KALINLIGI dunya Y'sine geciyor. Ust yuz
+## TOP_ABOVE kadar disarida kalacak sekilde asagi kaydiriliyor. Hicbir
+## eksende yassilastirma YOK — "zemine ezilmis leke" tam olarak bundan
+## kacinmak icin yasak.
+func _road_scatter_node(list: Array, tonlar: Array) -> Node3D:
+	if list.is_empty():
+		return null
+	var mesh := _road_scatter_mesh()
+	if mesh == null:
+		return null
+	var aabb := mesh.get_aabb()
+	# Z-up model: ayak izi XY, kalinlik Z. Yatirma sonrasi Y = eski Z.
+	var span: float = maxf(0.001, maxf(aabb.size.x, aabb.size.y)) \
+			if RoadScatter.MODEL_Z_UP \
+			else maxf(0.001, maxf(aabb.size.x, aabb.size.z))
+	var k: float = RoadScatter.CELL_SPAN / span
+	# Yatirma sonrasi ust yuzun model-uzayindaki yeri
+	var top: float = (aabb.position.z + aabb.size.z) if RoadScatter.MODEL_Z_UP \
+			else (aabb.position.y + aabb.size.y)
+	var yatir := Basis()
+	if RoadScatter.MODEL_Z_UP:
+		yatir = Basis().rotated(Vector3.RIGHT, -PI * 0.5)
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = true          # instance_count'tan ONCE acilmali
+	mm.mesh = mesh
+	mm.instance_count = list.size()
+	for i in list.size():
+		var t: Transform3D = list[i]
+		var s: float = t.basis.get_scale().x * k
+		var b: Basis = Basis().rotated(Vector3.UP, t.basis.get_euler().y) * yatir
+		b = b.scaled(Vector3(s, s, s))
+		var y: float = RoadScatter.TOP_ABOVE - top * s
+		mm.set_instance_transform(i, Transform3D(b, t.origin + Vector3(0, y, 0)))
+		var tc: Color = tonlar[i]
+		mm.set_instance_color(i, tc)
+	var mi := MultiMeshInstance3D.new()
+	mi.multimesh = mm
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON \
+			if RoadScatter.CAST_SHADOW \
+			else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
+
+var _scatter_mesh_cache: Mesh = null
+
+func _road_scatter_mesh() -> Mesh:
+	if _scatter_mesh_cache != null:
+		return _scatter_mesh_cache
+	if not ResourceLoader.exists(RoadScatter.MODEL_PATH):
+		return null
+	var scene: Node = load(RoadScatter.MODEL_PATH).instantiate()
+	_tame_meshy_materials(scene, RoadScatter.TINT)
+	for mi2: MeshInstance3D in scene.find_children("*", "MeshInstance3D", true, false):
+		if mi2.mesh == null:
+			continue
+		_scatter_mesh_cache = mi2.mesh
+		# GLTF materyali surface_override'da durur; MultiMesh yalniz
+		# MESH'i kullanir -> tasinmazsa taslar BEMBEYAZ cikar.
+		if _scatter_mesh_cache is ArrayMesh:
+			for si in _scatter_mesh_cache.get_surface_count():
+				var sm := mi2.get_active_material(si)
+				if sm is StandardMaterial3D:
+					var m: StandardMaterial3D = sm
+					# Hucre basina ton oynamasi ornek RENGIYLE veriliyor;
+					# materyalin onu albedoya carpmasi icin sart.
+					m.vertex_color_use_as_albedo = true
+					(_scatter_mesh_cache as ArrayMesh).surface_set_material(si, m)
+		break
+	scene.queue_free()
+	return _scatter_mesh_cache
 
 ## Sacilma yalnizca YURUNEBILIR, bos zemine (cim/toprak/kum) duser.
 func _road_spill_ok(g: Vector2i) -> bool:
@@ -3996,10 +4301,12 @@ func _run_perf_probe(save_path: String) -> void:
 
 
 # --- ROADTEST: tas yol sistemi dogrulamasi -------------------------------
-# Sistem SALT GORSEL oldugu icin test de gorsel dogruluga bakar: karolar
-# dosendi mi, kenar erimesinin uc katmani (kenar karosu / karo ustu yosun
-# + ot / komsu cime sacilma) calisti mi, miras ile yeni yol arasinda
-# YOSUN FARKI olustu mu.
+# Sistem SALT GORSEL: test de gorsel dogruluga bakar. SERPINTI modelinde
+# olculen sey karo hizasi degil, "yol okunuyor mu + kenar cizgisi var mi":
+#   - hucre basina tek serpinti ornegi doseniyor mu
+#   - uc rampasi calisti mi (terminal hucrelerde kucuk olcek)
+#   - kenar hucrelerinde 0-1 cim tutami, disariya kacak tas
+#   - miras/yeni yosun farki
 func _run_road_test(save_path: String) -> void:
 	var miras := 0
 	var yeni := 0
@@ -4008,9 +4315,7 @@ func _run_road_test(save_path: String) -> void:
 			yeni += 1
 		else:
 			miras += 1
-	# Kenar hucreleri (komsusunda yol olmayan) ve ic hucreler
 	var kenar := 0
-	var tek_acik := 0
 	for cell: Vector2i in _path_cells:
 		var open_n := 0
 		for d: Vector2i in ROAD_NB:
@@ -4018,60 +4323,107 @@ func _run_road_test(save_path: String) -> void:
 				open_n += 1
 		if open_n > 0:
 			kenar += 1
-		if open_n == 1:
-			tek_acik += 1
-	# Karo/dekor ornek sayilari (MultiMesh instance_count toplami)
-	var karo := 0
-	var dekor := 0
+	var ornek := 0
 	for n in _road_nodes:
 		if not is_instance_valid(n) or not (n is MultiMeshInstance3D):
 			continue
 		var mm: MultiMesh = (n as MultiMeshInstance3D).multimesh
 		if mm == null:
 			continue
-		karo += mm.instance_count
-	dekor = _road_spill.size()
-	# Kenar karosu GERCEKTEN kullanildi mi (yoksa varyanta mi dusuldu)
-	var kenar_karo := _road_edge_used
-	var edge_var: bool = RoadTiles.has_model("road_tile_edge")
+		ornek += mm.instance_count
 	var moss_var: bool = RoadTiles.has_model("moss_patch")
-	# Kavisli yolun yakin karesi (kenar gecisi gorunsun)
+	# ZEMIN KONTROLU (gorev 1): yol hucresinde zemin CIM kalmali, toprak
+	# boyama/serit OLMAMALI. Gozle bakmak yaniltir — ilk karede yolun
+	# altinda kahverengi bir bant vardi ama olculdugunde o bandin YOLDAN
+	# GELMEDIGI, arazinin kendi toprak lekesi oldugu goruldu. Sayi:
+	# yol hucrelerinin zemin karakteri dagilimi.
+	var zemin: Dictionary = {}
+	for cell: Vector2i in _path_cells:
+		var gch := String(_ground_char.get(cell, "?"))
+		zemin[gch] = int(zemin.get(gch, 0)) + 1
+	# Model olculeri (yukseklik kaniti rakamla)
+	var kalinlik := 0.0
+	var mesh := _road_scatter_mesh()
+	if mesh != null:
+		var ab := mesh.get_aabb()
+		var sp: float = maxf(ab.size.x, ab.size.y)
+		kalinlik = ab.size.z * (RoadScatter.CELL_SPAN / maxf(0.001, sp))
+
+	# --- (a) TEK HUCRE YANDAN: yukseklik kaniti ---
+	# Kamera neredeyse zemin hizasinda: taslarin zeminden ciktigi
+	# gorulmezse gorev sarti saglanmamis demektir.
+	var tek := _road_lone_cell()
+	var tp := _cell_center(tek)
+	_cam_locked = true
+	camera.position = tp + Vector3(0.0, 0.22, 1.6)
+	camera.look_at(tp + Vector3(0.0, 0.03, 0.0))
+	await get_tree().create_timer(0.7).timeout
+	_snap(save_path.replace(".png", "_yol_tek_yandan.png"))
+
+	# --- (b) KAVISLI YOL, ORTA MESAFE ---
 	var focus := _camp_center + Vector2i(2, 12)
 	var fp := _cell_center(focus)
-	_cam_locked = true
 	camera.position = fp + Vector3(-3.2, 2.6, 4.2)
 	camera.look_at(fp + Vector3(0.5, 0.0, 0.0))
 	await get_tree().create_timer(0.7).timeout
 	_snap(save_path.replace(".png", "_yol.png"))
-	# SONUC TESTI (gorev 3b): TAM TEPEDEN bakis. Yol ile cim arasinda net
-	# bir cizgi kalmamali, ama yolun nereye gittigi rahat okunmali. Kare
-	# goz kararina birakiliyor; olcu tarafini asagidaki kenar_ortulu /
-	# derz_ot oranlari veriyor.
+	# Tepeden: yol ile cim arasinda net cizgi kalmamali ama yol okunmali
 	camera.position = fp + Vector3(0.0, 9.0, 0.01)
 	camera.look_at(fp)
 	await get_tree().create_timer(0.7).timeout
 	_snap(save_path.replace(".png", "_yol_tepe.png"))
-	# Genis kare: kavisin tamami + kampla baglantisi
-	camera.position = _cell_center(_camp_center) + Vector3(2.0, 14.0, 20.0)
+
+	# --- (d) KAMP GENEL: gunduz + gece ---
+	var cp := _cell_center(_camp_center)
+	camera.position = cp + Vector3(2.0, 14.0, 20.0)
 	camera.look_at(_cell_center(_camp_center + Vector2i(1, 9)))
 	await get_tree().create_timer(0.7).timeout
 	_snap(save_path.replace(".png", "_yol_genis.png"))
-	var line := ("ROADTEST: hucre=%d (miras=%d yeni=%d) kenar=%d tek_acik=%d "
-			+ "karo_ornek=%d kenar_karo=%d sacilma=%d "
-			+ "kenar_ortulu=%d/%d (%%%.0f) derz_ot=%d/%d (%%%.0f) "
-			+ "edge_glb=%s moss_glb=%s") % [
-		_path_cells.size(), miras, yeni, kenar, tek_acik, karo, kenar_karo,
-		dekor,
-		_road_edge_covered, kenar,
-		float(_road_edge_covered) / maxf(1.0, float(kenar)) * 100.0,
-		_road_joint_deco, _path_cells.size(),
-		float(_road_joint_deco) / maxf(1.0, float(_path_cells.size())) * 100.0,
-		str(edge_var), str(moss_var)]
+	DayNight.jump_to_night()
+	_clear_creatures()
+	await get_tree().create_timer(0.9).timeout
+	_snap(save_path.replace(".png", "_yol_genis_gece.png"))
+	# Gece yakin kare: tas rengi gece de parlamiyor mu
+	camera.position = fp + Vector3(-3.2, 2.6, 4.2)
+	camera.look_at(fp + Vector3(0.5, 0.0, 0.0))
+	await get_tree().create_timer(0.9).timeout
+	_snap(save_path.replace(".png", "_yol_gece.png"))
+	DayNight.jump_to_day()
+	await get_tree().create_timer(0.4).timeout
+
+	var line := ("ROADTEST: model=serpinti hucre=%d (miras=%d yeni=%d) "
+			+ "kenar=%d serpinti_hucre=%d derz=%d uc_hucre=%d tutam=%d "
+			+ "kacak_tas=%d ornek_toplam=%d kalinlik=%.3fm disarida=%.3fm "
+			+ "olcek=%.2f-%.2f tint=#%s jitter=%%%.0f "
+			+ "yol_zemin=%s moss_glb=%s karo_modu=%s") % [
+		_path_cells.size(), miras, yeni, kenar,
+		_road_scatter_cells, _road_seam_count, _road_end_cells,
+		_road_tuft_cells, _road_stray_cells, ornek, kalinlik,
+		RoadScatter.TOP_ABOVE, RoadScatter.SCALE_MIN, RoadScatter.SCALE_MAX,
+		RoadScatter.TINT.to_html(false), RoadScatter.TINT_JITTER * 100.0,
+		str(zemin), str(moss_var), str(RoadTiles.TILE_MODE_ON)]
 	print(line)
 	var f := FileAccess.open("res://docs/screens/roadtest.txt", FileAccess.WRITE)
 	if f != null:
 		f.store_line(line)
 		f.close()
+
+## Yukseklik karesi icin haritanin bos bir yerine TEK yol hucresi koyar.
+## Tek hucre bilerek: komsusu olmadigi icin uc kuralina girer ve hem
+## yuksekligi hem uc olcegini ayni karede gosterir.
+func _road_lone_cell() -> Vector2i:
+	var c := _camp_center + Vector2i(9, 9)
+	for i in 40:
+		var t := c + Vector2i(i % 7, i / 7)
+		if String(_ground_char.get(t, "")) in [".", "d"] \
+				and not _objects.has(t) and not _placed.has(t) \
+				and not _path_cells.has(t):
+			lay_road(t, "yeni")
+			_build_road()
+			return t
+	lay_road(c, "yeni")
+	_build_road()
+	return c
 
 # --- VITRIN: yeni cevre/yapi modelleri (gorsel-tur Asama 1 dogrulamasi) ---
 # Dokuz model, OYUNDAKI GERCEK olcegiyle (EnvModels.SCALE) yan yana. Amac:
