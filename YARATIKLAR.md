@@ -130,3 +130,20 @@ kendiliğinden kısalır.
 
 İkinci madde bilinçli: yeteneği tabloya yazmak kolay, davranışa
 bağlamak zor — kopukluk sessizce oluşur.
+
+## CSV NOTU (build'i kirdigi icin yaziliyor)
+
+Godot kok dizindeki `.csv` dosyalarini **ceviri dosyasi** sanip ice
+aktarmaya calisiyor ve sutun basligindan dosya adi uretiyor. Bu tabloda
+bir baslik `"Rol / neden var"` idi; icindeki `/` gecersiz bir dosya
+yolu urettigi icin web export **segfault** ile coktu:
+
+```
+ERROR: Cannot create file 'res://YARATIKLAR.Rol / neden var.translation'.
+... Segmentation fault (core dumped) --export-release "Web"
+```
+
+Iki duzeltme yapildi: baslik `"Rol ve neden"` oldu **ve** uc kok CSV'ye
+`importer="keep"` iceren `.import` dosyasi konuldu — artik Godot bunlari
+hic ice aktarmiyor, ileride hangi baslik yazilirsa yazilsin build
+kirilmaz.
