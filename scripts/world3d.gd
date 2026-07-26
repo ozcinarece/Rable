@@ -2073,6 +2073,7 @@ func _update_daylight() -> void:
 	var frac := DayNight.day_fraction()
 	_sun.rotation_degrees = Vector3(-50.0 + 24.0 * cos(frac * TAU),
 			-32.0 + 70.0 * frac, 0.0)
+	_update_water_night()  # gece sicak yansimasi (ucuz tek setter)
 
 # --- Dunya kurulumu -----------------------------------------------------
 
@@ -2619,6 +2620,7 @@ func _build_dig_decor() -> void:
 	var soil: Array = []
 	var rock: Array = []
 	var pebble: Array = []
+	var shore_stone: Array = []
 	for cell: Vector2i in _depth:
 		var d: int = int(_depth[cell])
 		if d <= 0:
@@ -2662,6 +2664,27 @@ func _build_dig_decor() -> void:
 					DigWaterVisual.hash01(nb.x, nb.y, 513) * 0.6)
 			var off := Vector3(float(-dd.x) * 0.34, 0.0, float(-dd.y) * 0.34)
 			mouth.append(Transform3D(eb, _cell_center(nb) + off))
+	# --- B6 KIYI SERPINTISI: su kenarindaki KARA hucrelerine tas ---
+	# Referansta kiyida taslar var ve su-kara sinirini yumusatiyor.
+	# _wet_cells zaten "suya komsu kara" listesi (islak serit icin
+	# hesaplaniyordu), ayni tabloyu okuyoruz.
+	for wc: Vector2i in _wet_cells:
+		if _objects.has(wc) or _placed.has(wc) or _path_cells.has(wc):
+			continue
+		if DigWaterVisual.hash01(wc.x, wc.y, 711) * 100.0 \
+				>= float(DigWaterVisual.SHORE_SCATTER_CHANCE) * mult:
+			continue
+		var wox: float = (DigWaterVisual.hash01(wc.x, wc.y, 713) - 0.5) * 0.6
+		var woz: float = (DigWaterVisual.hash01(wc.x, wc.y, 715) - 0.5) * 0.6
+		var wrr: float = DigWaterVisual.hash01(wc.x, wc.y, 717) * TAU
+		var wsc: float = 0.8 + DigWaterVisual.hash01(wc.x, wc.y, 719) * 0.4
+		var wb := Basis().rotated(Vector3.UP, wrr).scaled(Vector3(wsc, wsc, wsc))
+		var wt := Transform3D(wb, _cell_center(wc) + Vector3(wox, 0.0, woz))
+		if DigWaterVisual.hash01(wc.x, wc.y, 721) < 0.5:
+			pebble.append(wt)
+		else:
+			shore_stone.append(wt)
+
 	# --- A1 KENAR YIGINI SERPINTISI: setin uzerine toprak/cakil ---
 	# Yiginin kendisi arazi yuksekliginde (_rim_cells); burada uzerine
 	# %40 serpinti biniyor ki kabarma "renk lekesi" degil "yigin" okunsun.
@@ -2680,7 +2703,7 @@ func _build_dig_decor() -> void:
 		else:
 			pebble.append(rt)
 	for pair in [["soil_clump", soil], ["rock_shard", rock],
-			["pebble_cluster", pebble]]:
+			["pebble_cluster", pebble], ["path_stone", shore_stone]]:
 		var list: Array = pair[1]
 		if list.is_empty():
 			continue
@@ -2811,7 +2834,9 @@ func _build_lake_surface() -> void:
 					# dokusu gerektirmez - telefon GL'inde garantili).
 					# Derinlik ARAZIDEN olculur: kopuk, su cizgisinin
 					# dogal kavisini izler (hucre zikzaki olmaz)
-					st.set_color(Color(_shore_depth(p.x, p.y), 0, 0))
+					st.set_color(_water_rgba(
+							maxf(0.0, LAKE_Y - ground_height(p.x, p.y)),
+							p.x, p.y))
 					st.add_vertex(Vector3(p.x, LAKE_Y, p.y))
 			quads += 1
 	if quads == 0:
@@ -2825,6 +2850,28 @@ func _build_lake_surface() -> void:
 # hesaplanir, boylece kiyi kopugu gercek kiyi kavisini izler.
 func _shore_depth(x: float, z: float) -> float:
 	return clampf((LAKE_Y - ground_height(x, z)) / 0.22, 0.0, 1.0)
+
+## SU VERTEX RENGI — bant rengi + kopuk + opaklik, RGBA olarak mesh'e
+## pisirilir. Shader yalnizca COLOR'i okur.
+##
+## KIRMIZI BUG'IN KOK SEBEBI BURASIYDI: bu fonksiyon bir "geri alma"
+## sirasinda kayboldu ama shader'in yeni hali (ALBEDO = COLOR.rgb)
+## kaldi. Mesh derinligi KIRMIZI kanala yaziyordu (Color(d, 0, 0)),
+## shader onu albedo sanip cizdi -> derinlestikce kirmiziya kayan su.
+## Mesh yazici ile shader TEK BIR SOZLESME; biri degisip digeri
+## degismeyince kod parse-temiz kalir ama ekranda cop cikar.
+## Iki su yuzeyi de (gol + kazilmis havuz) artik BU fonksiyonu
+## kullaniyor; ikisi ayri yerde yaziyordu, biri guncellenmisti.
+func _water_rgba(depth_m: float, wx: float, wz: float) -> Color:
+	var d: float = maxf(0.0, depth_m)
+	# Kopuk esigi kenar boyunca hafif duzensiz olsun
+	var jit: float = (DigWaterVisual.hash01(int(wx * 7.0), int(wz * 7.0), 701)
+			- 0.5) * 2.0 * DigWaterVisual.FOAM_JITTER
+	if d < DigWaterVisual.FOAM_DEPTH + jit:
+		var f := DigWaterVisual.FOAM_COLOR
+		return Color(f.r, f.g, f.b, 1.0)
+	var c := DigWaterVisual.water_color(d)
+	return Color(c.r, c.g, c.b, DigWaterVisual.water_alpha(d))
 
 # Nokta bir gol hucresine (kiyi payi dahil) yakin mi? Su yuzeyi kiyida
 # arazinin altina girsin diye karolar hucre sinirindan biraz tasar.
@@ -2853,32 +2900,37 @@ func _lake_material() -> ShaderMaterial:
 	shader.code = """
 shader_type spatial;
 render_mode blend_mix, depth_draw_opaque, cull_disabled;
-// SAKIN gol. Renk/kopuk/opaklik ARTIK BURADA HESAPLANMIYOR: mesh
-// uretiminde vertex rengine pisiriliyor (bkz. _water_vertex_color).
-// Shader yalniz COLOR'i okur + kalite kademesine gore hafif dalga ve
-// parilti ekler. Fragment basina is minimumda (mobil).
-uniform float wave_amp = 0.018;
-uniform float wave_speed = 0.35;
-uniform float sparkle_amt = 0.0;   // 0 = kapali (Dusuk/Orta kademe)
+// LONGVINTER SU: parlak, doygun, DUZ renk bantlari. Renk/kopuk/opaklik
+// mesh uretiminde vertex rengine pisirilmis (bkz. _water_rgba) — burada
+// gradyan hesabi YOK, COLOR oldugu gibi cizilir. Shader'in tek isi:
+// hafif kipirti, seyrek parilti, gecede sicak ton.
+uniform float wave_amp = 0.012;
+uniform float wave_speed = 0.30;
+uniform float sparkle_amt = 0.0;    // 0 = kapali (Dusuk kademe)
+uniform float sparkle_speed = 0.5;
+uniform float night_mix = 0.0;      // 0 gunduz, >0 gece sicak yansima
+uniform vec3 night_warm = vec3(1.0, 0.72, 0.42);
 void vertex() {
 	vec3 wp = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-	// B3: IKI SINUS, dusuk genlik, yavas. "Titresen jole" degil,
-	// "hafif kipirdayan gol". Genlik/hiz kalite kademesinden gelir;
-	// Dusuk'te wave_amp = 0 verilir ve dalga tamamen kapanir.
+	// Iki sinus, dusuk genlik, yavas: "hafif kipirdayan gol".
 	VERTEX.y += (sin(TIME * wave_speed + wp.x * 0.9)
 			+ sin(TIME * wave_speed * 1.7 + wp.z * 1.7)) * wave_amp * 0.5;
 }
 void fragment() {
-	ALBEDO = COLOR.rgb;
-	ALPHA = COLOR.a;
-	ROUGHNESS = 0.12;
-	SPECULAR = 0.65;
-	// B5: seyrek parilti. Yalniz Yuksek kademede (sparkle_amt > 0).
+	vec3 col = COLOR.rgb;
+	// Gece: bant renklerine hafif sicak ton (Ocak/mesale yansimasi)
+	col = mix(col, col * night_warm, night_mix);
+	// Seyrek kucuk parilti lekeleri, yavas yanip sonme
 	if (sparkle_amt > 0.0) {
 		vec3 wp2 = (INV_VIEW_MATRIX * vec4(VERTEX, 1.0)).xyz;
-		float g = sin(wp2.x * 7.3 + TIME * 0.9) * sin(wp2.z * 6.1 - TIME * 0.7);
-		ALBEDO += vec3(smoothstep(0.93, 1.0, g) * sparkle_amt);
+		float g = sin(wp2.x * 9.1) * sin(wp2.z * 7.7);
+		float blink = 0.5 + 0.5 * sin(TIME * sparkle_speed + wp2.x + wp2.z);
+		col += vec3(smoothstep(0.965, 1.0, g) * sparkle_amt * blink);
 	}
+	ALBEDO = col;
+	ALPHA = COLOR.a;
+	ROUGHNESS = 0.15;
+	SPECULAR = 0.7;
 }
 """
 	_lake_mat = ShaderMaterial.new()
@@ -2897,9 +2949,22 @@ func _apply_water_tier() -> void:
 	_lake_mat.set_shader_parameter("wave_amp",
 			DigWaterVisual.WAVE_AMP if wave_on else 0.0)
 	_lake_mat.set_shader_parameter("wave_speed", DigWaterVisual.WAVE_SPEED)
-	# Gece Ocak/mesale isiginda sicak ton, gunduz soguk beyaz (B5)
+	_lake_mat.set_shader_parameter("sparkle_speed", DigWaterVisual.SPARKLE_SPEED)
 	_lake_mat.set_shader_parameter("sparkle_amt",
-			(0.18 if sparkle_on else 0.0))
+			DigWaterVisual.SPARKLE_AMT if sparkle_on else 0.0)
+	_lake_mat.set_shader_parameter("night_warm",
+			Vector3(DigWaterVisual.NIGHT_WARM.r, DigWaterVisual.NIGHT_WARM.g,
+					DigWaterVisual.NIGHT_WARM.b))
+	_update_water_night()
+
+## Gece bandi: Ocak/mesale isiginin sicak yansimasi. Gunes supurmesiyle
+## ayni yerden guncelleniyor (kare basina tek setter, ucuz).
+func _update_water_night() -> void:
+	if _lake_mat == null:
+		return
+	var night: bool = DayNight.phase in ["night", "dusk"]
+	_lake_mat.set_shader_parameter("night_mix",
+			DigWaterVisual.NIGHT_WARM_MIX if night else 0.0)
 
 # Bos cim hucrelerinin bir kismina sus otu serpistirir (toplanmaz).
 var _decor_nodes: Array = []
@@ -4962,9 +5027,9 @@ func _build_pool_mesh(wet: Dictionary, surface_y: float) -> ArrayMesh:
 						[Vector2(x1, z0), Vector2(x1, z1), Vector2(x0, z1)]]:
 					for p: Vector2 in tri:
 						st.set_normal(Vector3.UP)
-						var d := clampf((surface_y
-								- float(_sample_terrain(p.x, p.y)[0])) / 0.22, 0.0, 1.0)
-						st.set_color(Color(d, 0, 0))
+						var dm: float = maxf(0.0, surface_y
+								- float(_sample_terrain(p.x, p.y)[0]))
+						st.set_color(_water_rgba(dm, p.x, p.y))
 						st.add_vertex(Vector3(p.x, 0.0, p.y))
 	return st.commit()
 
