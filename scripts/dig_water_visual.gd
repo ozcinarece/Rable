@@ -65,59 +65,68 @@ const FLOOR_ROCK := "rock_shard"
 # B. SU
 # =======================================================================
 
-## B1. DERINLIK RENGI (en kritik) — su rengi SU SEVIYESI + ZEMIN
-## DERINLIGI verisinden hesaplanir. TEK DUZ RENK YASAK.
-## Anahtar = etkin su derinligi (m); ara degerler lerp'lenir.
-const WATER_RAMP := [
-	{"d": 0.00, "c": Color(0.55, 0.82, 0.72)},  # sig: acik turkuaz-yesil
-	{"d": 0.45, "c": Color(0.26, 0.58, 0.74)},  # orta: mavi
-	{"d": 1.10, "c": Color(0.09, 0.20, 0.42)},  # derin: koyu lacivert
-]
+## B1. RENK MODELI — UC DUZ BANT (gradyan YOK).
+## Referans Longvinter: parlak, doygun, DUZ renk bantlari. Gercekci
+## derinlik gradyani DEGIL. Bantlar arasi gecis SERT (stilize kademe).
+## Esikler metre cinsinden su derinligi.
+## OLCULDU: gol yuzeyi LAKE_Y = -0.15, gol dibi -0.40 -> EN DERIN NOKTA
+## yalnizca 0.25 m. Ilk esikler (0.18 / 0.55) gercek dunyaya gore
+## secilmisti ve "derin" bandi ULASILAMAZ kaliyordu; gol tek duz acik
+## cyan gorunuyordu. Esikler gercek derinlik araligina olceklendi.
+const BAND_SHALLOW_MAX := 0.08   # m — bu altinda sig
+const BAND_MID_MAX := 0.17       # m — bu altinda orta, ustu derin
+const WATER_SHALLOW := Color(0.498, 0.831, 0.847)  # #7FD4D8 acik turkuaz
+const WATER_MID := Color(0.353, 0.663, 0.902)      # #5AA9E6 canli mavi
+const WATER_DEEP := Color(0.231, 0.490, 0.769)     # #3B7DC4 koyu ama MAVI
+## Derin renk ASLA gri/siyaha inmez — bu bilincli: onceki turda
+## lacivert-siyaha yaklasan bir rampa vardi ve su "camur" gorunuyordu.
 
 static func water_color(depth_m: float) -> Color:
 	var d: float = maxf(0.0, depth_m)
-	for i in range(WATER_RAMP.size() - 1):
-		var a: Dictionary = WATER_RAMP[i]
-		var b: Dictionary = WATER_RAMP[i + 1]
-		if d <= float(b["d"]):
-			var t: float = (d - float(a["d"])) \
-					/ maxf(0.001, float(b["d"]) - float(a["d"]))
-			return Color(a["c"]).lerp(Color(b["c"]), clampf(t, 0.0, 1.0))
-	return Color(WATER_RAMP[WATER_RAMP.size() - 1]["c"])
+	if d < BAND_SHALLOW_MAX:
+		return WATER_SHALLOW
+	if d < BAND_MID_MAX:
+		return WATER_MID
+	return WATER_DEEP
 
-## B4. SAYDAMLIK — derinlikle artan opaklik; sigda zemin belli belirsiz
-## secilir.
-const WATER_ALPHA_SHALLOW := 0.55
-const WATER_ALPHA_DEEP := 0.94
-const WATER_ALPHA_FULL_DEPTH := 0.9   # m, bu derinlikte tam opak sayilir
+## B3. KIYI KOPUGU — karaya komsu su kenarinda dar, kirik-beyaz bant.
+## Referanstaki EN BELIRGIN detay. Hucrenin ~%20'si genisliginde,
+## kenar boyunca hafif duzensiz (hash ile esik oynatiliyor).
+const FOAM_COLOR := Color(0.918, 0.969, 0.969)   # #EAF7F7
+## Kopuk bandi da ayni olcege cekildi: 0.09 m gercek gol derinliginin
+## ucte biriydi, kiyi halkasi kocaman cikiyordu.
+const FOAM_DEPTH := 0.035         # m — bu sigliktan az yer kopuk
+const FOAM_JITTER := 0.012        # m — esigin duzensizlik payi
+
+## B4. SAYDAMLIK — sigda hafif saydam, derinde opak.
+const WATER_ALPHA_SHALLOW := 0.80
+const WATER_ALPHA_DEEP := 1.0
 
 static func water_alpha(depth_m: float) -> float:
-	var t: float = clampf(depth_m / WATER_ALPHA_FULL_DEPTH, 0.0, 1.0)
-	return lerpf(WATER_ALPHA_SHALLOW, WATER_ALPHA_DEEP, t)
+	return WATER_ALPHA_SHALLOW if depth_m < BAND_SHALLOW_MAX else WATER_ALPHA_DEEP
 
-## B2. SIGLIK/KOPUK BANDI — karaya komsu su hucrelerinin KENAR
-## vertexleri aydinlatilir; kiyi cizgisi boylece yumusar.
-const SHORE_LIGHTEN := 0.34     # kenar vertex'inde beyaza dogru harman
-const SHORE_FOAM_TINT := Color(0.88, 0.95, 0.95)
+## B4. PARILTI — yuzeyde seyrek kucuk beyaz lekeler, yavas yanip sonme.
+## Kalite Dusuk'te kapali.
+const SPARKLE_AMT := 0.22
+const SPARKLE_SPEED := 0.5
+
+## B5. HAREKET — cok dusuk genlikli yavas dalga (iki sinus).
+## "Jole" olursa genlik yariya iner; 1.2 cm bilincli olarak dusuk.
+const WAVE_AMP := 0.012
+const WAVE_SPEED := 0.30
+
+## Gece: Ocak/mesale isiginin sicak yansimasi — bant renklerine hafif
+## sicak ton karisimi (shader uniform'u, gunduz 0).
+const NIGHT_WARM := Color(1.0, 0.72, 0.42)
+const NIGHT_WARM_MIX := 0.16
+
+## B6. KIYI SERPINTISI — su kenarindaki KARA hucrelerine tas/cakil.
+const SHORE_SCATTER_CHANCE := 35   # %
 
 ## B6. KENAR GECISI — kara tarafinda islak zemin seridi: su komsusu olan
 ## kara hucresinin o kenari koyulasir (islak kum/toprak).
 const WET_DARKEN := 0.72        # kara rengi carpani
 const WET_BAND_CELLS := 1       # kac hucre iceri
-
-## B3. HAREKET — cok hafif dalga. Iki sinus, DUSUK genlik, YAVAS.
-## "Titresen jole" degil, "hafif kipirdayan gol".
-const WAVE_AMP := 0.018         # m
-const WAVE_FREQ_A := 0.9
-const WAVE_FREQ_B := 1.7
-const WAVE_SPEED := 0.35
-
-## B5. PARILTI — yuzeyde seyrek parilti noktalari. Gunes yonune gore
-## gunduz soguk beyaz, gece Ocak/mesale isiginda sicak ton.
-const SPARKLE_CHANCE := 6       # % su hucresi basina
-const SPARKLE_DAY := Color(1.0, 1.0, 0.96)
-const SPARKLE_NIGHT := Color(1.0, 0.74, 0.42)
-const SPARKLE_SIZE := 0.12
 
 # =======================================================================
 # C. KALITE KADEMESI

@@ -76,10 +76,15 @@ jobs:
           # Parse hatasi = tum dosya yuklenmez ve oyun sessizce hic
           # calismaz. Bu tuzaga bu projede dort kez dusuldu; artik CI
           # kirmizi yaniyor.
-          if grep -qE "Parse Error|SCRIPT ERROR" /tmp/fast.log; then
+          # USER ERROR de dahil: push_error() ile bildirilen DEGER
+          # hatalari (ornegin WATERCOLORTEST) Godot'da "USER ERROR"
+          # olarak basiliyor. Ilk halinde yalniz parse/script hatasi
+          # araniyordu, yani su rengi bozulsa CI yine yesil yanardi.
+          if grep -qE "Parse Error|SCRIPT ERROR|USER ERROR" /tmp/fast.log; then
             echo "::error::GDScript hatasi var (yukariya bak)"
             exit 1
           fi
+          grep -E "WATERCOLORTEST" /tmp/fast.log || true
           if ! grep -q "FASTTESTS: bitti" /tmp/fast.log; then
             echo "::error::Hizli testler tamamlanmadi"
             exit 1
