@@ -1022,6 +1022,61 @@ func _run_creature_type_test() -> void:
 	if not g1_hepsi_normal or not karisim_ok:
 		push_error("DALGA KARISIMI kurallara uymuyor")
 
+## YARATIGA VURABILME TESTI — oyunda bildirilen hatanin bekcisi.
+## HATA: yumruk ve balta ToolProfiles'ta is_weapon=false oldugu icin
+## saldiri butonu hic cikmiyordu, ana buton da yaratigi hedef saymiyordu;
+## yani elde silah yoksa yaratiga vurmanin YOLU YOKTU. CREATURETEST bunu
+## kacirmisti cunku elimize "kilic" verip DOGRUDAN _apply_hitbox
+## cagiriyordu — oyuncunun gercekte bastigi yolu (hedef secimi) hic
+## denemiyordu. Test artik o yoldan geciyor.
+func _run_creature_combat_test() -> void:
+	_clear_creatures()
+	var pc := _player_cell()
+	player.facing = Vector2(0, 1)
+	var sonuc: Array = []
+	var hepsi_vurdu := true
+	for elde: String in ["", "balta", "kazma", "sopa"]:
+		_clear_creatures()
+		_held_item = elde
+		var cr = spawn_creature(pc + Vector2i(0, 1), "normal")
+		var hp0: int = cr.hp
+		# Oyuncunun bastigi yol: hedef sec -> eylemi uygula.
+		var t := _acquire_target()
+		var hedef_ok: bool = String(t["type"]) == "creature"
+		if hedef_ok:
+			_apply_strike(String(t["kind"]), t["cell"])
+		var verilen: int = hp0 - int(cr.hp)
+		sonuc.append("%s(hedef=%s hasar=%d)" % [
+			("yumruk" if elde == "" else elde), str(hedef_ok), verilen])
+		if not hedef_ok or verilen <= 0:
+			hepsi_vurdu = false
+	# USTUNE BINEN yaratik: temas menzili 0.9 m, yani saldiran yaratik
+	# senin hucrende olabilir. Komsu tarama onu kacirirdi.
+	_clear_creatures()
+	_held_item = ""
+	var cr2 = spawn_creature(pc, "normal")
+	var t2 := _acquire_target()
+	var ustundeki_ok: bool = String(t2["type"]) == "creature"
+	_clear_creatures()
+
+	# OCAK YOKSA hedef: kamp merkezi (oyuncu DEGIL).
+	var eski_ocak := _hearth_cell
+	_hearth_cell = Vector2i(-999, -999)
+	var ocaksiz_hedef := _hearth_cell
+	if ocaksiz_hedef == Vector2i(-999, -999):
+		ocaksiz_hedef = _camp_center
+	var kamp_hedefi: bool = ocaksiz_hedef != Vector2i(-999, -999)
+	_hearth_cell = eski_ocak
+
+	print("SAVASTEST: %s ustundeki=%s ocaksiz_kamp_hedefi=%s" % [
+		" ".join(sonuc), str(ustundeki_ok), str(kamp_hedefi)])
+	if not hepsi_vurdu:
+		push_error("YARATIGA VURULAMIYOR: elde silah yokken hedef secilmiyor")
+	if not ustundeki_ok:
+		push_error("Ustune binen yaratik hedeflenemiyor")
+	if not kamp_hedefi:
+		push_error("Ocak yokken yaratiklarin gidecegi yer tanimsiz")
+
 ## HIZLI KATMAN: kare almayan, beklemesiz mantik testleri. Bunlar
 ## --headless'te de kosar; agir gorsel akisin hicbir parcasina dokunmaz.
 ## Kapsam BILEREK dar: harita uretimi, kamera, zaman, muhendislik,
@@ -1030,6 +1085,7 @@ func _run_creature_type_test() -> void:
 func _run_fast_tests() -> void:
 	_run_ai_path_test()
 	_run_creature_type_test()
+	_run_creature_combat_test()
 	_run_water_color_test()
 	_run_time_selftest()
 	_run_muhendislik_selftest()
@@ -6400,6 +6456,15 @@ func _crop_part(mesh: Mesh, color: Color, pos: Vector3) -> MeshInstance3D:
 
 func _describe_target(cell: Vector2i) -> Dictionary:
 	var held := _held_item
+	# BOLUM 15: YARATIK — her seyin ONUNDE, elde NE OLURSA OLSUN vurulur.
+	# BUG (oyunda bildirildi): yumruk ve balta ToolProfiles'ta
+	# is_weapon=false oldugu icin saldiri butonu HIC cikmiyordu; ana
+	# buton da yaratigi taniyordu, yani yaratiga vurmanin YOLU YOKTU.
+	# Yerdeki esyanin bile ustunde: dovus sirasinda ayagina dusen ozu
+	# toplamaya calismak, yaratigi doverken yapilacak son sey.
+	if _creature_near(cell) != null:
+		return {"type": "creature", "cell": cell, "icon": "attack",
+				"valid": true, "kind": "attack"}
 	# Yerdeki esya: elde ne olursa olsun toplanir
 	if _ground_item_at(cell) != -1:
 		return {"type": "ground", "cell": cell, "icon": "grab",
@@ -6479,6 +6544,16 @@ func _describe_target(cell: Vector2i) -> Dictionary:
 
 ## Bakis konisindeki en oncelikli hedef (yoksa silahsa saldiri / bos).
 func _acquire_target() -> Dictionary:
+	# YARATIK taramasi ayri ve ONCE: komsu hucrelerin yani sira OYUNCUNUN
+	# KENDI hucresi de dahil. Temas menzili 0.9 m, yani saldiran yaratik
+	# cogu zaman senin ustunde duruyor; yalniz komsulara bakan tarama tam
+	# da vurman gereken anda onu kaciriyordu.
+	var yaratik_hucreleri: Array = _candidate_cells()
+	yaratik_hucreleri.append(_player_cell())
+	for cell: Vector2i in yaratik_hucreleri:
+		if _creature_near(cell) != null:
+			return {"type": "creature", "cell": cell, "icon": "attack",
+					"valid": true, "kind": "attack"}
 	for cell: Vector2i in _candidate_cells():
 		var d := _describe_target(cell)
 		if d["type"] != "none":
@@ -7001,9 +7076,15 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 	# kovala" vardi; yaratiklar oyuncunun pesine takilip kampi
 	# unutuyordu ve gecenin derdi "kac" oluyordu. Artik dert "OCAGI
 	# KORU": yaratiklar duz ocaga yuruyor, oyuncu araya girmek zorunda.
-	# Ocak yoksa (henuz kurulmamis) oyuncuya yonelirler — yoksa hedefsiz
-	# kalip dururlardi.
-	var target := _cell_center(hearth) if hearth != Vector2i(-999, -999) \
+	# OCAK YOKSA: eskiden oyuncuya yonelirlerdi ve oyunda tam da sikayet
+	# edilen sey oluyordu ("yaratiklar beni hedefliyordu") — cunku yeni
+	# oyunda ocak HENUZ KURULMAMIS oluyor. Artik kamp merkezine (terk
+	# edilmis ocak yeri) yuruyorlar: gecenin derdi ilk geceden itibaren
+	# BIR YERI korumak. Oyuncu ancak yollarina cikarsa vurulur.
+	var hedef_hucre := hearth
+	if hedef_hucre == Vector2i(-999, -999):
+		hedef_hucre = _camp_center
+	var target := _cell_center(hedef_hucre) if hedef_hucre != Vector2i(-999, -999) \
 			else ppos
 	# Oyuncu YOLA GIRDIYSE yine de vurur: bu bir hedef degisimi degil,
 	# temas tepkisi. Olmasaydi yaratik seni doverken bile umursamaz

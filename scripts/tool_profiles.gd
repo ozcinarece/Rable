@@ -19,14 +19,18 @@ const PROFILES := {
 		"windup": 0.18, "strike": 0.10, "recover": 0.22,
 		"rest": Vector3(0, 0, 0), "wind": Vector3(-70, 0, 35),
 		"hit": Vector3(60, 0, -25), "push_z": 0.0,
-		"kind": "chop", "reach": 1, "is_weapon": false,
+		# damage: balta SILAH DEGIL (is_weapon false, ayri saldiri butonu
+		# cikarmaz) ama yaratiga sallandiginda yumruktan (4) etkili
+		# olmali — agac deviren sey cana da isler. Gercek silahlarin
+		# altinda kaliyor: sopa 12, mizrak 20.
+		"kind": "chop", "reach": 1, "is_weapon": false, "damage": 7,
 		"swing_sfx": "swing_axe", "hit_sfx": "hit_wood", "break_sfx": "tree_fall",
 	},
 	"kazma": {
 		"windup": 0.22, "strike": 0.10, "recover": 0.26,
 		"rest": Vector3(0, 0, 0), "wind": Vector3(-95, 0, 0),
 		"hit": Vector3(70, 0, 0), "push_z": 0.0,
-		"kind": "mine", "reach": 1, "is_weapon": false,
+		"kind": "mine", "reach": 1, "is_weapon": false, "damage": 6,
 		"swing_sfx": "swing_pick", "hit_sfx": "hit_stone", "break_sfx": "rock_break",
 	},
 	"kurek": {
