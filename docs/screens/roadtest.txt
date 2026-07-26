@@ -1,1 +1,1 @@
-ROADTEST: hucre=75 (miras=65 yeni=10) kenar=73 tek_acik=32 karo_ornek=151 kenar_karo=0 sacilma=15 kenar_ortulu=43/73 (%59) derz_ot=18/75 (%24) edge_glb=false moss_glb=false
+ROADTEST: model=serpinti hucre=76 (miras=65 yeni=10) kenar=73 serpinti_hucre=76 uc_hucre=5 tutam=21 kacak_tas=17 ornek_toplam=111 kalinlik=0.103m disarida=0.025m tint=#b5aca0 jitter=%5 moss_glb=false karo_modu=false
