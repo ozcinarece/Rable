@@ -163,6 +163,18 @@ const FIRTINA_SIGINAK_R := 5.0     # kamp atesi/Ocak yakini siginak sayilir
 const DAMAR_SAYI := 6
 const DAMAR_CEKIM_R := 7.0         # bu yaricapta ortam yaratigi catlaga yonelir
 
+# --- 16.7 Yan tas odulleri -------------------------------------------------
+## yanA "eski usta tarifleri": fener/koz kabi dugumleri BEDAVA acilir
+## (usta bilgisi arastirma maliyetini siler; dugumler zaten acizsa oz).
+## yanB "buyuk oz deposu": aninda oz + gunluk sayfasi (hikaye borcu).
+## yanC "Muhur Cagi bonusu": KALICI — sabah ekonomisi carpani. Carpani
+## okuyan taraf sabah ekonomisi isi (Yaratik Asama 6/BASE 14.9); kanca:
+## world3d.muhur_bonusu_aktif().
+const YANA_BEDAVA_DUGUMLER := ["fener_dugumu", "koz_kabi_dugumu"]
+const YANA_YEDEK_OZ := 3
+const YANB_OZ := 8
+const YANC_SABAH_CARPAN := 1.10
+
 # --- Sorgular -------------------------------------------------------------
 
 static func ring_of(cell: Vector2i, merkez: Vector2i) -> int:

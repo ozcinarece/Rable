@@ -542,6 +542,7 @@ func _setup_screenshot(save_path: String) -> void:
 		_snap(save_path.replace(".png", "_maske_kumsal.png"))
 		_cam_locked = false
 	await _run_tree_frames(save_path)
+	await _run_kesif_frames(save_path)  # Bolum 16: tas/uyuyan/sis/damar
 	# CLICKTEST EN BASTA (180sn oyun sinirina takilmasin diye): GERCEK
 	# dokunus simulasyonu — "menuler acilmiyor/kapanmiyor" sinifi cihaz
 	# hatalarini CI'da yakalar.
@@ -1459,6 +1460,7 @@ func _run_fast_tests() -> void:
 	_run_sefer_test()
 	_run_uyuyan_test()
 	_run_uzak_test()
+	_run_kesif_perf()
 	_run_save_load_selftest()
 	print("FASTTESTS: bitti")
 	get_tree().quit()
@@ -9644,6 +9646,29 @@ func _try_burn_kor_tas(id: String) -> bool:
 		Research.reveal_node("tas_bilgisi_2")
 	if yanik >= 5:
 		Research.reveal_node("tas_bilgisi_3")
+	# 16.7 YAN TAS ODULLERI (opsiyonel yol: %100'cu oyuncu odullenir)
+	if id == "yanA":
+		var acilan := 0
+		for dugum: String in KesifBalance.YANA_BEDAVA_DUGUMLER:
+			if not Research.unlocked.has(dugum):
+				Research.revealed[dugum] = true
+				Research.unlocked[dugum] = true
+				acilan += 1
+		if acilan > 0:
+			Research._save()
+			Research.changed.emit()
+			_spawn_floating_text(cell, "Eski usta tarifleri cozuldu",
+					Color(0.7, 0.95, 1.0))
+		else:
+			Inventory.add_item("oz", KesifBalance.YANA_YEDEK_OZ)
+			_spawn_floating_text(cell, "Ustanin zulasi: oz", Color(0.7, 0.95, 1.0))
+	elif id == "yanB":
+		# Gunluk sayfalari hikaye borcu (HIKAYE.md gelince): simdilik depo.
+		Inventory.add_item("oz", KesifBalance.YANB_OZ)
+		_spawn_floating_text(cell, "Buyuk oz deposu!", Color(0.7, 0.95, 1.0))
+	elif id == "yanC":
+		_spawn_floating_text(cell, "Muhur Cagi bonusu: sabah ekonomisi +%10",
+				Color(0.7, 0.95, 1.0))
 	_update_alev_rengi()
 	_son_vinyet = -1.0  # sis durumu degisti; HUD tazelensin
 	_dirty = true
@@ -10330,3 +10355,80 @@ func _run_uzak_test() -> void:
 		push_error("UZAK: firtina vinyeti gorusu kapatmiyor")
 	print("UZAKTEST: tipler=%s havuz_temiz=%s dogum=%s damar=%d firtina_v=%.2f" % [
 			str(tip_ok), str(not sizinti), str(dogdu), damar_n, firtina_v])
+
+# =========================================================================
+# KESIF Asama 6 (16.7-16.8) — odul sorgusu + performans + gorsel kanit
+# =========================================================================
+
+## Muhur Cagi kalici bonusu (16.7 yanC): sabah ekonomisi isi geldiginde
+## carpani buradan okur (KesifBalance.YANC_SABAH_CARPAN). Tas durumundan
+## TURETILIR — ayri kayit alani yok, bozulacak ikinci gercek yok.
+func muhur_bonusu_aktif() -> bool:
+	return _kor_taslari.has("yanC") and bool(_kor_taslari["yanC"]["yanik"])
+
+## KESIFPERF (hizli CI): sis/simulasyon maliyetinin DURUST olcumu.
+## CI yazilim rasterizasyonunda FPS anlamsiz; anlamli olan: (1) kesif
+## dongusunun CPU suresi, (2) dalga simulasyonunun CPU suresi, (3) bolum
+## 16'nin sahneye ekledigi dugum sayisi. Mobil butcesi bunlardan okunur.
+func _run_kesif_perf() -> void:
+	var t0 := Time.get_ticks_usec()
+	for i in 100:
+		_update_kesif()
+	var kesif_us := (Time.get_ticks_usec() - t0) / 100.0
+	t0 = Time.get_ticks_usec()
+	for i in 20:
+		_savunma_puani()
+	var savunma_us := (Time.get_ticks_usec() - t0) / 20.0
+	var dugum := _kor_tas_gorseller.size() + _uyuyan_gorseller.size() \
+			+ _damar_gorseller.size() + (1 if _sis_duzlem != null else 0)
+	# Butce bekcisi: kesif dongusu karede degil 0.2 sn'de bir kosar;
+	# yine de tek cagri 2 ms'yi asarsa mobilde hissedilir — kirmizi.
+	if kesif_us > 2000.0:
+		push_error("KESIFPERF: kesif dongusu cok pahali (%.0f us)" % kesif_us)
+	if savunma_us > 5000.0:
+		push_error("KESIFPERF: savunma puani cok pahali (%.0f us)" % savunma_us)
+	print("KESIFPERF: kesif_dongusu=%.0fus savunma_puani=%.0fus ek_dugum=%d" % [
+			kesif_us, savunma_us, dugum])
+
+## Agir CI kareleri: kor tasi yakin, uyuyan kumesi, sisli halka vinyeti
+## (oyuncu isiksiz Halka 2'de), damar catlagi. Oyuncu konumu geri sarilir.
+func _run_kesif_frames(save_path: String) -> void:
+	_cam_locked = true
+	var eski_poz := player.position
+	# 1) Kor tasi (ana1) yakin plan
+	if _kor_taslari.has("ana1"):
+		var tp := _cell_center(Vector2i(_kor_taslari["ana1"]["cell"]))
+		camera.position = tp + Vector3(-2.4, 2.4, 3.4)
+		camera.look_at(tp + Vector3(0, 0.8, 0))
+		await get_tree().create_timer(0.7).timeout
+		_snap(save_path.replace(".png", "_kesif_tas.png"))
+	# 2) Uyuyan kumesi
+	if not _uyuyan_kumeler.is_empty():
+		var mp := _cell_center(Vector2i(_uyuyan_kumeler[0]["merkez"]))
+		camera.position = mp + Vector3(-3.5, 3.2, 4.5)
+		camera.look_at(mp + Vector3(0, 0.5, 0))
+		await get_tree().create_timer(0.7).timeout
+		_snap(save_path.replace(".png", "_kesif_uyuyan.png"))
+	# 3) Sis vinyeti: oyuncuyu Halka 2'ye isiksiz gonder (HUD kareye girer)
+	var merkez := get_hearth()
+	if merkez == Vector2i(-999, -999):
+		merkez = _spawn_cell
+	var hedef := _kor_tas_yer_bul(merkez + Vector2i(38, 0))
+	if hedef != Vector2i(-999, -999):
+		player.position = _cell_center(hedef)
+		camera.position = player.position + _camera_offset()
+		_kesif_timer = 1.0  # bir sonraki _process'te guncellensin
+		await get_tree().create_timer(0.8).timeout
+		_snap(save_path.replace(".png", "_kesif_sis.png"))
+	# 4) Damar catlagi
+	if not _damar_catlaklari.is_empty():
+		var dp := _cell_center(Vector2i(_damar_catlaklari[0]))
+		camera.position = dp + Vector3(-2.0, 2.0, 2.8)
+		camera.look_at(dp)
+		await get_tree().create_timer(0.7).timeout
+		_snap(save_path.replace(".png", "_kesif_damar.png"))
+	player.position = eski_poz
+	camera.position = player.position + _camera_offset()
+	_kesif_timer = 1.0
+	await get_tree().create_timer(0.4).timeout
+	_cam_locked = false
