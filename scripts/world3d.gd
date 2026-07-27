@@ -1085,7 +1085,7 @@ func _run_creature_combat_test() -> void:
 	_hearth_cell = Vector2i(-999, -999)
 	var ocaksiz_hedef := _hearth_cell
 	if ocaksiz_hedef == Vector2i(-999, -999):
-		ocaksiz_hedef = _camp_center
+		ocaksiz_hedef = _camp_at("ocak")
 	var kamp_hedefi: bool = ocaksiz_hedef != Vector2i(-999, -999)
 	_hearth_cell = eski_ocak
 
@@ -1135,6 +1135,43 @@ func _run_road_scatter_test() -> void:
 	if disarida < 0.015:
 		push_error("Taslar zemine gomuldu (disarida < 1.5 cm)")
 
+## KAMP PREFAB TESTI — "sahne -> oyun" hattinin bekcisi.
+##  1) Prefab yukleniyor mu, beklenen ogeler tam mi (adetleriyle).
+##  2) Kayit defteri (_camp_items) sahnedeki dugum konumlarindan mi
+##     geliyor — yani F5 ESDEGERI: dugumu BELLEKTE tasiyip kaydin
+##     degistigini dogruluyoruz. Editorde tasi-F5 akisinin kanitladigi
+##     sey tam olarak bu (konum sahneden okunuyor, koddan degil).
+func _run_camp_prefab_test() -> void:
+	var bekle := {"ocak": 1, "hut": 1, "well": 1, "masa": 1,
+			"sandik": 1, "kabak": 1, "mesale": 4, "tarla": 4}
+	var eksik: Array = []
+	for id: String in bekle:
+		var n: int = _camp_items.get(id, []).size()
+		if n != int(bekle[id]):
+			eksik.append("%s=%d/%d" % [id, n, int(bekle[id])])
+	# F5 esdegeri: sahneyi ac, DevrikSandik'i +2 hucre tasi, kaydi
+	# yeniden topla — off (2,0) kaymis olmali.
+	var tasima_ok := false
+	if ResourceLoader.exists(CAMP_SCENE):
+		var root: Node3D = (load(CAMP_SCENE) as PackedScene).instantiate()
+		var once: Dictionary = {}
+		_camp_collect(root, root, once)
+		var eski: Vector2i = Vector2i(once.get("sandik", [{}])[0].get("off", Vector2i.ZERO))
+		for ch in root.get_children():
+			if ch is Node3D and ch.has_meta("oge") 					and String(ch.get_meta("oge")) == "sandik":
+				(ch as Node3D).position.x += 2.0
+		var sonra: Dictionary = {}
+		_camp_collect(root, root, sonra)
+		var yeni: Vector2i = Vector2i(sonra.get("sandik", [{}])[0].get("off", Vector2i.ZERO))
+		tasima_ok = (yeni - eski) == Vector2i(2, 0)
+		root.free()
+	print("PREFABTEST: oge_eksik=%s tasima_yansidi=%s spawn=%s hut=%s" % [
+		str(eksik), str(tasima_ok), str(_spawn_cell), str(_camp_at("hut"))])
+	if not eksik.is_empty():
+		push_error("KAMP PREFABI EKSIK: %s" % str(eksik))
+	if not tasima_ok:
+		push_error("Prefabta tasinan dugum kayda yansimadi (sahne->oyun hatti kopuk)")
+
 ## HIZLI KATMAN: kare almayan, beklemesiz mantik testleri. Bunlar
 ## --headless'te de kosar; agir gorsel akisin hicbir parcasina dokunmaz.
 ## Kapsam BILEREK dar: harita uretimi, kamera, zaman, muhendislik,
@@ -1146,6 +1183,7 @@ func _run_fast_tests() -> void:
 	_run_creature_combat_test()
 	_run_road_scatter_test()
 	_run_editor_test()
+	_run_camp_prefab_test()
 	_run_water_color_test()
 	_run_time_selftest()
 	_run_muhendislik_selftest()
@@ -4000,15 +4038,13 @@ func _road_moss_node(list: Array) -> Node3D:
 # masa/sandik devrik, mesaleler yanmiyor — oyuncu kampi kendi canlandiracak.
 # Tek fiziksel etki: kulube ve kuyu hucreleri _solid_cells'e girer, yoksa
 # oyuncu duvarin icinden gecerdi (arazi carpismasi, mekanik degil).
-const CAMP_OFF := {
-	"ocak": Vector2i(0, 0),
-	"hut": Vector2i(-5, -4),           # KB kulube (3x3 ayak izi, kapi guneyde)
-	"well": Vector2i(5, -3),
-	"field": Vector2i(5, -1),          # 2x2 tarlanin sol-ust hucresi
-	"masa": Vector2i(-5, 3),           # GB uretim kosesi (tezgah YOK)
-	"sandik": Vector2i(-4, 4),
-	"kabak": Vector2i(4, 1),           # tarla kenari tek dekoratif kabak
-}
+# YERLESIM ARTIK PREFAB'TA: scenes/prefabs/camp_start.tscn. Kod koordinat
+# TASIMAZ — her ogenin yeri/donusu sahnedeki dugumden okunur (Godot
+# editorunde elle tasi, F5, oyunda ayni yerde). Dugumler SABIT YOLLA
+# degil meta ile bulunur: her ogede metadata/oge = "ocak"|"hut"|... var,
+# yani dugumleri yeniden adlandirmak/gruplamak hicbir seyi bozmaz.
+# YOL HUCRELERI sahneye girmez (ayri sistem, CAMP_ROADS asagida).
+const CAMP_SCENE := "res://scenes/prefabs/camp_start.tscn"
 ## Yol uzunluklari (hucre). Guney yolu kampi ASAR ve yolun ortasinda biter:
 ## "buradan bir yere gidiliyordu" hissi (mockup'taki ana giris aksi).
 const CAMP_ROADS := [
@@ -4017,8 +4053,6 @@ const CAMP_ROADS := [
 	{"dir": Vector2i(-1, 0), "len": 6},
 	{"dir": Vector2i(0, 1), "len": 13},
 ]
-## Yol kavsaklarindaki sonuk mesale direkleri (ocak merkezli ofset).
-const CAMP_TORCHES := [Vector2i(0, -3), Vector2i(3, 0), Vector2i(-3, 0), Vector2i(0, 4)]
 ## KAMP ACIKLIGI (iki kademe): CLEAR_R icinde agac/kaya HIC yok — kamp
 ## nefes alsin; CLEAR_R..FADE_R arasi seyrek (ormana yumusak gecis, sert
 ## bir "agac duvari" cizgisi olusmasin).
@@ -4052,14 +4086,68 @@ func _camp_clear_field_decor(cell: Vector2i) -> void:
 			n.queue_free()
 	_camp_field_nodes.erase(cell)
 
+## Prefabtan okunan ogeler: id -> Array[{off: Vector2i, yaw: float}]
+var _camp_items: Dictionary = {}
+
 func _camp_at(key: String) -> Vector2i:
-	var off: Vector2i = CAMP_OFF[key]
-	return _camp_center + off
+	if _camp_center == Vector2i(-999, -999):
+		return _camp_center
+	var list: Array = _camp_items.get(key, [])
+	if list.is_empty():
+		return _camp_center   # prefabta yoksa merkez (guvenli varsayilan)
+	return _camp_center + Vector2i(list[0]["off"])
+
+func _camp_yaw(key: String) -> float:
+	var list: Array = _camp_items.get(key, [])
+	return float(list[0]["yaw"]) if not list.is_empty() else 0.0
+
+## Coklu ogeler (mesale, tarla): mutlak hucre listesi.
+func _camp_cells_of(key: String) -> Array:
+	var out: Array = []
+	for it: Dictionary in _camp_items.get(key, []):
+		out.append(_camp_center + Vector2i(it["off"]))
+	return out
+
+## Prefabi BELLEKTE acar, ogeleri toplar, sahneyi serbest birakir.
+## Sahne oyuna EKLENMEZ: gorseller mevcut prop hattiyla (ton/olcek/devrik
+## durus) kurulur; prefab yalniz YERLESIM verisi. Boylece editor onizlemesi
+## ile oyun gorseli ayrisamaz — ikisi de ayni konumdan beslenir.
+func _camp_load_items() -> void:
+	_camp_items.clear()
+	if not ResourceLoader.exists(CAMP_SCENE):
+		push_error("Kamp prefabi bulunamadi: " + CAMP_SCENE)
+		return
+	var root: Node3D = (load(CAMP_SCENE) as PackedScene).instantiate()
+	_camp_collect(root, root, _camp_items)
+	root.free()
+
+## Ic ice dugumler (Tarla/Tumsek1) icin koke gore birlesik donusum.
+func _prefab_xform(node: Node3D, root: Node3D) -> Transform3D:
+	var t := node.transform
+	var pn := node.get_parent()
+	while pn != null and pn != root and pn is Node3D:
+		t = (pn as Node3D).transform * t
+		pn = pn.get_parent()
+	return t
+
+func _camp_collect(node: Node, root: Node3D, out: Dictionary) -> void:
+	for ch in node.get_children():
+		if ch is Node3D and (ch as Node3D).has_meta("oge"):
+			var t := _prefab_xform(ch as Node3D, root)
+			var id := String((ch as Node3D).get_meta("oge"))
+			if not out.has(id):
+				out[id] = []
+			out[id].append({
+				"off": Vector2i(roundi(t.origin.x), roundi(t.origin.z)),
+				"yaw": rad_to_deg(t.basis.get_euler().y),
+			})
+		_camp_collect(ch, root, out)
 
 ## ARAZI ASAMASI: _build_terrain'den ONCE calisir. Nesne temizligi, yollar,
 ## kuru kanal derinligi ve dogus hucresi burada belirlenir.
 func _camp_plan() -> void:
 	_camp_center = _spawn_cell
+	_camp_load_items()   # yerlesim prefabtan (scenes/prefabs/camp_start.tscn)
 	_camp_cells.clear()
 	_camp_field.clear()
 	# 1) Kamp acikligi. Ic daire (CLEAR_R) tamamen bosaltilir; disindaki
@@ -4111,10 +4199,10 @@ func _camp_plan() -> void:
 	# 3) Tarla (2x2). Bati kenarindaki "kuru kanal" KALDIRILDI: kazi
 	#    derinligi arazide kare kenarli bir BLOK YUKSELTI uretiyordu
 	#    (kose kose, dogal degil) ve dekoratif degeri yoktu.
-	var f := _camp_at("field")
-	for dy in 2:
-		for dx in 2:
-			_camp_field[f + Vector2i(dx, dy)] = true
+	# Tarla hucreleri prefabtaki Tumsek dugumlerinden (2x2 varsayimi yok:
+	# sahneye tumsek ekle/cikar, tarla ona gore buyur/kuculur).
+	for fc: Vector2i in _camp_cells_of("tarla"):
+		_camp_field[fc] = true
 	# 4) Dogus: kulubenin ONUNDE (kapi guneye bakiyor).
 	_spawn_cell = _camp_at("hut") + Vector2i(0, 2)
 	_objects.erase(_spawn_cell)
@@ -4122,16 +4210,12 @@ func _camp_plan() -> void:
 
 ## Kamp yapilarinin ayak izi (agac/kaya kesinlikle temizlenir).
 func _camp_build_footprint(c: Vector2i) -> bool:
-	var hut := _camp_at("hut")
-	if absi(c.x - hut.x) <= 2 and absi(c.y - hut.y) <= 2:
-		return true
-	var f := _camp_at("field")
-	if c.x >= f.x - 1 and c.x <= f.x + 1 and c.y >= f.y - 1 and c.y <= f.y + 2:
-		return true
-	for key: String in ["well", "masa", "sandik", "kabak", "ocak"]:
-		var p := _camp_at(key)
-		if absi(c.x - p.x) <= 1 and absi(c.y - p.y) <= 1:
-			return true
+	for id: String in _camp_items:
+		var r := 2 if id == "hut" else 1
+		for it: Dictionary in _camp_items[id]:
+			var p: Vector2i = _camp_center + Vector2i(it["off"])
+			if absi(c.x - p.x) <= r and absi(c.y - p.y) <= r:
+				return true
 	return false
 
 ## GORSEL ASAMA: _rebuild_objects'ten SONRA calisir (dekor dugumleri).
@@ -4143,11 +4227,13 @@ func _build_spawn_camp() -> void:
 	_camp_field_nodes.clear()
 	if _camp_center == Vector2i(-999, -999):
 		return
+	# TUM konum/donusler prefabtan (_camp_items). Kod yalniz "hangi id
+	# nasil cizilir" bilgisini tasir; NEREDE oldugunu sahne soyler.
 	# Ocak — SONUK (ates yok; _activate_hearth cagrilmaz)
-	_camp_prop_structure("ocak", _camp_at("ocak"), 0.0, false)
+	_camp_prop_structure("ocak", _camp_at("ocak"), _camp_yaw("ocak"), false)
 	# Yikik kulube: 3x3 ayak izi kati, guney-orta hucre kapi (giris)
 	var hut := _camp_at("hut")
-	_camp_prop_env("ruined_hut", hut, 0.0)
+	_camp_prop_env("ruined_hut", hut, _camp_yaw("hut"))
 	for dy in range(-1, 2):
 		for dx in range(-1, 2):
 			if dx == 0 and dy == 1:
@@ -4155,7 +4241,7 @@ func _build_spawn_camp() -> void:
 			_solid_cells[hut + Vector2i(dx, dy)] = true
 	# Kuyu
 	var well := _camp_at("well")
-	_camp_prop_env("ruined_well", well, 25.0)
+	_camp_prop_env("ruined_well", well, _camp_yaw("well"))
 	_solid_cells[well] = true
 	# Terk edilmis tarla: her hucrede sirt + uzerinde solmus bitki
 	var fi := 0
@@ -4167,11 +4253,11 @@ func _build_spawn_camp() -> void:
 	_camp_prop_pumpkin(_camp_at("kabak"))
 	# Uretim kosesi: solmus/devrik arastirma masasi + devrik bos sandik.
 	# TEZGAH YOK — ilk tezgahi oyuncu kuracak (mockup'taki bosluk kasitli).
-	_camp_prop_structure("arastirma_masasi", _camp_at("masa"), -20.0, true)
-	_camp_prop_structure("sandik", _camp_at("sandik"), 35.0, true)
+	_camp_prop_structure("arastirma_masasi", _camp_at("masa"), _camp_yaw("masa"), true)
+	_camp_prop_structure("sandik", _camp_at("sandik"), _camp_yaw("sandik"), true)
 	# Sonuk mesale direkleri (isik EKLENMEZ)
-	for off: Vector2i in CAMP_TORCHES:
-		_camp_prop_structure("mesale", _camp_center + off, 0.0, false)
+	for mc: Vector2i in _camp_cells_of("mesale"):
+		_camp_prop_structure("mesale", mc, 0.0, false)
 
 ## Mevcut yapi gorselini DEKOR olarak koyar (veri yok, etkilesim yok).
 ## tilt=true ise devrik/yipranmis durus (13.4'teki hasarli goruntunun aynisi).
@@ -4564,12 +4650,13 @@ func _run_camp_test(save_path: String) -> void:
 	for key: String in ["ocak", "masa", "sandik", "well"]:
 		if _placed.has(_camp_at(key)):
 			veri_temiz = false
-	for off: Vector2i in CAMP_TORCHES:
-		if _placed.has(c + off):
+	for mc: Vector2i in _camp_cells_of("mesale"):
+		if _placed.has(mc):
 			veri_temiz = false
 	# 5) Tarla: 4 hucre dekor
 	var tarla := _camp_field.size()
-	var f := _camp_at("field")
+	var tl := _camp_cells_of("tarla")
+	var f: Vector2i = tl[0] if not tl.is_empty() else c
 	# 6) Kamp acikligi: IC DAIRE tamamen bos mu, gecis halkasi seyrek mi
 	var ic_dolu := 0
 	var dolu := 0
@@ -7468,7 +7555,9 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 	# BIR YERI korumak. Oyuncu ancak yollarina cikarsa vurulur.
 	var hedef_hucre := hearth
 	if hedef_hucre == Vector2i(-999, -999):
-		hedef_hucre = _camp_center
+		# Prefabtaki Ocak isareti: kamp merkezinden farkli bir yere
+		# tasinirsa yaratiklar YENI yerine yurur (isaret yoksa merkez).
+		hedef_hucre = _camp_at("ocak")
 	var target := _cell_center(hedef_hucre) if hedef_hucre != Vector2i(-999, -999) \
 			else ppos
 	# Oyuncu YOLA GIRDIYSE yine de vurur: bu bir hedef degisimi degil,
