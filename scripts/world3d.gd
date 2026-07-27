@@ -10395,11 +10395,14 @@ func _run_kesif_perf() -> void:
 func _run_kesif_frames(save_path: String) -> void:
 	_cam_locked = true
 	var eski_poz := player.position
-	# 1) Kor tasi (ana1) yakin plan
+	# KADRAJ DERSI (ilk turdan): yakin-alcak kamera engebeli arazide
+	# yamacin icine gomuluyor (tas/damar kareleri bos cikti). Yuksek ve
+	# geriden bak — tepe olsa da hedef gorunur.
+	# 1) Kor tasi (ana1)
 	if _kor_taslari.has("ana1"):
 		var tp := _cell_center(Vector2i(_kor_taslari["ana1"]["cell"]))
-		camera.position = tp + Vector3(-2.4, 2.4, 3.4)
-		camera.look_at(tp + Vector3(0, 0.8, 0))
+		camera.position = tp + Vector3(-3.5, 5.0, 5.5)
+		camera.look_at(tp + Vector3(0, 0.6, 0))
 		await get_tree().create_timer(0.7).timeout
 		_snap(save_path.replace(".png", "_kesif_tas.png"))
 	# 2) Uyuyan kumesi
@@ -10409,26 +10412,37 @@ func _run_kesif_frames(save_path: String) -> void:
 		camera.look_at(mp + Vector3(0, 0.5, 0))
 		await get_tree().create_timer(0.7).timeout
 		_snap(save_path.replace(".png", "_kesif_uyuyan.png"))
-	# 3) Sis vinyeti: oyuncuyu Halka 2'ye isiksiz gonder (HUD kareye girer)
+	# 3) Sis vinyeti: oyuncu Halka 2'de ISIKSIZ olmali. CI turu envantere
+	# fener/koz kabi da veriyor (ilk turda kapi hic kapanmadi) — isik
+	# esyalarini gecici cikar, kareyi al, geri ver.
 	var merkez := get_hearth()
 	if merkez == Vector2i(-999, -999):
 		merkez = _spawn_cell
 	var hedef := _kor_tas_yer_bul(merkez + Vector2i(38, 0))
 	if hedef != Vector2i(-999, -999):
+		var isik_stash := {}
+		for tier in KesifBalance.ISIK_ESYA:
+			var iid: String = String(KesifBalance.ISIK_ESYA[tier])
+			isik_stash[iid] = Inventory.get_count(iid)
+			if isik_stash[iid] > 0:
+				Inventory.remove_item(iid, isik_stash[iid])
 		player.position = _cell_center(hedef)
 		camera.position = player.position + _camera_offset()
-		_kesif_timer = 1.0  # bir sonraki _process'te guncellensin
+		_update_kesif()  # zamanlayiciyi bekleme: kapi etkisi hemen
 		await get_tree().create_timer(0.8).timeout
 		_snap(save_path.replace(".png", "_kesif_sis.png"))
+		for iid in isik_stash:
+			if isik_stash[iid] > 0:
+				Inventory.add_item(iid, isik_stash[iid])
 	# 4) Damar catlagi
 	if not _damar_catlaklari.is_empty():
 		var dp := _cell_center(Vector2i(_damar_catlaklari[0]))
-		camera.position = dp + Vector3(-2.0, 2.0, 2.8)
+		camera.position = dp + Vector3(-2.5, 4.0, 3.5)
 		camera.look_at(dp)
 		await get_tree().create_timer(0.7).timeout
 		_snap(save_path.replace(".png", "_kesif_damar.png"))
 	player.position = eski_poz
 	camera.position = player.position + _camera_offset()
-	_kesif_timer = 1.0
+	_update_kesif()
 	await get_tree().create_timer(0.4).timeout
 	_cam_locked = false
