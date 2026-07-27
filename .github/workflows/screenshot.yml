@@ -16,7 +16,7 @@ on:
       - "*.tscn"
 
 env:
-  GODOT_TAG: "4.4-stable"
+  GODOT_TAG: "4.7-stable"
 
 permissions:
   contents: write
