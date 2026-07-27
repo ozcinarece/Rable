@@ -55,3 +55,23 @@ veriden kısılır (`wind_strength`/`quality` eşiği).
   dışa yatık.
 - `3d_cim_su_gece.png`: göl kıyısında çim, gece — su+çim gece tonu
   AYNI night_mix kaynağından, uyum tek karede.
+
+## KAPANIŞTA BULUNAN İKİ GERÇEK HATA (düzeltildi)
+
+1. **CI'nin push_error ağı delikti.** Godot 4.7 `push_error`'u
+   "USER ERROR:" değil `ERROR: <mesaj>` + `at: push_error (...)`
+   olarak basıyor (yerelde 4.7-stable ile ölçüldü). ci-fast.yml yalnız
+   "USER ERROR" aradığı için CIMTEST'in gerçekten ateşlenen bir değer
+   hatası CI'da YEŞİL kalmıştı. Desene `at: push_error` eklendi —
+   artık tüm değer testlerinin (WATERCOLORTEST dahil) hatası CI'yı
+   kırmızı yakar.
+2. **CIMTEST yanlış sayıyordu.** Çakıl/dal serpintisi MMI'ları da
+   `_decor_nodes`'ta yaşıyor ve bilerek shadersiz (taş/dal
+   sallanmamalı); test onları da sayıp "2/3 shadersiz" diyordu.
+   Sayım süs otuna daraltıldı: `mmi=1 shaderli=1 ornek=1890`.
+   Materyal ataması baştan beri doğruydu — hata testin kapsamındaydı.
+
+Aynı koşuda görülen ayrı bulgu (bu dalın işi değil): `cam.png`,
+`kor_feneri.png`, `koz_kabi.png` ikon dosyaları yok — keşif
+paketinin eşyaları ikonsuz ("Resource file not found"). Meshy/ikon
+üretiminde sıraya alınmalı.

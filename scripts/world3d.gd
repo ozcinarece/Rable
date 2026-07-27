@@ -10791,6 +10791,12 @@ func _run_cim_test() -> void:
 	var shaderli := 0
 	var ornek_toplam := 0
 	for node in _decor_nodes:
+		# Cakil/dal serpintisi de _decor_nodes'ta yasar ama BILEREK
+		# shadersiz (tas/dal sallanmamali). Ilk halde onlar da sayilip
+		# "2/3 shadersiz" hatasi uretiyordu — ve CI'nin push_error agi
+		# delik oldugu icin (asagida, ci-fast.yml) yesil kalmisti.
+		if _env_scatter_nodes.has(node):
+			continue
 		if node is MultiMeshInstance3D:
 			mmi_n += 1
 			ornek_toplam += (node as MultiMeshInstance3D).multimesh.instance_count
