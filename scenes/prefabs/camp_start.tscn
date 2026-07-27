@@ -1,0 +1,75 @@
+[gd_scene load_steps=4 format=3]
+
+[ext_resource type="PackedScene" path="res://assets/models/test/ancient_heart.glb" id="1_ocak"]
+[ext_resource type="PackedScene" path="res://assets/models/structures/ruined_hut.glb" id="2_kulube"]
+[ext_resource type="PackedScene" path="res://assets/models/structures/ruined_well.glb" id="3_kuyu"]
+
+[node name="KampBaslangic" type="Node3D"]
+
+[node name="Ocak" type="Node3D" parent="."]
+metadata/oge = "ocak"
+
+[node name="Onizleme" parent="Ocak" instance=ExtResource("1_ocak")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.164, 0)
+
+[node name="YikikKulube" type="Node3D" parent="."]
+transform = Transform3D(1.0, 0, -0.0, 0, 1, 0, 0.0, 0, 1.0, -5, 0, -4)
+metadata/oge = "hut"
+
+[node name="Onizleme" parent="YikikKulube" instance=ExtResource("2_kulube")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 1.409, 0)
+
+[node name="Kuyu" type="Node3D" parent="."]
+transform = Transform3D(0.906308, 0, -0.422618, 0, 1, 0, 0.422618, 0, 0.906308, 5, 0, -3)
+metadata/oge = "well"
+
+[node name="Onizleme" parent="Kuyu" instance=ExtResource("3_kuyu")]
+transform = Transform3D(1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0.6, 0)
+
+[node name="ArastirmaMasasi" type="Node3D" parent="."]
+transform = Transform3D(0.939693, 0, 0.34202, 0, 1, 0, -0.34202, 0, 0.939693, -5, 0, 3)
+metadata/oge = "masa"
+
+[node name="DevrikSandik" type="Node3D" parent="."]
+transform = Transform3D(0.819152, 0, -0.573576, 0, 1, 0, 0.573576, 0, 0.819152, -4, 0, 4)
+metadata/oge = "sandik"
+
+[node name="Kabak" type="Node3D" parent="."]
+transform = Transform3D(1.0, 0, -0.0, 0, 1, 0, 0.0, 0, 1.0, 4, 0, 1)
+metadata/oge = "kabak"
+
+[node name="Tarla" type="Node3D" parent="."]
+
+[node name="Tumsek1" type="Node3D" parent="Tarla"]
+transform = Transform3D(1.0, 0, -0.0, 0, 1, 0, 0.0, 0, 1.0, 5, 0, -1)
+metadata/oge = "tarla"
+
+[node name="Tumsek2" type="Node3D" parent="Tarla"]
+transform = Transform3D(1.0, 0, -0.0, 0, 1, 0, 0.0, 0, 1.0, 6, 0, -1)
+metadata/oge = "tarla"
+
+[node name="Tumsek3" type="Node3D" parent="Tarla"]
+transform = Transform3D(1.0, 0, -0.0, 0, 1, 0, 0.0, 0, 1.0, 5, 0, 0)
+metadata/oge = "tarla"
+
+[node name="Tumsek4" type="Node3D" parent="Tarla"]
+transform = Transform3D(1.0, 0, -0.0, 0, 1, 0, 0.0, 0, 1.0, 6, 0, 0)
+metadata/oge = "tarla"
+
+[node name="MesaleDirekleri" type="Node3D" parent="."]
+
+[node name="Mesale1" type="Node3D" parent="MesaleDirekleri"]
+transform = Transform3D(1.0, 0, -0.0, 0, 1, 0, 0.0, 0, 1.0, 0, 0, -3)
+metadata/oge = "mesale"
+
+[node name="Mesale2" type="Node3D" parent="MesaleDirekleri"]
+transform = Transform3D(1.0, 0, -0.0, 0, 1, 0, 0.0, 0, 1.0, 3, 0, 0)
+metadata/oge = "mesale"
+
+[node name="Mesale3" type="Node3D" parent="MesaleDirekleri"]
+transform = Transform3D(1.0, 0, -0.0, 0, 1, 0, 0.0, 0, 1.0, -3, 0, 0)
+metadata/oge = "mesale"
+
+[node name="Mesale4" type="Node3D" parent="MesaleDirekleri"]
+transform = Transform3D(1.0, 0, -0.0, 0, 1, 0, 0.0, 0, 1.0, 0, 0, 4)
+metadata/oge = "mesale"
