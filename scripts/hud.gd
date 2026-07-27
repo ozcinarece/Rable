@@ -2597,3 +2597,70 @@ func show_sabah_raporu(text: String) -> void:
 	kutu.add_child(tamam)
 	_sabah_panel.add_child(kutu)
 	add_child(_sabah_panel)
+
+# --- KESIF (16.5): HUD nabzi + fener kis butonu ----------------------------
+
+## Uyuyanlara yaklasinca ekran kenarinda cok ince kirmizi nabiz.
+signal fener_kisik_toggled(kisik: bool)
+
+var _nabiz: TextureRect
+var _nabiz_tween: Tween
+var _fener_btn: Button
+
+func set_nabiz(guc: float) -> void:
+	if _nabiz == null:
+		_nabiz = TextureRect.new()
+		_nabiz.texture = _make_nabiz_texture()
+		_nabiz.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_nabiz.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_nabiz.stretch_mode = TextureRect.STRETCH_SCALE
+		_nabiz.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_nabiz.modulate.a = 0.0
+		add_child(_nabiz)
+		move_child(_nabiz, 3)
+	if _nabiz_tween != null:
+		_nabiz_tween.kill()
+		_nabiz_tween = null
+	if guc <= 0.0:
+		_nabiz.modulate.a = 0.0
+		return
+	# Kalp atisi: alfa 0.05 <-> tavan arasi yumusak gidip gelir.
+	var tavan := 0.06 + 0.20 * clampf(guc, 0.0, 1.0)
+	_nabiz_tween = create_tween().set_loops()
+	_nabiz_tween.tween_property(_nabiz, "modulate:a", tavan, 0.45) \
+			.set_trans(Tween.TRANS_SINE)
+	_nabiz_tween.tween_property(_nabiz, "modulate:a", 0.05, 0.55) \
+			.set_trans(Tween.TRANS_SINE)
+
+func _make_nabiz_texture() -> ImageTexture:
+	var w := 240
+	var h := 135
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var col := Color(0.75, 0.20, 0.22)
+	for y in h:
+		for x in w:
+			var nx := (float(x) / w - 0.5) * 2.0
+			var ny := (float(y) / h - 0.5) * 2.0
+			var d := sqrt(nx * nx + ny * ny)
+			var a: float = clampf((d - 0.78) / 0.40, 0.0, 1.0)
+			img.set_pixel(x, y, Color(col.r, col.g, col.b, pow(a, 1.4)))
+	return ImageTexture.create_from_image(img)
+
+## Fener kis butonu: yalniz K2+ isik tasinirken gorunur (world cagirir).
+## Basili = KISIK (gorus dar ama uyuyanlari uyandirmazsin — 16.5 stealth).
+func set_fener_gorunur(on: bool) -> void:
+	if _fener_btn == null:
+		_fener_btn = Button.new()
+		_fener_btn.toggle_mode = true
+		_fener_btn.text = "Feneri Kıs"
+		_fener_btn.theme = load("res://theme_main.tres")
+		_fener_btn.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+		_fener_btn.offset_left = 16.0
+		_fener_btn.offset_top = -140.0
+		_fener_btn.offset_right = 150.0
+		_fener_btn.offset_bottom = -96.0
+		_fener_btn.toggled.connect(func(pressed: bool):
+			_fener_btn.text = "Feneri Aç" if pressed else "Feneri Kıs"
+			fener_kisik_toggled.emit(pressed))
+		add_child(_fener_btn)
+	_fener_btn.visible = on

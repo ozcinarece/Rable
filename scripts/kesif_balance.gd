@@ -122,6 +122,22 @@ static func dalga_gucu(gece: int, yanik_ana: int, nefes: String) -> float:
 	return float(gece) * DALGA_TABAN * gece_sertlesme(yanik_ana) \
 			* float(NEFES_CARPAN.get(nefes, 1.0))
 
+# --- 16.5 Uyuyanlar (gunduz gerilimi — stealth) ---------------------------
+const UYUYAN_KUME_SAYI := 5        # sis kusaklarina dagitilan kume adedi
+const UYUYAN_KUME_MIN := 3         # kume basi tas kesilmis Kulgezer
+const UYUYAN_KUME_MAX := 5
+const UYUYAN_HALKA_MIN := 2        # yalniz Halka 2+ (sis kusaklari)
+## Uyanma kurallari (basit, ogrenilebilir):
+const UYANMA_R := 3.0              # kosu/parlak isik bu yaricapta uyandirir
+const UYANMA_GURULTU_R := 5.0      # kazma/agac kesme gurultusu yaricapi
+const UYANMA_CARPMA_R := 1.1       # cluster uyesine bilfiil carpma
+const UYANMA_GECIKME := 1.5        # kabuk catlamasi -> saldiri (sn)
+const YENIDEN_UYKU_R := 12.0       # oyuncu bu kadar uzaklasinca yeniden uyurlar
+const UYUYAN_ODUL := {"oz": 3}     # kume ortasindaki odul (16.5 risk-odul)
+const NABIZ_R := 6.0               # HUD nabzi hissedilme mesafesi
+## Kisik fener uyandirmaz (16.5 stealth istisnasi); parlak (K2+) uyandirir.
+const PARLAK_UYANDIRIR_ISIK := 2
+
 # --- Sorgular -------------------------------------------------------------
 
 static func ring_of(cell: Vector2i, merkez: Vector2i) -> int:
