@@ -2561,3 +2561,39 @@ func _make_sis_texture() -> ImageTexture:
 			var a: float = clampf((d - 0.30) / 0.90, 0.0, 1.0)
 			img.set_pixel(x, y, Color(col.r, col.g, col.b, pow(a, 1.35)))
 	return ImageTexture.create_from_image(img)
+
+# --- KESIF (16.4): sabah raporu paneli ------------------------------------
+# Sefer sabahi simulasyon sonucu: kapanana kadar duran kucuk panel
+# (flash_pill 2 sn'de ucar; rapor okunmadan kaybolmamali).
+
+var _sabah_panel: PanelContainer
+
+func show_sabah_raporu(text: String) -> void:
+	if _sabah_panel != null and is_instance_valid(_sabah_panel):
+		_sabah_panel.queue_free()
+	_sabah_panel = PanelContainer.new()
+	_sabah_panel.theme = load("res://theme_main.tres")
+	_sabah_panel.theme_type_variation = "TitleTab"
+	_sabah_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_sabah_panel.offset_top = 64.0
+	_sabah_panel.offset_left = -200.0
+	_sabah_panel.offset_right = 200.0
+	var kutu := VBoxContainer.new()
+	kutu.add_theme_constant_override("separation", 8)
+	var baslik := Label.new()
+	baslik.theme_type_variation = "TitleTabLabel"
+	baslik.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	baslik.text = "Sabah Raporu"
+	kutu.add_child(baslik)
+	var govde := Label.new()
+	govde.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	govde.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	govde.custom_minimum_size = Vector2(360, 0)
+	govde.text = text
+	kutu.add_child(govde)
+	var tamam := Button.new()
+	tamam.text = "Tamam"
+	tamam.pressed.connect(func(): _sabah_panel.queue_free())
+	kutu.add_child(tamam)
+	_sabah_panel.add_child(kutu)
+	add_child(_sabah_panel)

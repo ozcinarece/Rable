@@ -127,6 +127,11 @@ const PLACE_MODELS := {
 	"mesale": {"model": "res://assets/models/tools/campfire-stand.glb",
 			"h": 0.7, "solid": false,
 			"behavior": "torch", "max_hp": 30},
+	# KESIF 16.4: yol koru yere konunca MINI KAMP ATESI olur (isik cemberi
+	# + pisirme + kayit noktasi). Yerlestirme isik kapisina tabidir.
+	"yol_koru": {"model": "res://assets/models/tools/campfire-pit.glb",
+			"h": 0.5, "solid": false,
+			"behavior": "sefer_atesi", "max_hp": 20},
 	# MUHENDISLIK 11.5: merdiven — kazilmis cukura (pit_only) konur, kenara
 	# yaslanir (rotatable = hangi kenar). Cukurdan cikis saglar (can_step).
 	"merdiven": {"model": "ladder", "h": 1.0, "solid": false,
@@ -385,6 +390,7 @@ func _ready() -> void:
 	# otomatigi, sonra buyume tick'i — sira world3d'de, belirsizlik yok)
 	Farming.plot_changed.connect(_on_plot_changed)
 	DayNight.dawn_started.connect(_on_farm_dawn)
+	DayNight.dawn_started.connect(_on_kesif_dawn)  # 16.4 sefer sabahi
 	# GECE DALGASI (minimal): kanca artik BOS degil — gece dogur, safakta erit.
 	DayNight.night_started.connect(_on_night_started)
 	DayNight.dawn_started.connect(_on_dawn_clear_creatures)
@@ -1449,6 +1455,7 @@ func _run_fast_tests() -> void:
 	_run_creature_selftest()
 	_run_kesif_test()
 	_run_kor_test()
+	_run_sefer_test()
 	_run_save_load_selftest()
 	print("FASTTESTS: bitti")
 	get_tree().quit()
@@ -2218,12 +2225,16 @@ func _kesif_to_save() -> Dictionary:
 		var t: Dictionary = _kor_taslari[id]
 		taslar.append({"id": id, "x": Vector2i(t["cell"]).x,
 				"y": Vector2i(t["cell"]).y, "yanik": bool(t["yanik"])})
-	return {"taslar": taslar, "fener_kisik": _fener_kisik}
+	return {"taslar": taslar, "fener_kisik": _fener_kisik,
+			"nefes": _ocak_nefes}
 
 func _kesif_from_save(data: Dictionary) -> void:
 	if data.is_empty():
 		return
 	_fener_kisik = bool(data.get("fener_kisik", false))
+	var nefes := String(data.get("nefes", "harla"))
+	if KesifBalance.NEFES_CARPAN.has(nefes):
+		_ocak_nefes = nefes
 	for kayit in data.get("taslar", []):
 		var id := String(kayit.get("id", ""))
 		if not _kor_taslari.has(id):
@@ -6244,6 +6255,11 @@ func _try_pour(cell: Vector2i) -> bool:
 func _try_place(cell: Vector2i) -> bool:
 	if _placed.has(cell) or _objects.has(cell) or cell == _player_cell():
 		return false
+	# KESIF 16.1/16.4: yetersiz isikla siste KAMP KURULAMAZ (kapi kurali).
+	if _held_item == "yol_koru" and not kesif_kamp_izni():
+		_spawn_floating_text(cell, "Cok karanlik — kamp kurulamaz",
+				Color(1, 0.6, 0.4))
+		return false
 	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
 		return false
 	if not (_ground_char.get(cell, "") in [".", "d", "s"]):
@@ -6286,6 +6302,14 @@ func _set_placed(cell: Vector2i, item_id: String, rot: int = 0) -> void:
 			_solid_cells[cell] = true  # kapali kapi katidir
 	elif behavior == "torch":
 		_add_torch_light(cell, holder)
+	elif behavior == "sefer_atesi":
+		# KESIF 16.4: mini isik cemberi + KAYIT NOKTASI (yerlestirme aninda)
+		_add_torch_light(cell, holder)
+		if not _loading and not _editor_on \
+				and not OS.has_environment("RABLE_MASK_PREVIEW"):
+			SaveManager.save()
+			_spawn_floating_text(cell, "Kamp kuruldu — kayit alindi",
+					Color(1, 0.85, 0.5))
 	elif behavior == "hearth":
 		_activate_hearth(cell, holder)   # 14.3 tek aktif ocak + oncelikli isik
 	elif behavior == "platform":
@@ -6722,6 +6746,8 @@ func _update_station_proximity() -> void:
 					near_res = true
 				"ocak":
 					near_hearth = true  # 14.3 pisirme istasyonu (arayuz)
+				"yol_koru":
+					near_hearth = true  # KESIF 16.4: kampta yemek pisirilir
 	Crafting.near_station = near_bench
 	Crafting.near_research = near_res
 	Crafting.near_hearth = near_hearth
@@ -7878,10 +7904,22 @@ var _night_wave_active: bool = false
 var _night_damage_taken: bool = false  # sabah ozeti icin (hasarsiz gece mi)
 
 ## Gece basladi: o gecenin kademesine gore tek grup dogur.
+## KESIF 16.4: oyuncu Ocak'tan uzaksa (sefer) base dalgasi SIMULE edilir
+## (gercek zamanli cift sahne yok — mobil); oyuncunun yanina yalniz
+## atesli kampin cektigi kucuk karsilasma gelir.
 func _on_night_started() -> void:
 	_night_wave_active = true
 	_night_damage_taken = false
-	_spawn_night_wave(DayNight.day)
+	var hc := get_hearth()
+	var uzak: bool = hc != Vector2i(-999, -999) \
+			and Vector2(_player_cell() - hc).length() > KesifBalance.SEFER_UZAK_R
+	_sefer_gecesi = uzak
+	if uzak:
+		var sonuc := _sefer_dalga_simule(DayNight.day)
+		_sabah_raporu = String(sonuc["rapor"])
+		_kamp_gecesi_karsilasma(DayNight.day)
+	else:
+		_spawn_night_wave(DayNight.day)
 
 ## O gecenin yaratiklarini harita kenarindan dogurur.
 func _spawn_night_wave(night: int) -> void:
@@ -9643,3 +9681,178 @@ func _run_kor_test() -> void:
 		push_error("KOR: gece sertlesme carpani artmiyor")
 	print("KORTEST: ana=%d yan=%d yakma=%s temiz=%s carpan=%.2f->%.2f" % [
 			ana, yan, str(ok), str(sis_sonra == 0.0), carpan0, carpan1])
+
+# =========================================================================
+# KESIF Asama 3 (16.4) — SEFER, KAMP, OCAK SIMULASYONU
+# =========================================================================
+# Sefer = gece basinda Ocak'tan SEFER_UZAK_R'den uzak olmak. O gece:
+# - Base dalgasi SIMULE edilir: savunma puani vs dalga gucu (formul
+#   kesif_balance.gd basliginda). Hasar once savunma yapilarini yer,
+#   artani Ocak'a gecer. Sonuc sabah raporu olarak HUD'a.
+# - Oyuncunun yaninda atesli kamp (placed yol_koru) varsa kucuk cekim
+#   karsilasmasi dogar (2-4 yaratik — dalga degil).
+# - Ates yoksa: gorunmezsin ama ussursun — safakta hafif hp/aclik cezasi.
+
+var _sefer_gecesi: bool = false
+var _sabah_raporu: String = ""
+var _ocak_nefes: String = "harla"  # HIKAYE 9 kancasi: "kozle" = saklan modu
+
+## Nefes secimi (UI hikaye fazinda; API + kayit hazir).
+func set_ocak_nefes(mode: String) -> void:
+	if KesifBalance.NEFES_CARPAN.has(mode):
+		_ocak_nefes = mode
+		_dirty = true
+
+## Savunma puani: Ocak cevresi SAVUNMA_R icindeki yapilar + su hendegi.
+func _savunma_puani() -> float:
+	var hc := get_hearth()
+	if hc == Vector2i(-999, -999):
+		return 0.0
+	var puan := 0.0
+	for cell: Vector2i in _placed:
+		if Vector2(cell - hc).length() > KesifBalance.SAVUNMA_R:
+			continue
+		var id: String = _placed[cell]
+		if not KesifBalance.SAVUNMA_AGIRLIK.has(id):
+			continue
+		var max_hp: int = int(PLACE_MODELS.get(id, {}).get("max_hp", 100))
+		var hp: float = _structures.hp_ratio(cell) * float(max_hp)
+		puan += hp * float(KesifBalance.SAVUNMA_AGIRLIK[id])
+	var r := int(ceil(KesifBalance.SAVUNMA_R))
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			var c := hc + Vector2i(dx, dy)
+			if Vector2(c - hc).length() > KesifBalance.SAVUNMA_R:
+				continue
+			# Su hendegi: kazilmis + su dolu hucre
+			if int(_depth.get(c, 0)) > 0 and float(_water_level.get(c, 0.0)) > 0.2:
+				puan += KesifBalance.SU_PUAN
+	return puan
+
+## Gece dalgasini SIMULE et (oyuncu uzakta). Hasari gercekten uygular;
+## sonucu rapor metniyle dondurur. {rapor: String, hasar: float}
+func _sefer_dalga_simule(night: int) -> Dictionary:
+	var savunma := _savunma_puani()
+	var dalga: float = KesifBalance.dalga_gucu(night, _yanik_ana_sayisi(),
+			_ocak_nefes)
+	var hasar: float = maxf(0.0,
+			dalga - savunma * KesifBalance.SAVUNMA_ETKI)
+	var rapor := ""
+	if hasar <= 0.0:
+		rapor = "Ocak dayandi — savunma gece boyunca tuttu."
+	else:
+		# Hasar puanini Ocak'a yakin savunma yapilarindan duserek harca;
+		# yapi kalmazsa artani Ocak yer.
+		var kalan: float = hasar * KesifBalance.HASAR_YAPI_CARPAN
+		var hc := get_hearth()
+		var hedefler: Array = []
+		for cell: Vector2i in _placed:
+			if cell != hc and KesifBalance.SAVUNMA_AGIRLIK.has(String(_placed[cell])) \
+					and Vector2(cell - hc).length() <= KesifBalance.SAVUNMA_R:
+				hedefler.append(cell)
+		hedefler.sort_custom(func(a, b):
+			return Vector2(a - hc).length() > Vector2(b - hc).length())
+		var kirilan := 0
+		var hasarli := 0
+		for cell: Vector2i in hedefler:
+			if kalan <= 0.0:
+				break
+			var id: String = _placed[cell]
+			var max_hp: int = int(PLACE_MODELS.get(id, {}).get("max_hp", 100))
+			var hp: float = _structures.hp_ratio(cell) * float(max_hp)
+			var vur: float = minf(kalan, hp)
+			kalan -= vur
+			_structure_take_hit(cell, int(ceil(vur)), Vector3.FORWARD)
+			if vur >= hp:
+				kirilan += 1
+			else:
+				hasarli += 1
+		if kalan > 0.0 and _placed.has(hc):
+			_structure_take_hit(hc, int(ceil(kalan)), Vector3.FORWARD)
+			rapor = "Ocak hasarli! Eve don."
+		elif kirilan > 0:
+			rapor = "Ocak dayandi — %d yapi yikildi, %d hasar aldi." % [kirilan, hasarli]
+		else:
+			rapor = "Ocak dayandi — savunma hasar aldi (%d yapi)." % hasarli
+	print("SEFERSIM: gece=%d savunma=%.1f dalga=%.1f hasar=%.1f nefes=%s" % [
+			night, savunma, dalga, hasar, _ocak_nefes])
+	return {"rapor": rapor, "hasar": hasar}
+
+## Oyuncunun yakininda yanik kamp atesi var mi (placed yol_koru)?
+func _kamp_atesi_yakinimda() -> bool:
+	var pc := _player_cell()
+	for cell: Vector2i in _placed:
+		if String(_placed[cell]) == "yol_koru" \
+				and Vector2(cell - pc).length() <= KesifBalance.KAMP_YAKIN_R:
+			return true
+	return false
+
+## Kamp gecesi cekimi (16.4): ates yaniyorsa 2-4 yaratik oyuncunun
+## cevresinde dogar (dalga DEGIL — kamp isiginin bedeli).
+func _kamp_gecesi_karsilasma(night: int) -> void:
+	if not _kamp_atesi_yakinimda():
+		return  # atessiz gece: gorunmezsin (bedeli sabah)
+	var zar := DigWaterVisual.hash01(_player_cell().x, _player_cell().y, night * 31)
+	if zar > KesifBalance.KAMP_KARSILASMA_SANS:
+		return
+	var n: int = KesifBalance.KAMP_KARSILASMA_MIN + int(
+			DigWaterVisual.hash01(night, 7, 13) * float(KesifBalance.KAMP_KARSILASMA_MAX
+			- KesifBalance.KAMP_KARSILASMA_MIN + 1))
+	n = clampi(n, KesifBalance.KAMP_KARSILASMA_MIN, KesifBalance.KAMP_KARSILASMA_MAX)
+	var pc := _player_cell()
+	var made := 0
+	for i in 24:
+		if made >= n:
+			break
+		var aci := TAU * DigWaterVisual.hash01(i, night, 77)
+		var cell := pc + Vector2i(roundi(cos(aci) * 8.0), roundi(sin(aci) * 8.0))
+		if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
+			continue
+		if not is_walkable(cell):
+			continue
+		spawn_creature(cell, "normal", CreatureBalance.night_hp_mult(night))
+		made += 1
+	if made > 0 and hud != null:
+		hud.flash_pill("Ates dikkat cekti...")
+	print("KAMPGECE: gece=%d dogan=%d ates=%s" % [night, made, "true"])
+
+## Safak (sefer tarafi): atessiz gece cezasi + sabah raporu.
+func _on_kesif_dawn() -> void:
+	if not _sefer_gecesi:
+		return
+	_sefer_gecesi = false
+	if not _kamp_atesi_yakinimda():
+		Health.damage(KesifBalance.ATESSIZ_HP_CEZA)
+		Hunger.value = maxf(0.0, Hunger.value - KesifBalance.ATESSIZ_ACLIK_CEZA)
+		Hunger.changed.emit()
+		if hud != null:
+			hud.flash_pill("Soguk bir gece gecirdin")
+	if _sabah_raporu != "" and hud != null:
+		hud.show_sabah_raporu(_sabah_raporu)
+	_sabah_raporu = ""
+
+## SEFERTEST (hizli CI): formul yonleri + kamp izni kapisi + rapor uretimi.
+func _run_sefer_test() -> void:
+	var d_harla: float = KesifBalance.dalga_gucu(3, 0, "harla")
+	var d_kozle: float = KesifBalance.dalga_gucu(3, 0, "kozle")
+	var d_sert: float = KesifBalance.dalga_gucu(3, 4, "harla")
+	if d_kozle >= d_harla:
+		push_error("SEFER: kozle indirimi calismiyor")
+	if d_sert <= d_harla:
+		push_error("SEFER: tas sertlesmesi dalgaya yansimiyor")
+	var savunma := _savunma_puani()
+	var sonuc := _sefer_dalga_simule(1)
+	if String(sonuc["rapor"]) == "":
+		push_error("SEFER: sabah raporu bos")
+	# Kamp izni kapisi: isik acigi varken kapali, yokken acik.
+	var eski_acik := _isik_acik
+	_isik_acik = 2
+	var kapali: bool = not kesif_kamp_izni()
+	_isik_acik = 0
+	var acik: bool = kesif_kamp_izni()
+	_isik_acik = eski_acik
+	if not kapali or not acik:
+		push_error("SEFER: kamp isik kapisi calismiyor")
+	print("SEFERTEST: dalga=%.1f/%.1f/%.1f savunma=%.1f rapor='%s' kapi=%s" % [
+			d_harla, d_kozle, d_sert, savunma,
+			String(sonuc["rapor"]), str(kapali and acik)])

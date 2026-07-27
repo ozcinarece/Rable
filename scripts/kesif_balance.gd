@@ -85,6 +85,43 @@ static func tas_bedel(id: String) -> Dictionary:
 		return TAS_BEDEL[clampi(i, 0, TAS_BEDEL.size() - 1)]
 	return TAS_YAN_BEDEL
 
+# --- 16.4 Sefer ve kamp ---------------------------------------------------
+## Gece basinda Ocak'tan bu kadar uzaksan o gece SEFER gecesidir:
+## base dalgasi SIMULE edilir, gercek dalga oyuncunun yanina gelmez.
+const SEFER_UZAK_R := 18.0
+## Atesli kamp gecesi cekim: 2-4 yaratik (16.4 "dalga degil"), olasilik.
+const KAMP_KARSILASMA_MIN := 2
+const KAMP_KARSILASMA_MAX := 4
+const KAMP_KARSILASMA_SANS := 0.6
+## Kamp atesi sayilan yaricap (oyuncunun cevresinde placed yol_koru).
+const KAMP_YAKIN_R := 6.0
+## Atessiz gece cezasi (sabah): "karanlikta titrersin ama gorunmezsin".
+const ATESSIZ_HP_CEZA := 8.0
+const ATESSIZ_ACLIK_CEZA := 12.0
+
+## SAVUNMA PUANI (16.4 formulu — sabah raporunun matematigi):
+##   puan = SIGMA( yapi_hp * tip_agirligi ) + su_hucre * SU_PUAN
+## Hesap alani Ocak cevresi SAVUNMA_R. Dalga gucu:
+##   dalga = gece * DALGA_TABAN * gece_sertlesme * nefes_carpani
+## Hasar = max(0, dalga - puan * SAVUNMA_ETKI). Hasar once savunma
+## yapilarini yer, artani Ocak'a gecer ("Ocak hasarli! Eve don").
+const SAVUNMA_R := 10.0
+const SAVUNMA_AGIRLIK := {
+	"ahsap_duvar": 0.10, "tas_duvar": 0.14, "kapi": 0.08, "tuzak": 0.20,
+	"kazik": 0.15, "platform": 0.06, "mesale": 0.04,
+}
+const SU_PUAN := 3.0            # su dolu kazilmis hucre (hendek) basina
+const DALGA_TABAN := 6.0
+const SAVUNMA_ETKI := 0.8
+const HASAR_YAPI_CARPAN := 1.0  # hasar puani -> yapi hp kaybi
+## Nefes (HIKAYE 9 kancasi): "kozle" saklan modu dalgayi indirir.
+## UI secimi hikaye fazinda; API + kayit bugunden hazir.
+const NEFES_CARPAN := {"harla": 1.0, "kozle": 0.65}
+
+static func dalga_gucu(gece: int, yanik_ana: int, nefes: String) -> float:
+	return float(gece) * DALGA_TABAN * gece_sertlesme(yanik_ana) \
+			* float(NEFES_CARPAN.get(nefes, 1.0))
+
 # --- Sorgular -------------------------------------------------------------
 
 static func ring_of(cell: Vector2i, merkez: Vector2i) -> int:
