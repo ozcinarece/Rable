@@ -33,6 +33,7 @@ const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const ChestStore = preload("res://scripts/inventory.gd")  # 14.1 sandik deposu
 const TestMode = preload("res://scripts/test_mode.gd")
+const KesifBalance = preload("res://scripts/kesif_balance.gd")  # Bolum 16
 
 ## Zemin turleri: renk + ust yuzey yuksekligi. "speckled": true olan
 ## turler icin benekli doku CALISMA ANINDA kodla uretilir (dosya
@@ -1446,6 +1447,7 @@ func _run_fast_tests() -> void:
 	_run_time_selftest()
 	_run_muhendislik_selftest()
 	_run_creature_selftest()
+	_run_kesif_test()
 	_run_save_load_selftest()
 	print("FASTTESTS: bitti")
 	get_tree().quit()
@@ -2002,6 +2004,11 @@ func _process(delta: float) -> void:
 	if _station_timer >= 0.25:
 		_station_timer = 0.0
 		_update_station_proximity()
+	# KESIF (16.1-16.2): oyuncunun halkasi + isigi -> sis/vinyet/kapi
+	_kesif_timer += delta
+	if _kesif_timer >= 0.2:
+		_kesif_timer = 0.0
+		_update_kesif()
 	# Eldeki esya envanterden ciktiysa birak
 	if _held_item != "" and Inventory.get_count(_held_item) <= 0:
 		_on_hold_requested("")
@@ -6990,6 +6997,10 @@ func _try_pickup_ground(cell: Vector2i) -> bool:
 
 ## Oyuncunun onunde ~90 derece koni: baktigi hucre once, sonra komsular.
 func _candidate_cells() -> Array:
+	# KESIF 16.1: yetersiz isikla siste genis tarama KAPANIR — yalniz on
+	# hucre. "Hedefleme mesafesi duser" kapisinin hucre-tabanli karsiligi.
+	if _isik_acik > 0 and KesifBalance.KISITLI_HEDEFLEME:
+		return [_facing_cell()]
 	var pc := _player_cell()
 	var fo := Vector2i(player.facing.round())
 	if fo == Vector2i.ZERO:
@@ -9203,3 +9214,153 @@ func _run_editor_test() -> void:
 		push_error("EDITOR: disa aktarim bos")
 	if not birebir:
 		push_error("EDITOR: dosyadan kurulan duzen orijinaliyle AYNI DEGIL")
+
+# =========================================================================
+# KESIF (Bolum 16) — halka + sis + isik kapisi altyapisi (Asama 1)
+# =========================================================================
+# Kapsam: hucrenin halkasi, oyuncunun tasidigi isik, ikisinin farki
+# (isik acigi) ve bunun uc etkisi: vinyet/soguma (HUD), hedefleme
+# daralmasi (_candidate_cells) ve kamp izni (Asama 3 okur). Sis gorseli
+# mobil dostu: ekran vinyeti + oyuncuyu izleyen tek alcak sis duzlemi.
+# TUM sayilar kesif_balance.gd'de.
+
+var _kesif_timer: float = 0.0
+var _sis_yogun: float = 0.0        # oyuncunun bulundugu hucrede sis (0..1)
+var _isik_acik: int = 0            # eksik isik kademesi (0 = kapi acik)
+var _fener_kisik: bool = false     # 16.5 stealth: parlak/kisik
+var _sis_duzlem: MeshInstance3D = null
+var _sis_duzlem_mat: StandardMaterial3D = null
+var _son_vinyet: float = -1.0      # HUD'a yalniz degisince yaz
+## Kor tasi temizligi (Asama 2 dolduracak): [{cell: Vector2i, r: float}]
+var _temiz_bolgeler: Array = []
+
+## Hucrenin halkasi (0=Yuva .. 3=Derin Sis). Merkez: Ocak, yoksa dogus.
+func get_ring(cell: Vector2i) -> int:
+	var merkez := get_hearth()
+	if merkez == Vector2i(-999, -999):
+		merkez = _spawn_cell
+	return KesifBalance.ring_of(cell, merkez)
+
+## Hucredeki etkin sis: halka sisi, temizlenmis bolgede sifir (16.2).
+func _sis_at_cell(cell: Vector2i) -> float:
+	for b in _temiz_bolgeler:
+		if Vector2(cell - Vector2i(b["cell"])).length() <= float(b["r"]):
+			return 0.0
+	return KesifBalance.sis_yogunluk(get_ring(cell))
+
+## Yetersiz isikla siste miyiz? (hedefleme + kamp + uyuyan tespiti okur)
+func _sis_kisitli() -> bool:
+	return _isik_acik > 0
+
+## Kamp kurulabilir mi (16.1: yetersiz isikta KURULAMAZ). Asama 3 okur.
+func kesif_kamp_izni() -> bool:
+	if not KesifBalance.KAMP_ISIK_SART:
+		return true
+	return not _sis_kisitli()
+
+func set_fener_kisik(on: bool) -> void:
+	_fener_kisik = on
+	_son_vinyet = -1.0  # vinyet degisti, HUD'i zorla tazele
+
+## 0.2 sn'de bir: oyuncunun halkasi/isigi -> HUD vinyeti + sis duzlemi.
+func _update_kesif() -> void:
+	var pc := _player_cell()
+	_sis_yogun = _sis_at_cell(pc)
+	var isik: int = KesifBalance.tasinan_isik(Inventory)
+	if _sis_yogun <= 0.0:
+		_isik_acik = 0
+	else:
+		_isik_acik = KesifBalance.isik_acigi(get_ring(pc), isik)
+	var v: float = KesifBalance.vinyet(_sis_yogun, _isik_acik,
+			_fener_kisik and isik >= 2)
+	if absf(v - _son_vinyet) > 0.01:
+		_son_vinyet = v
+		hud.set_sis(v, KesifBalance.soguk(_sis_yogun))
+	_update_sis_duzlem()
+
+## Oyuncuyu izleyen tek yari-seffaf duzlem: "alcak sis" (16.2 gorseli).
+func _update_sis_duzlem() -> void:
+	if _sis_yogun <= 0.0:
+		if _sis_duzlem != null:
+			_sis_duzlem.visible = false
+		return
+	if _sis_duzlem == null:
+		var mesh := PlaneMesh.new()
+		mesh.size = Vector2(KesifBalance.SIS_DUZLEM_BOYUT,
+				KesifBalance.SIS_DUZLEM_BOYUT)
+		_sis_duzlem_mat = StandardMaterial3D.new()
+		_sis_duzlem_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_sis_duzlem_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_sis_duzlem_mat.albedo_color = KesifBalance.SIS_RENK
+		_sis_duzlem_mat.no_depth_test = false
+		_sis_duzlem = MeshInstance3D.new()
+		_sis_duzlem.mesh = mesh
+		_sis_duzlem.material_override = _sis_duzlem_mat
+		_sis_duzlem.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_sis_duzlem)
+	_sis_duzlem.visible = true
+	var c := KesifBalance.SIS_RENK
+	c.a = KesifBalance.SIS_DUZLEM_ALFA * _sis_yogun
+	_sis_duzlem_mat.albedo_color = c
+	_sis_duzlem.position = Vector3(player.position.x,
+			KesifBalance.SIS_DUZLEM_YUKSEK, player.position.z)
+
+## KESIFTEST (hizli CI): halka matematigi, isik kademesi, kapi etkileri,
+## tarif/dugum varligi. Sayilar degisirse test degil VERI guncellenir.
+func _run_kesif_test() -> void:
+	var merkez := Vector2i(64, 64)
+	var h0: int = KesifBalance.ring_of(merkez, merkez)
+	var h1: int = KesifBalance.ring_of(merkez + Vector2i(20, 0), merkez)
+	var h2: int = KesifBalance.ring_of(merkez + Vector2i(40, 0), merkez)
+	var h3: int = KesifBalance.ring_of(merkez + Vector2i(60, 0), merkez)
+	if [h0, h1, h2, h3] != [0, 1, 2, 3]:
+		push_error("KESIF: halka matematigi bozuk: %s" % str([h0, h1, h2, h3]))
+	# Isik kademesi: envantere gecici esya ekle/cikar (deterministik fark).
+	var eski := {}
+	for tier in KesifBalance.ISIK_ESYA:
+		var id: String = String(KesifBalance.ISIK_ESYA[tier])
+		eski[id] = Inventory.get_count(id)
+		if eski[id] > 0:
+			Inventory.remove_item(id, eski[id])
+	var t0: int = KesifBalance.tasinan_isik(Inventory)
+	Inventory.add_item("mesale", 1)
+	var t1: int = KesifBalance.tasinan_isik(Inventory)
+	Inventory.add_item("kor_feneri", 1)
+	var t2: int = KesifBalance.tasinan_isik(Inventory)
+	Inventory.add_item("koz_kabi", 1)
+	var t3: int = KesifBalance.tasinan_isik(Inventory)
+	Inventory.remove_item("mesale", 1)
+	Inventory.remove_item("kor_feneri", 1)
+	Inventory.remove_item("koz_kabi", 1)
+	for id in eski:
+		if eski[id] > 0:
+			Inventory.add_item(id, eski[id])
+	if [t0, t1, t2, t3] != [0, 1, 2, 3]:
+		push_error("KESIF: isik kademesi bozuk: %s" % str([t0, t1, t2, t3]))
+	# Kapi etkileri: aciksiz vinyet hafif, acikli agir, sissiz sifir.
+	var v_yok: float = KesifBalance.vinyet(0.0, 2, false)
+	var v_hafif: float = KesifBalance.vinyet(0.6, 0, false)
+	var v_agir: float = KesifBalance.vinyet(0.6, 2, false)
+	if v_yok != 0.0 or v_agir <= v_hafif:
+		push_error("KESIF: vinyet egrisi bozuk (%.2f/%.2f/%.2f)"
+				% [v_yok, v_hafif, v_agir])
+	# Tarifler + dugumler yerinde mi (canli katalog).
+	var tarif_ok: bool = Recipes.CRAFT_RECIPES.has("cam") \
+			and Recipes.CRAFT_RECIPES.has("kor_feneri") \
+			and Recipes.CRAFT_RECIPES.has("koz_kabi")
+	var dugum_ok: bool = Research.NODES.has("fener_dugumu") \
+			and Research.NODES.has("koz_kabi_dugumu")
+	if not tarif_ok:
+		push_error("KESIF: isik tarifleri katalogda eksik")
+	if not dugum_ok:
+		push_error("KESIF: arastirma dugumleri eksik")
+	# Temiz bolge sis'i sifirlar (Asama 2'nin okuyacagi mekanizma).
+	_temiz_bolgeler = [{"cell": Vector2i(5, 5), "r": 4.0}]
+	var sis_temiz: float = _sis_at_cell(Vector2i(6, 5))
+	_temiz_bolgeler = []
+	if sis_temiz != 0.0:
+		push_error("KESIF: temiz bolge sisi sifirlamiyor")
+	print("KESIFTEST: halka=%s isik=%s vinyet=%.2f/%.2f/%.2f tarif=%s dugum=%s temiz_ok=%s" % [
+			str([h0, h1, h2, h3]), str([t0, t1, t2, t3]),
+			v_yok, v_hafif, v_agir, str(tarif_ok), str(dugum_ok),
+			str(sis_temiz == 0.0)])

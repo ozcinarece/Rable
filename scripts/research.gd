@@ -60,6 +60,17 @@ const NODES: Dictionary = {
 			"cost": {"essence": 2, "glass": 2},
 			"unlocks": ["essence_lamp", "fire_trench"],
 			"hidden": true, "reveal_trigger_item": "essence"},
+	# KESIF (16.1): isik kapisi dugumleri. Maliyet ve unlocks CANLI katalog
+	# id'leriyle (cam/bakir/kor_feneri) — GDD id'li dugumlerin aksine bu
+	# ikisi bugunku oyunda gercekten arastirilabilir olmali. Prereq kok:
+	# gercek kapi malzemede (cam firin/ocak ister, bakir madencilik).
+	"fener_dugumu": {"branch": "aletler", "prereq": "research_basics",
+			"cost": {"cam": 1, "bakir": 1},
+			"unlocks": ["kor_feneri"],
+			"hidden": true, "reveal_trigger_item": "cam"},
+	"koz_kabi_dugumu": {"branch": "aletler", "prereq": "fener_dugumu",
+			"cost": {"bakir": 2, "cam": 1},
+			"unlocks": ["koz_kabi"], "hidden": false},
 }
 
 var unlocked: Dictionary = {}  # node_id -> true

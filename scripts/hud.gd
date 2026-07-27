@@ -2517,3 +2517,47 @@ func _on_editor_kategori(kat: Dictionary) -> void:
 		b.text = id
 		b.pressed.connect(func(): editor_item_selected.emit(String(kat["id"]), id))
 		_editor_item_row.add_child(b)
+
+# --- KESIF (Bolum 16.2): sis vinyeti + renk sogumasi ----------------------
+# Gece vinyetiyle AYNI kalip (doku + modulate.a) ama ayri dugum: gece
+# lavantasi ve sis grisi ayri ayri nefes alir, birbirini ezmez. Doku
+# genis gradyanli uretilir ki alfa 0->0.9 arasi "kenarlar kapaniyor"
+# hissi versin (isik kapisi 16.1). world3d.set_sis her degisimde cagirir.
+
+var _sis_vinyet: TextureRect
+var _sis_soguk: ColorRect
+
+func set_sis(vinyet: float, soguk: float) -> void:
+	if _sis_vinyet == null:
+		_sis_soguk = ColorRect.new()
+		_sis_soguk.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_sis_soguk.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_sis_soguk.color = Color(0.45, 0.55, 0.72, 0.0)
+		add_child(_sis_soguk)
+		move_child(_sis_soguk, 1)
+		_sis_vinyet = TextureRect.new()
+		_sis_vinyet.texture = _make_sis_texture()
+		_sis_vinyet.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_sis_vinyet.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_sis_vinyet.stretch_mode = TextureRect.STRETCH_SCALE
+		_sis_vinyet.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_sis_vinyet)
+		move_child(_sis_vinyet, 2)
+	_sis_vinyet.modulate.a = clampf(vinyet, 0.0, 1.0)
+	_sis_soguk.color.a = clampf(soguk, 0.0, 1.0) * 0.16
+
+# Sis vinyet dokusu: gece dokusundan daha genis gradyan (d 0.30'dan
+# baslar) — dusuk alfada hafif kenar, yuksek alfada ekrani saran duvar.
+func _make_sis_texture() -> ImageTexture:
+	var w := 240
+	var h := 135
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var col := Color("#39404E")  # soguk kursuni (gece moru degil)
+	for y in h:
+		for x in w:
+			var nx := (float(x) / w - 0.5) * 2.0
+			var ny := (float(y) / h - 0.5) * 2.0
+			var d := sqrt(nx * nx + ny * ny)
+			var a: float = clampf((d - 0.30) / 0.90, 0.0, 1.0)
+			img.set_pixel(x, y, Color(col.r, col.g, col.b, pow(a, 1.35)))
+	return ImageTexture.create_from_image(img)
