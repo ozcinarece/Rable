@@ -10823,13 +10823,22 @@ func _run_cim_frames(save_path: String) -> void:
 	# _decor_cells TUM cim hucreleri; tutam yalniz hash<20 olanlarda
 	# (_build_decor filtresiyle AYNI kural) — bos hucreye kadraj olmasin.
 	var hedef := Vector2i(-999, -999)
-	var say := 0
 	for c: Vector2i in _decor_cells:
-		if absi(c.x * 92821 + c.y * 68917) % 100 < 20:
-			say += 1
-			if say >= 20:
-				hedef = c
+		if absi(c.x * 92821 + c.y * 68917) % 100 >= 20:
+			continue
+		# 3. tur dersi: agac dibindeki tutam kadraji agacla kapatiyor —
+		# 2 hucre cevresi nesnesiz (agac/kaya/cali) tutam sec.
+		var acik := true
+		for oy in range(-2, 3):
+			for ox in range(-2, 3):
+				if _objects.has(c + Vector2i(ox, oy)):
+					acik = false
+					break
+			if not acik:
 				break
+		if acik:
+			hedef = c
+			break
 	if hedef == Vector2i(-999, -999):
 		_cam_locked = false
 		return
@@ -10842,8 +10851,8 @@ func _run_cim_frames(save_path: String) -> void:
 	_snap(save_path.replace(".png", "_cim_ruzgar_b.png"))
 	# Ezme: oyuncu cimin icine
 	player.position = hp
-	camera.position = hp + Vector3(-1.8, 1.8, 2.6)
-	camera.look_at(hp + Vector3(0, 0.4, 0))
+	camera.position = hp + Vector3(-1.6, 2.6, 3.0)
+	camera.look_at(hp + Vector3(0, 0.3, 0))
 	await get_tree().create_timer(0.6).timeout
 	_snap(save_path.replace(".png", "_cim_ezme.png"))
 	# Gece: gol kiyisinda cim — su+cim ton uyumu tek karede
