@@ -2517,3 +2517,154 @@ func _on_editor_kategori(kat: Dictionary) -> void:
 		b.text = id
 		b.pressed.connect(func(): editor_item_selected.emit(String(kat["id"]), id))
 		_editor_item_row.add_child(b)
+
+# --- KESIF (Bolum 16.2): sis vinyeti + renk sogumasi ----------------------
+# Gece vinyetiyle AYNI kalip (doku + modulate.a) ama ayri dugum: gece
+# lavantasi ve sis grisi ayri ayri nefes alir, birbirini ezmez. Doku
+# genis gradyanli uretilir ki alfa 0->0.9 arasi "kenarlar kapaniyor"
+# hissi versin (isik kapisi 16.1). world3d.set_sis her degisimde cagirir.
+
+var _sis_vinyet: TextureRect
+var _sis_soguk: ColorRect
+
+func set_sis(vinyet: float, soguk: float) -> void:
+	if _sis_vinyet == null:
+		_sis_soguk = ColorRect.new()
+		_sis_soguk.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_sis_soguk.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_sis_soguk.color = Color(0.45, 0.55, 0.72, 0.0)
+		add_child(_sis_soguk)
+		move_child(_sis_soguk, 1)
+		_sis_vinyet = TextureRect.new()
+		_sis_vinyet.texture = _make_sis_texture()
+		_sis_vinyet.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_sis_vinyet.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_sis_vinyet.stretch_mode = TextureRect.STRETCH_SCALE
+		_sis_vinyet.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		add_child(_sis_vinyet)
+		move_child(_sis_vinyet, 2)
+	_sis_vinyet.modulate.a = clampf(vinyet, 0.0, 1.0)
+	_sis_soguk.color.a = clampf(soguk, 0.0, 1.0) * 0.16
+
+# Sis vinyet dokusu: gece dokusundan daha genis gradyan (d 0.30'dan
+# baslar) — dusuk alfada hafif kenar, yuksek alfada ekrani saran duvar.
+func _make_sis_texture() -> ImageTexture:
+	var w := 240
+	var h := 135
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var col := Color("#39404E")  # soguk kursuni (gece moru degil)
+	for y in h:
+		for x in w:
+			var nx := (float(x) / w - 0.5) * 2.0
+			var ny := (float(y) / h - 0.5) * 2.0
+			var d := sqrt(nx * nx + ny * ny)
+			# GENIS gradyan: kenar ORTA noktalari da kapansin. Ilk surum
+			# (d-0.30)/0.90 idi; CI kare piksel olcumu etkinin yalniz
+			# koselere sikistigini gosterdi (kenar ortasi alfa ~0) —
+			# "ekran kenarlari kapanir" hissi yoktu.
+			var a: float = clampf((d - 0.08) / 0.60, 0.0, 1.0)
+			img.set_pixel(x, y, Color(col.r, col.g, col.b, pow(a, 1.6)))
+	return ImageTexture.create_from_image(img)
+
+# --- KESIF (16.4): sabah raporu paneli ------------------------------------
+# Sefer sabahi simulasyon sonucu: kapanana kadar duran kucuk panel
+# (flash_pill 2 sn'de ucar; rapor okunmadan kaybolmamali).
+
+var _sabah_panel: PanelContainer
+
+func show_sabah_raporu(text: String) -> void:
+	if _sabah_panel != null and is_instance_valid(_sabah_panel):
+		_sabah_panel.queue_free()
+	_sabah_panel = PanelContainer.new()
+	_sabah_panel.theme = load("res://theme_main.tres")
+	_sabah_panel.theme_type_variation = "TitleTab"
+	_sabah_panel.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	_sabah_panel.offset_top = 64.0
+	_sabah_panel.offset_left = -200.0
+	_sabah_panel.offset_right = 200.0
+	var kutu := VBoxContainer.new()
+	kutu.add_theme_constant_override("separation", 8)
+	var baslik := Label.new()
+	baslik.theme_type_variation = "TitleTabLabel"
+	baslik.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	baslik.text = "Sabah Raporu"
+	kutu.add_child(baslik)
+	var govde := Label.new()
+	govde.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	govde.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	govde.custom_minimum_size = Vector2(360, 0)
+	govde.text = text
+	kutu.add_child(govde)
+	var tamam := Button.new()
+	tamam.text = "Tamam"
+	tamam.pressed.connect(func(): _sabah_panel.queue_free())
+	kutu.add_child(tamam)
+	_sabah_panel.add_child(kutu)
+	add_child(_sabah_panel)
+
+# --- KESIF (16.5): HUD nabzi + fener kis butonu ----------------------------
+
+## Uyuyanlara yaklasinca ekran kenarinda cok ince kirmizi nabiz.
+signal fener_kisik_toggled(kisik: bool)
+
+var _nabiz: TextureRect
+var _nabiz_tween: Tween
+var _fener_btn: Button
+
+func set_nabiz(guc: float) -> void:
+	if _nabiz == null:
+		_nabiz = TextureRect.new()
+		_nabiz.texture = _make_nabiz_texture()
+		_nabiz.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_nabiz.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		_nabiz.stretch_mode = TextureRect.STRETCH_SCALE
+		_nabiz.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		_nabiz.modulate.a = 0.0
+		add_child(_nabiz)
+		move_child(_nabiz, 3)
+	if _nabiz_tween != null:
+		_nabiz_tween.kill()
+		_nabiz_tween = null
+	if guc <= 0.0:
+		_nabiz.modulate.a = 0.0
+		return
+	# Kalp atisi: alfa 0.05 <-> tavan arasi yumusak gidip gelir.
+	var tavan := 0.06 + 0.20 * clampf(guc, 0.0, 1.0)
+	_nabiz_tween = create_tween().set_loops()
+	_nabiz_tween.tween_property(_nabiz, "modulate:a", tavan, 0.45) \
+			.set_trans(Tween.TRANS_SINE)
+	_nabiz_tween.tween_property(_nabiz, "modulate:a", 0.05, 0.55) \
+			.set_trans(Tween.TRANS_SINE)
+
+func _make_nabiz_texture() -> ImageTexture:
+	var w := 240
+	var h := 135
+	var img := Image.create(w, h, false, Image.FORMAT_RGBA8)
+	var col := Color(0.75, 0.20, 0.22)
+	for y in h:
+		for x in w:
+			var nx := (float(x) / w - 0.5) * 2.0
+			var ny := (float(y) / h - 0.5) * 2.0
+			var d := sqrt(nx * nx + ny * ny)
+			var a: float = clampf((d - 0.78) / 0.40, 0.0, 1.0)
+			img.set_pixel(x, y, Color(col.r, col.g, col.b, pow(a, 1.4)))
+	return ImageTexture.create_from_image(img)
+
+## Fener kis butonu: yalniz K2+ isik tasinirken gorunur (world cagirir).
+## Basili = KISIK (gorus dar ama uyuyanlari uyandirmazsin — 16.5 stealth).
+func set_fener_gorunur(on: bool) -> void:
+	if _fener_btn == null:
+		_fener_btn = Button.new()
+		_fener_btn.toggle_mode = true
+		_fener_btn.text = "Feneri Kıs"
+		_fener_btn.theme = load("res://theme_main.tres")
+		_fener_btn.set_anchors_preset(Control.PRESET_BOTTOM_LEFT)
+		_fener_btn.offset_left = 16.0
+		_fener_btn.offset_top = -140.0
+		_fener_btn.offset_right = 150.0
+		_fener_btn.offset_bottom = -96.0
+		_fener_btn.toggled.connect(func(pressed: bool):
+			_fener_btn.text = "Feneri Aç" if pressed else "Feneri Kıs"
+			fener_kisik_toggled.emit(pressed))
+		add_child(_fener_btn)
+	_fener_btn.visible = on

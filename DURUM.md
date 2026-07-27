@@ -18,6 +18,11 @@ Durum değerleri: ÇALIŞIYOR / BRANCH'TE / YARIM / SADECE-PLAN / BOZUK.
 | Tarım | Boş sürülü tarla göstergesi (planting_mound) | BRANCH'TE | gorsel-tur | world3d.gd (_update_mound_node) | tarım-3d | — | ekilince kaybolur, hasatta döner |
 | Dünya | Taş yol (SERPİNTİ modeli, stone_scatter_a) | ÇALIŞIYOR | main | world3d.gd (_build_road_scatter), road_scatter.gd | — | moss_patch.glb yok → yosun hiç çizilmiyor | ROADTEST + SCATTERTEST CI'da; karo modeli TILE_MODE_ON=false ile kapalı |
 | Araçlar | Yerleşim Editörü (oyun içi düzenleme + camp_layout.json) | ÇALIŞIYOR | main | layout_editor.gd, world3d.gd, hud.gd | taş yol | yalnız debug build; düzen dosyası henüz repoda yok | EDITORTEST CI'da; RAPOR_EDITOR.md |
+| Keşif | Halka + sis + ışık kapısı (16.1-16.2) | BRANCH'TE | kesif | kesif_balance.gd, world3d.gd, hud.gd | — | görsel: vinyet+sis düzlemi placeholder | KESIFTEST CI'da; RAPOR_KESIF.md |
+| Keşif | Kor taşları (6 ana + 3 yan, yakma + kalıcı temizlik) | BRANCH'TE | kesif | world3d.gd, kesif_balance.gd | halka+sis | taş görseli placeholder silindir | KORTEST CI'da |
+| Keşif | Sefer/kamp + Ocak dalga simülasyonu + sabah raporu | BRANCH'TE | kesif | world3d.gd, hud.gd | kor taşları | Nefes UI yok (API hazır) | SEFERTEST CI'da |
+| Keşif | Uyuyanlar (gündüz stealth) + fener kıs + HUD nabzı | BRANCH'TE | kesif | world3d.gd, hud.gd | halka+sis | heykel görseli placeholder | UYUTEST CI'da |
+| Keşif | Uzak tehditler (sürü/avcı/dev + fırtına + damar çatlağı) | BRANCH'TE | kesif | creature_balance.gd, world3d.gd | halka+sis | GLB'ler dosya-bekler | UZAKTEST CI'da |
 | Dünya | Orman ağaç seti (pinetree.glb aktif; küçük boy %40 slotu opsiyonel) | ÇALIŞIYOR | main | world3d.gd (TREE_SET, _tree_set_pool) | — | — | TREETEST CI'da; 2145 üçgen (eskisi 5214/4440), tüm orman tek MultiMesh; pine_tree_small.glb gelirse 60/40; RAPOR_AGAC.md |
 | Dünya | Ağaç kesme + çalı yeniden büyüme | ÇALIŞIYOR | main | world3d.gd, gather_rules.gd | alet | — | balta tek vuruş |
 | Dünya | Kaya kırma (taş/kömür/altın/bakır) | ÇALIŞIYOR | main | world3d.gd | kazma | — | — |

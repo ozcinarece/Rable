@@ -58,6 +58,26 @@ const TYPES := {
 		"first_night": 10, "eye": "mor", "scale": 0.8,
 		"glb": "res://assets/models/creatures/creature_hizli.glb",
 	},
+	# --- KESIF 16.6: UZAK TEHDITLER — gece dalgasina GIRMEZLER ----------
+	# (first_night 999: dalga havuzu bu tipleri hic acmaz; bunlar sisli
+	# halkalarin ortam yaratiklaridir, world3d'nin uzak-tehdit dogurucusu
+	# kullanir.) Modeller dosya-bekler: GLB dusunce kendiliginden takilir.
+	"sis_surusu": {
+		"hp": 3, "speed": 3.4, "damage": 3, "essence": 1,
+		"first_night": 999, "eye": "mor", "scale": 0.7,
+		"glb": "res://assets/models/creatures/creature_sis_surusu.glb",
+	},
+	"fener_avcisi": {
+		"hp": 12, "speed": 2.6, "damage": 7, "essence": 2,
+		"first_night": 999, "eye": "turkuaz", "scale": 1.1,
+		"glb": "res://assets/models/creatures/creature_fener_avcisi.glb",
+	},
+	"catlak_dev": {
+		"hp": 60, "speed": 0.8, "damage": 16, "essence": 4,
+		"first_night": 999, "eye": "turkuaz", "scale": 1.8,
+		"struct_mult": 4,
+		"glb": "res://assets/models/creatures/creature_catlak_dev.glb",
+	},
 }
 
 ## Tirmanici duvari ASMAYI tercih eder: maliyeti dusuk ama sifir degil

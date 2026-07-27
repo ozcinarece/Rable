@@ -70,6 +70,12 @@ const ITEMS: Dictionary = {
 	"metal_kova": {"name": "Metal Kova", "icon": "res://assets/items/metal_kova.png"},
 	# YARATIK (Bolum 15): oz = olen yaratigin dusurdugu ozut
 	"oz": {"name": "Öz", "icon": "res://assets/items/oz.png"},
+	# KESIF (Bolum 16): cam + tasinabilir isik kademeleri (16.1).
+	# Ikon PNG yuklenince baglanir; simdilik 2 harf placeholder kurali.
+	"cam": {"name": "Cam", "icon": "res://assets/items/cam.png"},
+	"kor_feneri": {"name": "Kor Feneri", "icon": "res://assets/items/kor_feneri.png"},
+	"koz_kabi": {"name": "Köz Kabı", "icon": "res://assets/items/koz_kabi.png"},
+	"yol_koru": {"name": "Yol Koru", "icon": "res://assets/items/yol_koru.png"},
 }
 
 ## Elde tutulunca yere yerlestirilebilen yapilar: esya -> harita karakteri.
@@ -157,6 +163,11 @@ const DESCRIPTIONS: Dictionary = {
 	"pompa": "Boru hattina koy: suyu YUKARI tasir (yukseklik kuralini asar).",
 	"vana": "Boru hattina koy: dokununca AC/KAPA. Kapaliyken o hattan su akmaz.",
 	"metal_kova": "Metal kova: su tasir (ileride sicak sivi da).",
+	# KESIF (Bolum 16)
+	"cam": "Kumun atesle sirri. Fener yapiminin anahtari.",
+	"kor_feneri": "Tasinabilir kor isigi (K2): Sis Kusagi'nda gorus acar.",
+	"koz_kabi": "Yol korunu tasiyan metal kap (K3): Derin Sis'e giris ve uzak kor taslarini yakma araci.",
+	"yol_koru": "Ocak'tan alinan canli koz: kor taslarini yakar, sefer kampini tutusturur.",
 }
 
 ## ENVANTER-MOCKUP "flavor" alani: bilgi seridindeki TEK SATIR kisilikli
