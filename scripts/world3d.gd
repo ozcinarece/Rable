@@ -512,6 +512,27 @@ func _setup_screenshot(save_path: String) -> void:
 	player.set_held_tool("balta")  # yeni axe.glb elde gorunsun
 	await get_tree().create_timer(4.0).timeout
 	_snap(save_path)
+	# MASKE KARELERI (v2 dogrulamasi): maske dosyasi varsa kusbakisi +
+	# tepe falezi + kumsal yakin karesi. Maske main'e commit'LENMEZ —
+	# bu kareler yalniz ornekli dalda cekilir; dosya yoksa blok atlanir.
+	if MapMask.load_image() != null:
+		_cam_locked = true
+		var mk_ctr := _cell_center(Vector2i(_map_w / 2, _map_h / 2))
+		camera.position = mk_ctr + Vector3(0.0, 120.0, 0.5)
+		camera.look_at(mk_ctr)
+		await get_tree().create_timer(0.8).timeout
+		_snap(save_path.replace(".png", "_maske_kusbakisi.png"))
+		var mk_tepe := _cell_center(Vector2i(104, 104))
+		camera.position = mk_tepe + Vector3(-8.0, 7.0, 10.0)
+		camera.look_at(mk_tepe)
+		await get_tree().create_timer(0.7).timeout
+		_snap(save_path.replace(".png", "_maske_tepe.png"))
+		var mk_kum := _cell_center(Vector2i(100, 30))
+		camera.position = mk_kum + Vector3(-6.0, 6.0, 9.0)
+		camera.look_at(mk_kum)
+		await get_tree().create_timer(0.7).timeout
+		_snap(save_path.replace(".png", "_maske_kumsal.png"))
+		_cam_locked = false
 	# CLICKTEST EN BASTA (180sn oyun sinirina takilmasin diye): GERCEK
 	# dokunus simulasyonu — "menuler acilmiyor/kapanmiyor" sinifi cihaz
 	# hatalarini CI'da yakalar.
@@ -1234,9 +1255,80 @@ func _run_mask_test() -> void:
 			ayni = false
 			break
 	var mask_var := ResourceLoader.exists(MapMask.PATH)
+	# --- v2: KARA ZORLAMA — golun ustune cayir boya, su GITMELI ---
+	# (silginin gidermedigi bug: silgi=serbest -> uretec golu geri koyar;
+	# cozum acik kara sinifi. Testte golu uretecten buluyoruz.)
+	var gol := Vector2i(-1, -1)
+	for y in range(4, n - 4):
+		if gol.x != -1:
+			break
+		for x in range(4, n - 4):
+			if rows[y][x] == "~":
+				gol = Vector2i(x, y)
+				break
+	var img2 := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	for y in range(maxi(1, gol.y - 8), mini(n - 1, gol.y + 9)):
+		for x in range(maxi(1, gol.x - 8), mini(n - 1, gol.x + 9)):
+			img2.set_pixel(x, y, Color(MapMask.COLORS["cayir"]))
+	var rows_k := MapMask.apply_img(rows, img2, MapBalance.SEED_DEFAULT)
+	var kalan_su := 0
+	for y in range(maxi(1, gol.y - 4), mini(n - 1, gol.y + 5)):
+		for x in range(maxi(1, gol.x - 4), mini(n - 1, gol.x + 5)):
+			if rows_k[y][x] == "~":
+				kalan_su += 1
+	# --- v2: OTOMATIK KIYI BANDI — maske golunun cevresinde kum ---
+	var bant_kum := 0
+	for y in range(16, 45):
+		for x in range(86, 115):
+			if rows2[y][x] == "s" and rows[y][x] != "s":
+				bant_kum += 1
+	# --- v2: KUM sinifi elle kumsal boyar ---
+	var img3 := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	for y in range(50, 61):
+		for x in range(8, 19):
+			img3.set_pixel(x, y, Color(MapMask.COLORS["kum"]))
+	var rows_s := MapMask.apply_img(rows, img3, MapBalance.SEED_DEFAULT)
+	var elle_kum := 0
+	for y in range(53, 58):
+		for x in range(11, 16):
+			if rows_s[y][x] == "s":
+				elle_kum += 1
+	# --- v2: YUKSEKLIK — tepe blobu "h" uretmeli, normal platoyu silmeli ---
+	var himg := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	for y in range(96, 113):
+		for x in range(96, 113):
+			himg.set_pixel(x, y, Color(MapMask.H_TEPE))
+	# mevcut bir plato hucresi bul, ustune "normal" boya
+	var plato := Vector2i(-1, -1)
+	for y in range(4, n - 4):
+		if plato.x != -1:
+			break
+		for x in range(4, n - 4):
+			if rows[y][x] == "h":
+				plato = Vector2i(x, y)
+				break
+	if plato.x != -1:
+		for y in range(maxi(1, plato.y - 5), mini(n - 1, plato.y + 6)):
+			for x in range(maxi(1, plato.x - 5), mini(n - 1, plato.x + 6)):
+				himg.set_pixel(x, y, Color(MapMask.H_NORMAL))
+	var rows_h := MapMask.apply_height_img(rows, himg, MapBalance.SEED_DEFAULT)
+	var tepe_h := 0
+	for y in range(100, 109):
+		for x in range(100, 109):
+			if rows_h[y][x] == "h":
+				tepe_h += 1
+	var plato_kaldi := false
+	if plato.x != -1:
+		for y in range(maxi(1, plato.y - 2), mini(n - 1, plato.y + 3)):
+			for x in range(maxi(1, plato.x - 2), mini(n - 1, plato.x + 3)):
+				if rows_h[y][x] == "h":
+					plato_kaldi = true
+
 	print(("MASKTEST: ic_su=%.0f%% uzak_yeni_su=%d kenar_sapma=%d "
-			+ "fallback_ayni=%s(mask_dosyasi=%s)") % [
-		ic_oran * 100.0, uzak_su, sapma, str(ayni), str(mask_var)])
+			+ "fallback_ayni=%s(mask_dosyasi=%s) cayir_sonrasi_su=%d "
+			+ "bant_kum=%d elle_kum=%d/25 tepe_h=%d/81 plato_duzeldi=%s") % [
+		ic_oran * 100.0, uzak_su, sapma, str(ayni), str(mask_var),
+		kalan_su, bant_kum, elle_kum, tepe_h, str(not plato_kaldi)])
 	if ic_oran < 0.9:
 		push_error("MASKE: boyanan gol oyuna gecmedi (ic %.0f%%)" % (ic_oran * 100.0))
 	if uzak_su > 0:
@@ -1245,6 +1337,16 @@ func _run_mask_test() -> void:
 		push_error("MASKE: kenar birebir kopyalandi — organiklik calismiyor")
 	if not mask_var and not ayni:
 		push_error("MASKE: dosya yokken fallback davranisi bozuk")
+	if kalan_su > 0:
+		push_error("MASKE v2: cayir golu KARAYA ceviremedi (su silme bugu geri)")
+	if bant_kum < 8:
+		push_error("MASKE v2: otomatik kiyi kum bandi olusmadi")
+	if elle_kum < 20:
+		push_error("MASKE v2: kum sinifi kumsal boyamiyor")
+	if tepe_h < 60:
+		push_error("MASKE v2: tepe kademesi plato uretmedi")
+	if plato.x != -1 and plato_kaldi:
+		push_error("MASKE v2: normal kademesi mevcut platoyu duzlemedi")
 
 ## HIZLI KATMAN: kare almayan, beklemesiz mantik testleri. Bunlar
 ## --headless'te de kosar; agir gorsel akisin hicbir parcasina dokunmaz.
@@ -2565,6 +2667,9 @@ func _build_world() -> void:
 	# (elle boyanan biyomlar + noise kenar organikligi). Dosya yoksa
 	# bu satir hicbir sey degistirmez — tam-proseduerel fallback.
 	rows = MapMask.apply(rows, _map_seed)
+	# YUKSEKLIK MASKESI (v2): tepe/duzlik katmani (data/height_mask.png).
+	# Biyomdan SONRA biner: tepe boyanan yer ormanin ustune de gelebilir.
+	rows = MapMask.apply_height(rows, _map_seed)
 	_map_h = rows.size()
 	_map_w = rows[0].length()
 	_clay_cells.clear()

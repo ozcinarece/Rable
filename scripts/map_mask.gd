@@ -15,6 +15,8 @@ extends RefCounted
 ## piksel "serbest" sayilir: o hucrede uretec ne dediyse o kalir.
 
 const PATH := "res://data/map_mask.png"
+const HEIGHT_PATH := "res://data/height_mask.png"
+const MB = preload("res://scripts/map_balance.gd")
 
 ## Renk sozlugu (gorevdeki 6 sinif). Boyama araci da bu paleti kullanir —
 ## baska yerde renk tanimi YOK.
@@ -25,10 +27,12 @@ const COLORS := {
 	"kayalik": Color(0.541, 0.541, 0.541),   # gri (#8A8A8A)
 	"aciklik": Color(0.851, 0.780, 0.604),   # bej (#D9C79A)
 	"rezerv": Color(0.557, 0.353, 0.784),    # mor (#8E5AC8)
+	"kum": Color(0.910, 0.835, 0.639),       # kum beji (#E8D5A3) — v2
 }
 const AD := {
 	"su": "Su", "sik_orman": "Sık Orman", "cayir": "Çayır",
 	"kayalik": "Kayalık", "aciklik": "Açıklık", "rezerv": "Rezerv",
+	"kum": "Kum",
 }
 
 ## Piksel bu uzakliktan yakinsa palete oturur; degilse serbest.
@@ -111,6 +115,7 @@ static func apply_img(rows: Array[String], img: Image,
 			spawn = Vector2i(x, y)
 			break
 	var out: Array[String] = []
+	var maske_su: Array[Vector2i] = []   # otomatik kiyi bandi icin
 	for y in n:
 		var satir := rows[y]
 		var yeni := ""
@@ -130,18 +135,71 @@ static func apply_img(rows: Array[String], img: Image,
 			var sy := clampi(y + roundi(wb.get_noise_2d(x, y) * WARP_CELLS),
 					0, img.get_height() - 1)
 			var id := classify(img.get_pixel(sx, sy))
+			if id == "su" and cur != "~":
+				maske_su.append(Vector2i(x, y))
 			yeni += _cell_for(id, cur, x, y)
 		out.append(yeni)
-	return out
+	return _kiyi_bandi(out, maske_su)
+
+## OTOMATIK KUM BANDI (v2): maskeyle YENI acilan su hucrelerinin cevresine
+## kum. Uretecin kendi golu zaten kendi kumunu koyuyor (SHORE_WIDTH) —
+## genislik ORADAN turetiliyor, ikinci bir "kiyi genisligi" tanimi yok
+## (tek kaynak sarti). Elle boyanan kum bunun USTUNE genisletme olarak
+## biner: kum sinifi hucreyi dogrudan "s" yapar, bant yalniz cim/topragi
+## kuma cevirir (agaca/kayaya dokunmaz).
+static func _kiyi_bandi(out: Array[String],
+		maske_su: Array[Vector2i]) -> Array[String]:
+	if maske_su.is_empty():
+		return out
+	var n := out.size()
+	# DUZ tampon (idx=y*n+x): Array icindeki PackedByteArray'e indeksle
+	# yazmak KALICI DEGIL (copy-on-write) — map_gen.gd'nin bastaki dersi.
+	var buf := PackedByteArray()
+	buf.resize(n * n)
+	for y in n:
+		var rb := out[y].to_ascii_buffer()
+		for x in n:
+			buf[y * n + x] = rb[x]
+	var taban := maxi(1, int(round(MB.SHORE_WIDTH)) - 1)
+	for c: Vector2i in maske_su:
+		# Hucre basina genislik oynar (kiyi cizgisi duz serit olmasin)
+		var w := taban + (1 if hash01(c.x, c.y, 829) < 0.5 else 0)
+		for dy in range(-w, w + 1):
+			for dx in range(-w, w + 1):
+				if dx * dx + dy * dy > w * w:
+					continue
+				var x := c.x + dx
+				var y := c.y + dy
+				if x < 1 or y < 1 or x >= n - 1 or y >= n - 1:
+					continue
+				var b := buf[y * n + x]
+				if b == 46 or b == 100:   # "." | "d"
+					buf[y * n + x] = 115  # "s"
+	var sonuc: Array[String] = []
+	for y in n:
+		sonuc.append(buf.slice(y * n, y * n + n).get_string_from_ascii())
+	return sonuc
 
 ## Bir hucrenin maske sinifina gore yeni karakteri. Serbest ("") = uretec
 ## ne dediyse o. Kurallar BILINCLI yumusak: maske bir REHBER, tarayici
 ## degil — mevcut dokudan tamamen kopmasin diye her sinif yalnizca kendi
 ## derdine dokunuyor.
 static func _cell_for(id: String, cur: String, x: int, y: int) -> String:
+	# KARA ZORLAMA (v2 — su silme bugunun cozumu): su/kum DISINDAKI her
+	# sinif once suyu ve kiyi kumunu KARAYA cevirir. Onceki halde cayir
+	# yalniz agac/kayaya dokunuyordu; golun ustune cayir boyamak golu
+	# SILMIYORDU (silgi de silmez: silgi = "uretec karar versin", uretec
+	# de oraya yine gol koyar). Artik: silgi = proseduerele birak,
+	# cayir/aciklik/orman/kayalik/rezerv = BURASI KESIN KARA.
+	if id != "" and id != "su" and id != "kum" \
+			and (cur == "~" or cur == "s" or cur == "k"):
+		cur = "."
 	match id:
 		"su":
 			return "~"
+		"kum":
+			# Elle kumsal: su dahil her seyi kuma cevirir (golu doldurur)
+			return "s"
 		"aciklik":
 			# Bej açıklık: engelsiz duz cim (kamp acikligi hissi)
 			if cur in ["T", "#", "m", "h", "d"]:
@@ -170,6 +228,107 @@ static func _cell_for(id: String, cur: String, x: int, y: int) -> String:
 				return "."
 			return cur
 	return cur
+
+# =======================================================================
+# YUKSEKLIK KATMANI (v2)
+# =======================================================================
+## Ikinci maske: data/height_mask.png, gri tonlari. Ressamdaki 3 kademe:
+##   alcak(0) = koyu gri, normal(1) = orta gri, tepe(2) = acik gri;
+##   saydam = serbest (uretec karar verir).
+## DONUSTURUCU (muhafazakar — RAPOR'da gerekcesi):
+##   tepe   -> "h" (mevcut plato sistemi: falez kenarlari, arazi rengi,
+##             katilik — hepsi hazir; yeni bir yukseklik alani ACILMADI)
+##   normal -> "h" temizle (plato yasagi, duz zemin garantisi)
+##   alcak  -> bugun normal ile AYNI davranir. Gercek cukur/teras tabani
+##             ayri bir arazi projesi; maske formati 3 kademeyi simdiden
+##             sakliyor, o proje gelince veri hazir.
+## KAZI UYUMU NOTU: "h" hucreleri mevcut sistemde KATI (uzerine cikilmaz,
+## kazilmaz). "Yukseltilmis ama kazilabilir zemin" bugunku arazide yok —
+## bunu taklit etmeye kalkmak (ornegin depth=-2 baslangici) kazi yiginini
+## kahverengi tumsek olarak cizer ve kayit deltalariyla catisirdi.
+## Muhafazakar karar: tepe = plato. RAPOR_HARITA2'de acikca yaziyor.
+const H_ALCAK := Color(0.10, 0.10, 0.10)
+const H_NORMAL := Color(0.50, 0.50, 0.50)
+const H_TEPE := Color(0.95, 0.95, 0.95)
+const H_AD := {"alcak": "Alçak", "normal": "Normal", "tepe": "Tepe"}
+
+static func load_height_image() -> Image:
+	if ResourceLoader.exists(HEIGHT_PATH):
+		var tex: Variant = load(HEIGHT_PATH)
+		if tex is Texture2D:
+			return (tex as Texture2D).get_image()
+	var gp := ProjectSettings.globalize_path(HEIGHT_PATH)
+	if FileAccess.file_exists(gp):
+		var im := Image.new()
+		if im.load(gp) == OK:
+			return im
+	return null
+
+static func height_classify(c: Color) -> String:
+	if c.a < 0.5:
+		return ""
+	var v := c.r
+	if v < 0.30:
+		return "alcak"
+	if v > 0.70:
+		return "tepe"
+	return "normal"
+
+static func apply_height(rows: Array[String], seed_val: int) -> Array[String]:
+	var img := load_height_image()
+	if img == null:
+		return rows
+	return apply_height_img(rows, img, seed_val)
+
+static func apply_height_img(rows: Array[String], img: Image,
+		seed_val: int) -> Array[String]:
+	var n := rows.size()
+	if n == 0 or img == null:
+		return rows
+	var wa := FastNoiseLite.new()
+	wa.seed = seed_val + 113
+	wa.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	wa.frequency = WARP_FREQ
+	var wb := FastNoiseLite.new()
+	wb.seed = seed_val + 131
+	wb.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	wb.frequency = WARP_FREQ
+	var spawn := Vector2i(n / 2, n / 2)
+	for y in n:
+		var x := rows[y].find("P")
+		if x != -1:
+			spawn = Vector2i(x, y)
+			break
+	var out: Array[String] = []
+	for y in n:
+		var satir := rows[y]
+		var yeni := ""
+		for x in n:
+			var cur := satir[x]
+			if x == 0 or y == 0 or x == n - 1 or y == n - 1 or cur == "P":
+				yeni += cur
+				continue
+			var sd := Vector2i(x, y) - spawn
+			if sd.x * sd.x + sd.y * sd.y <= SPAWN_KORUMA_R * SPAWN_KORUMA_R:
+				yeni += cur
+				continue
+			var sx := clampi(x + roundi(wa.get_noise_2d(x, y) * WARP_CELLS),
+					0, img.get_width() - 1)
+			var sy := clampi(y + roundi(wb.get_noise_2d(x, y) * WARP_CELLS),
+					0, img.get_height() - 1)
+			match height_classify(img.get_pixel(sx, sy)):
+				"tepe":
+					# Su/kuma tepe koymuyoruz: falez suya girmesin
+					if cur in [".", "d", "T", "#", "m"]:
+						yeni += "h"
+					else:
+						yeni += cur
+				"normal", "alcak":
+					yeni += "." if cur == "h" else cur
+				_:
+					yeni += cur
+		out.append(yeni)
+	return out
 
 ## Char -> onizleme rengi (boyama aracinin sag paneli ve ilk ceviri
 ## icin). Oyunun gercek renkleri degil, okunakli harita paleti.
