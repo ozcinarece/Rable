@@ -196,3 +196,14 @@ static func v1_band_color(depth_f: float) -> Color:
 	col = col.lerp(V1_DEEP,
 			_sstep(V1_BAND2 - V1_BAND_SOFT, V1_BAND2 + V1_BAND_SOFT, depth_f))
 	return col
+
+
+# =======================================================================
+# C3. CIM SHADER V1 (assets/models/env/grass.gdshader)
+# =======================================================================
+## Bayrak: false -> sus otu/cicek eski GLB materyalleriyle cizilir.
+const CIM_SHADER_V1 := true
+## Cicek kopyasi: baslar savrulmasin (sozlesme notu) — dusuk ruzgar.
+const CIM_CICEK_WIND := 0.03
+const CIM_CICEK_TIP := Color(0.85, 0.55, 0.70)      # yumusak pembe uc
+const CIM_CICEK_BASE := Color(0.373, 0.478, 0.322)  # sap yesili (ayni kok)

@@ -544,6 +544,7 @@ func _setup_screenshot(save_path: String) -> void:
 	await _run_tree_frames(save_path)
 	await _run_kesif_frames(save_path)  # Bolum 16: tas/uyuyan/sis/damar
 	await _run_su_frames(save_path)  # SU V1: golet/gece-isik/hendek/kanal
+	await _run_cim_frames(save_path)  # CIM V1: ruzgar/ezme/gece uyum
 	# CLICKTEST EN BASTA (180sn oyun sinirina takilmasin diye): GERCEK
 	# dokunus simulasyonu — "menuler acilmiyor/kapanmiyor" sinifi cihaz
 	# hatalarini CI'da yakalar.
@@ -1477,6 +1478,7 @@ func _run_fast_tests() -> void:
 	_run_sefer_test()
 	_run_uyuyan_test()
 	_run_uzak_test()
+	_run_cim_test()
 	_run_kesif_perf()
 	_run_save_load_selftest()
 	print("FASTTESTS: bitti")
@@ -2023,6 +2025,12 @@ func _process(delta: float) -> void:
 		_hearth_light.light_energy = 3.0 * (0.9 + 0.1 * sin(ht * 8.0))
 	_tick_regrow(delta)
 	_update_daylight()  # gunduz/gece: güneş/gökyüzü/ambient eğrisi (yumuşak)
+	# CIM SHADER V1: oyuncu ezmesi — tek uniform, her kare (sozlesme).
+	# quality 0'da guncelleme de atlanir (_cim_ezme_on bayragi).
+	if _cim_ezme_on and _cim_mat != null:
+		_cim_mat.set_shader_parameter("player_pos", player.position)
+		if _cicek_mat != null:
+			_cicek_mat.set_shader_parameter("player_pos", player.position)
 	# YASAM: kosma/alet eforu -> aclik daha hizli azalir (PlayerStats okur)
 	PlayerStats.exerting = player.is_exerting()
 	_tick_spike_hit()  # 11.9: kazikli cukura giren oyuncuya bir kez hasar
@@ -3667,15 +3675,7 @@ func _lake_material() -> ShaderMaterial:
 		# (dosya dokusu yok — her platformda ayni).
 		_lake_mat = ShaderMaterial.new()
 		_lake_mat.shader = load("res://assets/models/env/water.gdshader")
-		var fn := FastNoiseLite.new()
-		fn.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
-		fn.frequency = 0.012
-		var nt := NoiseTexture2D.new()
-		nt.noise = fn
-		nt.seamless = true
-		nt.width = 256
-		nt.height = 256
-		_lake_mat.set_shader_parameter("noise_tex", nt)
+		_lake_mat.set_shader_parameter("noise_tex", _ortak_noise_tex())
 		_apply_water_tier()
 		_update_water_warm_lights()
 		return _lake_mat
@@ -3751,11 +3751,15 @@ func _apply_water_tier() -> void:
 ## Gece bandi: Ocak/mesale isiginin sicak yansimasi. Gunes supurmesiyle
 ## ayni yerden guncelleniyor (kare basina tek setter, ucuz).
 func _update_water_night() -> void:
-	if _lake_mat == null:
-		return
 	var night: bool = DayNight.phase in ["night", "dusk"]
-	_lake_mat.set_shader_parameter("night_mix",
-			DigWaterVisual.NIGHT_WARM_MIX if night else 0.0)
+	var karisim: float = DigWaterVisual.NIGHT_WARM_MIX if night else 0.0
+	if _lake_mat != null:
+		_lake_mat.set_shader_parameter("night_mix", karisim)
+	# CIM SHADER V1: gece tonu SU ILE AYNI KAYNAKTAN (sozlesme sarti)
+	if _cim_mat != null:
+		_cim_mat.set_shader_parameter("night_mix", karisim)
+	if _cicek_mat != null:
+		_cicek_mat.set_shader_parameter("night_mix", karisim)
 
 # Bos cim hucrelerinin bir kismina sus otu serpistirir (toplanmaz).
 var _decor_nodes: Array = []
@@ -3785,7 +3789,8 @@ func _build_decor(grass_cells: Array) -> void:
 		var off := Vector3(sin(cell.x * 12.9) * 0.25, 0, cos(cell.y * 7.7) * 0.25)
 		groups[idx].append(Transform3D(_cell_variance(cell), _cell_center(cell) + off))
 	for idx in groups:
-		var node := _make_mesh_multimesh(pool[idx], groups[idx], false)
+		var node := _make_mesh_multimesh(pool[idx], groups[idx], false,
+				_cim_material(pool))
 		add_child(node)
 		_decor_nodes.append(node)
 	_build_env_scatter(grass_cells)
@@ -5477,8 +5482,12 @@ func _build_pickups(cells: Array[Vector2i], kind: String) -> void:
 		if not groups.has(idx):
 			groups[idx] = []
 		groups[idx].append(Transform3D(_cell_variance(cell), _cell_center(cell)))
+	# CIM SHADER V1: cicek saplari ayni shader'in dusuk-ruzgar kopyasini
+	# alir (baslar savrulmasin). Mantar UYGULANMADI: sapka/govde dikey
+	# gradyanla bozulur ve mantar sallanmamali — RAPOR'da gerekceli.
+	var mat: Material = _cicek_material() if kind == "cicek" else null
 	for idx in groups:
-		_keep(_make_mesh_multimesh(pool[idx], groups[idx], false))
+		_keep(_make_mesh_multimesh(pool[idx], groups[idx], false, mat))
 
 func _build_bushes(full: Array[Vector2i], empty: Array[Vector2i]) -> void:
 	for v in BUSH_VARIANTS.size():
@@ -5598,7 +5607,7 @@ func _merge_into(node: Node, xform: Transform3D, result: ArrayMesh) -> void:
 		_merge_into(child, t, result)
 
 func _make_mesh_multimesh(mesh: Mesh, transforms: Array,
-		shadows := true) -> MultiMeshInstance3D:
+		shadows := true, mat: Material = null) -> MultiMeshInstance3D:
 	var multi := MultiMesh.new()
 	multi.transform_format = MultiMesh.TRANSFORM_3D
 	multi.mesh = mesh
@@ -5607,6 +5616,9 @@ func _make_mesh_multimesh(mesh: Mesh, transforms: Array,
 		multi.set_instance_transform(i, transforms[i])
 	var node := MultiMeshInstance3D.new()
 	node.multimesh = multi
+	if mat != null:
+		# CIM SHADER V1: override MMI duzeyinde — TEK draw call korunur
+		node.material_override = mat
 	if not shadows:
 		# Kucuk bitki ortusu golge cizmesin: telefonda bedava hiz
 		node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -8415,6 +8427,7 @@ func apply_quality(tier: String) -> void:
 
 func _on_quality_changed(tier: String) -> void:
 	_apply_water_tier()  # C: Dusuk'te dalga/parilti kapansin
+	_apply_cim_tier()    # CIM V1: ruzgar/ezme kademesi
 	apply_quality(tier)
 	_save_quality()
 
@@ -10694,6 +10707,153 @@ func _run_su_frames(save_path: String) -> void:
 	# Toparla
 	if eski_el != "":
 		_on_hold_requested(eski_el)
+	player.position = eski_poz
+	camera.position = player.position + _camera_offset()
+	await get_tree().create_timer(0.4).timeout
+	_cam_locked = false
+
+# =========================================================================
+# CIM SHADER V1 (cim-shader) — materyaller + kalite + test + kareler
+# =========================================================================
+# grass.gdshader sus otu MultiMesh'lerine (material_override, MMI
+# duzeyinde: TEK draw call korunur) + ciceklere dusuk-ruzgar kopyasi.
+# noise_tex ve night_mix SU ILE AYNI kaynaktan (sozlesme sarti).
+
+var _cim_mat: ShaderMaterial
+var _cicek_mat: ShaderMaterial
+var _cim_ezme_on: bool = true      # quality 0'da player_pos seti atlanir
+var _ortak_noise: NoiseTexture2D   # su + cim paylasir (bellek)
+
+## Su ve cimin paylastigi seamless noise (bir kez uretilir).
+func _ortak_noise_tex() -> NoiseTexture2D:
+	if _ortak_noise != null:
+		return _ortak_noise
+	var fn := FastNoiseLite.new()
+	fn.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+	fn.frequency = 0.012
+	_ortak_noise = NoiseTexture2D.new()
+	_ortak_noise.noise = fn
+	_ortak_noise.seamless = true
+	_ortak_noise.width = 256
+	_ortak_noise.height = 256
+	return _ortak_noise
+
+## Cim materyali. blade_height SOZLESME geregi OLCULUR: havuzdaki
+## mesh'lerin en yuksek AABB'si (Root Scale sonrasi gercek boy).
+func _cim_material(pool: Array = []) -> ShaderMaterial:
+	if not DigWaterVisual.CIM_SHADER_V1:
+		return null
+	if _cim_mat != null:
+		return _cim_mat
+	_cim_mat = ShaderMaterial.new()
+	_cim_mat.shader = load("res://assets/models/env/grass.gdshader")
+	var boy := 0.30
+	for m: Mesh in pool:
+		boy = maxf(boy, m.get_aabb().size.y)
+	_cim_mat.set_shader_parameter("blade_height", boy)
+	_cim_mat.set_shader_parameter("noise_tex", _ortak_noise_tex())
+	_apply_cim_tier()
+	return _cim_mat
+
+## Cicek kopyasi: ayni shader, dusuk ruzgar + pembe uc (baslar savrulmaz).
+func _cicek_material() -> ShaderMaterial:
+	if not DigWaterVisual.CIM_SHADER_V1:
+		return null
+	if _cicek_mat != null:
+		return _cicek_mat
+	_cicek_mat = ShaderMaterial.new()
+	_cicek_mat.shader = load("res://assets/models/env/grass.gdshader")
+	_cicek_mat.set_shader_parameter("noise_tex", _ortak_noise_tex())
+	_cicek_mat.set_shader_parameter("wind_strength",
+			DigWaterVisual.CIM_CICEK_WIND)
+	_cicek_mat.set_shader_parameter("color_tip", DigWaterVisual.CIM_CICEK_TIP)
+	_cicek_mat.set_shader_parameter("color_base", DigWaterVisual.CIM_CICEK_BASE)
+	_cicek_mat.set_shader_parameter("blade_height", 0.30)
+	_apply_cim_tier()
+	return _cicek_mat
+
+## Kalite kademesi -> cim quality uniform'u. Dusuk'te ruzgar/ezme kapali
+## VE player_pos guncellemesi de atlanir (sozlesme: "quality 0'da
+## guncelleme de atlansin").
+func _apply_cim_tier() -> void:
+	var t := DigWaterVisual.tier_of(_quality_tier)
+	var q: int = 1 if bool(t["wave"]) else 0
+	_cim_ezme_on = q > 0
+	if _cim_mat != null:
+		_cim_mat.set_shader_parameter("quality", q)
+	if _cicek_mat != null:
+		_cicek_mat.set_shader_parameter("quality", q)
+
+## CIMTEST (hizli CI): materyal atamasi + TEK draw call korunumu +
+## blade_height olcumu + kaynak paylasimi.
+func _run_cim_test() -> void:
+	var mmi_n := 0
+	var shaderli := 0
+	var ornek_toplam := 0
+	for node in _decor_nodes:
+		if node is MultiMeshInstance3D:
+			mmi_n += 1
+			ornek_toplam += (node as MultiMeshInstance3D).multimesh.instance_count
+			if (node as MultiMeshInstance3D).material_override is ShaderMaterial:
+				shaderli += 1
+	var boy: float = -1.0
+	var paylasim := false
+	if _cim_mat != null:
+		boy = float(_cim_mat.get_shader_parameter("blade_height"))
+		paylasim = _cim_mat.get_shader_parameter("noise_tex") \
+				== (_lake_mat.get_shader_parameter("noise_tex")
+				if _lake_mat != null else null)
+	if DigWaterVisual.CIM_SHADER_V1 and shaderli != mmi_n:
+		push_error("CIM: %d/%d sus otu MMI'si shadersiz kaldi"
+				% [mmi_n - shaderli, mmi_n])
+	if DigWaterVisual.CIM_SHADER_V1 and (boy < 0.05 or boy > 2.0):
+		push_error("CIM: blade_height olcumu sacma (%.2f)" % boy)
+	print("CIMTEST: mmi=%d shaderli=%d ornek=%d blade_height=%.2f noise_paylasim=%s cicek=%s" % [
+			mmi_n, shaderli, ornek_toplam, boy, str(paylasim),
+			str(_cicek_mat != null)])
+
+## Agir CI kareleri: cayir gunduz (ruzgar: 1 sn arayla IKI kare — statik
+## goruntude hareket ancak farkla kanitlanir; gif borcu RAPOR'da),
+## karakter cim icinde (ezme), gece (su+cim ton uyumu tek karede).
+func _run_cim_frames(save_path: String) -> void:
+	if _decor_cells.is_empty():
+		return
+	_cam_locked = true
+	var eski_poz := player.position
+	# En yogun sus otu bolgesi: decor hucrelerinden orta bir tanesi
+	var hedef: Vector2i = _decor_cells[_decor_cells.size() / 2]
+	var hp := _cell_center(hedef)
+	camera.position = hp + Vector3(-2.5, 2.2, 3.5)
+	camera.look_at(hp + Vector3(0, 0.2, 0))
+	await get_tree().create_timer(0.8).timeout
+	_snap(save_path.replace(".png", "_cim_ruzgar_a.png"))
+	await get_tree().create_timer(1.0).timeout
+	_snap(save_path.replace(".png", "_cim_ruzgar_b.png"))
+	# Ezme: oyuncu cimin icine
+	player.position = hp
+	camera.position = hp + Vector3(-1.8, 1.8, 2.6)
+	camera.look_at(hp + Vector3(0, 0.4, 0))
+	await get_tree().create_timer(0.6).timeout
+	_snap(save_path.replace(".png", "_cim_ezme.png"))
+	# Gece: gol kiyisinda cim — su+cim ton uyumu tek karede
+	if not _lake_cells_list.is_empty():
+		var kiyi := Vector2i(-999, -999)
+		for w: Vector2i in _lake_cells_list:
+			for c: Vector2i in _decor_cells:
+				if Vector2(c - w).length() <= 3.0:
+					kiyi = w
+					break
+			if kiyi != Vector2i(-999, -999):
+				break
+		if kiyi != Vector2i(-999, -999):
+			var kp := _cell_center(kiyi)
+			DayNight.jump_to_night()
+			_clear_creatures()
+			camera.position = kp + Vector3(-3.0, 2.8, 4.0)
+			camera.look_at(kp)
+			await get_tree().create_timer(1.0).timeout
+			_snap(save_path.replace(".png", "_cim_su_gece.png"))
+			DayNight.jump_to_day()
 	player.position = eski_poz
 	camera.position = player.position + _camera_offset()
 	await get_tree().create_timer(0.4).timeout
