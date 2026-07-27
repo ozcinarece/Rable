@@ -18,7 +18,7 @@ Durum değerleri: ÇALIŞIYOR / BRANCH'TE / YARIM / SADECE-PLAN / BOZUK.
 | Tarım | Boş sürülü tarla göstergesi (planting_mound) | BRANCH'TE | gorsel-tur | world3d.gd (_update_mound_node) | tarım-3d | — | ekilince kaybolur, hasatta döner |
 | Dünya | Taş yol (SERPİNTİ modeli, stone_scatter_a) | ÇALIŞIYOR | main | world3d.gd (_build_road_scatter), road_scatter.gd | — | moss_patch.glb yok → yosun hiç çizilmiyor | ROADTEST + SCATTERTEST CI'da; karo modeli TILE_MODE_ON=false ile kapalı |
 | Araçlar | Yerleşim Editörü (oyun içi düzenleme + camp_layout.json) | ÇALIŞIYOR | main | layout_editor.gd, world3d.gd, hud.gd | taş yol | yalnız debug build; düzen dosyası henüz repoda yok | EDITORTEST CI'da; RAPOR_EDITOR.md |
-| Dünya | Orman ağaç seti (pinetree.glb %60 + küçük boy %40, dosya-bekler) | ÇALIŞIYOR | agac-degisim | world3d.gd (TREE_SET, _tree_set_pool) | — | pinetree.glb henüz yüklenmedi → pinetree1/2 fallback çiziliyor | TREETEST CI'da; dosya env/ veya test/ altına düşünce kod değişmeden devreye girer; RAPOR_AGAC.md |
+| Dünya | Orman ağaç seti (pinetree.glb aktif; küçük boy %40 slotu opsiyonel) | ÇALIŞIYOR | main | world3d.gd (TREE_SET, _tree_set_pool) | — | — | TREETEST CI'da; 2145 üçgen (eskisi 5214/4440), tüm orman tek MultiMesh; pine_tree_small.glb gelirse 60/40; RAPOR_AGAC.md |
 | Dünya | Ağaç kesme + çalı yeniden büyüme | ÇALIŞIYOR | main | world3d.gd, gather_rules.gd | alet | — | balta tek vuruş |
 | Dünya | Kaya kırma (taş/kömür/altın/bakır) | ÇALIŞIYOR | main | world3d.gd | kazma | — | — |
 | Kazı | Kürekle kazı (derinlik 1–4) | ÇALIŞIYOR | main | world3d.gd (_depth), dig_rules.gd | kürek | — | — |
