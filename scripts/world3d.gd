@@ -1458,6 +1458,7 @@ func _run_fast_tests() -> void:
 	_run_kor_test()
 	_run_sefer_test()
 	_run_uyuyan_test()
+	_run_uzak_test()
 	_run_save_load_selftest()
 	print("FASTTESTS: bitti")
 	get_tree().quit()
@@ -2020,6 +2021,7 @@ func _process(delta: float) -> void:
 		_kesif_timer = 0.0
 		_update_kesif()
 		_tick_uyuyanlar(0.2)  # 16.5: uyanma/gecikme/yeniden uyuma/nabiz
+		_tick_uzak_tehditler(0.2)  # 16.6: ortam dogurucu + firtina + avci
 	# Eldeki esya envanterden ciktiysa birak
 	if _held_item != "" and Inventory.get_count(_held_item) <= 0:
 		_on_hold_requested("")
@@ -2897,6 +2899,7 @@ func _build_world() -> void:
 	_build_ground_markers()  # harita-v2: kil işaretleri + yüzey cevher ipuçları
 	_place_kor_taslari()  # KESIF 16.3: Ocak belli olduktan sonra yay yerlesimi
 	_place_uyuyanlar()   # KESIF 16.5: sis kusagi kumeleri (taslardan sonra)
+	_place_damar_catlaklari()  # KESIF 16.6: H3 isik sizan yariklar
 
 ## harita-v2: kil-işaretli kum hücrelerine kil-rengi yassı yama (kürek ipucu)
 ## + birkaç kaya öbeğinin yanına bakır-tonlu yüzey cevher ipucu. İkisi de
@@ -8034,6 +8037,14 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 		hedef_hucre = _camp_at("ocak")
 	var target := _cell_center(hedef_hucre) if hedef_hucre != Vector2i(-999, -999) \
 			else ppos
+	# KESIF 16.6: ortam yaratiklari base'e YURUMEZ — dert oyuncudur.
+	# Damar catlagi yakindaysa isiga cekilir (dogal oz lambasi: akilli
+	# oyuncu tuzak olarak kullanir).
+	if cr.has_meta("uzak"):
+		target = ppos
+		var damar := _damar_yakin(Vector2i(int(cr.position.x), int(cr.position.z)))
+		if damar != Vector2i(-999, -999):
+			target = _cell_center(damar)
 	# Oyuncu YOLA GIRDIYSE yine de vurur: bu bir hedef degisimi degil,
 	# temas tepkisi. Olmasaydi yaratik seni doverken bile umursamaz
 	# gorunurdu.
@@ -9383,6 +9394,11 @@ func _update_kesif() -> void:
 		hud.set_fener_gorunur(gorunur)
 	var v: float = KesifBalance.vinyet(_sis_yogun, _isik_acik,
 			_fener_kisik and isik >= 2)
+	# KESIF 16.6 Kul Firtinasi: gorus zorla kapanir; siginakta yari.
+	if _firtina_kalan > 0.0:
+		v = KesifBalance.FIRTINA_VINYET
+		if _firtina_siginakta():
+			v *= 0.5
 	if absf(v - _son_vinyet) > 0.01:
 		_son_vinyet = v
 		hud.set_sis(v, KesifBalance.soguk(_sis_yogun))
@@ -10124,3 +10140,193 @@ func _run_uyuyan_test() -> void:
 			mat.emission_enabled = false
 	print("UYUTEST: kume=%d uye=%d uyanma=%s dogan=%d yeniden_uyku=%s gurultu=%s" % [
 			kume_n, uye_n, str(uyaniyor), dogan, str(geri), str(gurultu_ok)])
+
+# =========================================================================
+# KESIF Asama 5 (16.6) — UZAK TEHDITLER (halka bazli, dalga DEGIL)
+# =========================================================================
+# Sisli halkalarda "gunduz guvenli" kurali KIRILIR (16.2): ortam
+# dogurucu UZAK_TIK_ARALIK'ta bir zar atar. Sis Surusu (H2+), Fener
+# Avcisi (H2+, YALNIZ parlak isik varken; isik kisilinca ilgisini
+# yitirir), Catlak Dev (H3). Cevresel: Kul Firtinasi (H3, gorus kapanir,
+# siginak ara) + Damar Catlagi (H3, isik sizan yarik yaratik ceker —
+# akilli oyuncu tuzak olarak kullanir). Hepsi mevcut AI iskeletinin
+# varyanti (stat + "uzak" metasi); take_hit/oz aynen calisir.
+
+var _uzak_timer: float = 0.0
+var _uzak_yaratiklar: Array = []
+var _firtina_kalan: float = 0.0
+var _firtina_bekleme: float = 0.0
+var _damar_catlaklari: Array = []   # [Vector2i]
+var _damar_gorseller: Array = []
+
+func _place_damar_catlaklari() -> void:
+	for g in _damar_gorseller:
+		if is_instance_valid(g):
+			g.queue_free()
+	_damar_gorseller.clear()
+	_damar_catlaklari.clear()
+	var merkez := get_hearth()
+	if merkez == Vector2i(-999, -999):
+		merkez = _spawn_cell
+	for i in 30:
+		if _damar_catlaklari.size() >= KesifBalance.DAMAR_SAYI:
+			break
+		var aci := TAU * DigWaterVisual.hash01(i, 9, 661)
+		var r := 48.0 + DigWaterVisual.hash01(i, 11, 662) * 14.0
+		var aday := merkez + Vector2i(roundi(cos(aci) * r), roundi(sin(aci) * r))
+		aday = _kor_tas_yer_bul(aday)
+		if aday == Vector2i(-999, -999) or get_ring(aday) < 3:
+			continue
+		if aday in _damar_catlaklari:
+			continue
+		_damar_catlaklari.append(aday)
+		# Gorsel: zeminde isik sizan yarik (yassi emissive serit)
+		var mesh := BoxMesh.new()
+		mesh.size = Vector3(1.4, 0.05,
+				0.22 + DigWaterVisual.hash01(aday.x, aday.y, 663) * 0.2)
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.15, 0.12, 0.18)
+		mat.emission_enabled = true
+		mat.emission = Color(0.4, 0.9, 0.9)
+		mat.emission_energy_multiplier = 1.1
+		var mi := MeshInstance3D.new()
+		mi.mesh = mesh
+		mi.material_override = mat
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.position = _cell_center(aday) + Vector3(0, 0.04, 0)
+		mi.rotation_degrees.y = 360.0 * DigWaterVisual.hash01(aday.x, aday.y, 664)
+		add_child(mi)
+		_damar_gorseller.append(mi)
+
+## Yaratiga en yakin cekim catlagi (yoksa gecersiz hucre).
+func _damar_yakin(cell: Vector2i) -> Vector2i:
+	for c: Vector2i in _damar_catlaklari:
+		if Vector2(cell - c).length() <= KesifBalance.DAMAR_CEKIM_R:
+			return c
+	return Vector2i(-999, -999)
+
+## Ortam dogurucu tik'i (kesif dongusu cagirir, UZAK_TIK_ARALIK'ta bir).
+func _tick_uzak_tehditler(delta: float) -> void:
+	# Firtina saatleri
+	_firtina_bekleme = maxf(0.0, _firtina_bekleme - delta)
+	if _firtina_kalan > 0.0:
+		_firtina_kalan = maxf(0.0, _firtina_kalan - delta)
+		if _firtina_kalan <= 0.0:
+			_son_vinyet = -1.0
+			if hud != null:
+				hud.flash_pill("Firtina dindi")
+	# Uzaklasan ortam yaratiklarini temizle (dert oyuncunun pesinde
+	# surunmek degil, BOLGENIN tekinsizligi).
+	var pc := _player_cell()
+	for cr in _uzak_yaratiklar.duplicate():
+		if not is_instance_valid(cr) or not cr.is_alive():
+			_uzak_yaratiklar.erase(cr)
+			continue
+		var d := Vector2(cr.position.x - float(pc.x) - 0.5,
+				cr.position.z - float(pc.y) - 0.5).length()
+		if d > KesifBalance.UZAK_DESPAWN_R:
+			cr.melt(0.6)
+			_creatures.erase(cr)
+			_uzak_yaratiklar.erase(cr)
+	# Fener Avcisi ilgi kaybi: parlak isik yoksa erir (isik yonetimi ODULU)
+	var parlak: bool = KesifBalance.tasinan_isik(Inventory) \
+			>= KesifBalance.PARLAK_UYANDIRIR_ISIK and not _fener_kisik
+	if not parlak and not _kamp_atesi_yakinimda():
+		for cr in _uzak_yaratiklar.duplicate():
+			if is_instance_valid(cr) and String(cr.type) == "fener_avcisi":
+				cr.melt(0.8)
+				_creatures.erase(cr)
+				_uzak_yaratiklar.erase(cr)
+	# Zar zamani mi?
+	_uzak_timer += delta
+	if _uzak_timer < KesifBalance.UZAK_TIK_ARALIK:
+		return
+	_uzak_timer = 0.0
+	var ring := get_ring(pc)
+	if ring < 2 or _sis_at_cell(pc) <= 0.0:
+		return  # temizlenmis bolge Yuva kurallarina doner (16.2)
+	if _uzak_yaratiklar.size() >= KesifBalance.UZAK_MAX_AKTIF:
+		return
+	var tohum: int = pc.x * 131 + pc.y * 17 + int(Time.get_ticks_msec() / 1000)
+	var zar := DigWaterVisual.hash01(tohum, ring, 665)
+	if zar < KesifBalance.SURU_SANS:
+		var n: int = KesifBalance.SURU_MIN + int(
+				DigWaterVisual.hash01(tohum, 3, 666)
+				* float(KesifBalance.SURU_MAX - KesifBalance.SURU_MIN + 1))
+		for i in n:
+			_uzak_dogur(pc, "sis_surusu", i)
+	if parlak and DigWaterVisual.hash01(tohum, 5, 667) < KesifBalance.AVCI_SANS:
+		_uzak_dogur(pc, "fener_avcisi", 9)
+	if ring >= 3:
+		if DigWaterVisual.hash01(tohum, 7, 668) < KesifBalance.DEV_SANS:
+			_uzak_dogur(pc, "catlak_dev", 12)
+		if _firtina_kalan <= 0.0 and _firtina_bekleme <= 0.0 \
+				and DigWaterVisual.hash01(tohum, 8, 669) < KesifBalance.FIRTINA_SANS:
+			_firtina_kalan = KesifBalance.FIRTINA_SURE
+			_firtina_bekleme = KesifBalance.FIRTINA_BEKLEME
+			_son_vinyet = -1.0
+			if hud != null:
+				hud.flash_pill("Kul firtinasi! Siginak bul")
+			# Firtinada uyuyanlar homurdanir (16.6): nabiz hissi
+			if hud != null:
+				hud.set_nabiz(0.5)
+
+func _uzak_dogur(pc: Vector2i, tip: String, salt: int) -> void:
+	if _uzak_yaratiklar.size() >= KesifBalance.UZAK_MAX_AKTIF:
+		return
+	for i in 12:
+		var aci := TAU * DigWaterVisual.hash01(pc.x + salt, pc.y + i, 670)
+		var cell := pc + Vector2i(
+				roundi(cos(aci) * KesifBalance.UZAK_SPAWN_R),
+				roundi(sin(aci) * KesifBalance.UZAK_SPAWN_R))
+		if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
+			continue
+		if not is_walkable(cell):
+			continue
+		var cr = spawn_creature(cell, tip, 1.0)
+		cr.set_meta("uzak", true)
+		_uzak_yaratiklar.append(cr)
+		return
+
+## Firtina siginagi: kamp atesi ya da Ocak yakini.
+func _firtina_siginakta() -> bool:
+	var pc := _player_cell()
+	var hc := get_hearth()
+	if hc != Vector2i(-999, -999) \
+			and Vector2(pc - hc).length() <= KesifBalance.FIRTINA_SIGINAK_R:
+		return true
+	return _kamp_atesi_yakinimda()
+
+## UZAKTEST (hizli CI): tip verileri + dogurucu + avci isik kurali +
+## damar yerlesimi + firtina vinyeti.
+func _run_uzak_test() -> void:
+	var tip_ok: bool = CreatureBalance.TYPES.has("sis_surusu") \
+			and CreatureBalance.TYPES.has("fener_avcisi") \
+			and CreatureBalance.TYPES.has("catlak_dev")
+	if not tip_ok:
+		push_error("UZAK: tehdit tipleri CreatureBalance'ta eksik")
+	# Dalga havuzuna sizmamalilar (first_night 999)
+	var havuz: Array = CreatureBalance.unlocked_types(50)
+	var sizinti: bool = "sis_surusu" in havuz or "fener_avcisi" in havuz \
+			or "catlak_dev" in havuz
+	if sizinti:
+		push_error("UZAK: uzak tehdit gece dalgasi havuzuna sizdi")
+	# Dogurucu: zorla dogur -> uzak metasi + canli
+	var onceki: int = _uzak_yaratiklar.size()
+	_uzak_dogur(Vector2i(64, 64), "sis_surusu", 1)
+	var dogdu: bool = _uzak_yaratiklar.size() == onceki + 1
+	if dogdu:
+		var cr = _uzak_yaratiklar[-1]
+		if not cr.has_meta("uzak"):
+			push_error("UZAK: ortam yaratiginda 'uzak' metasi yok")
+		cr.queue_free()
+		_creatures.erase(cr)
+		_uzak_yaratiklar.erase(cr)
+	else:
+		push_error("UZAK: ortam dogurucu calismiyor")
+	var damar_n := _damar_catlaklari.size()
+	var firtina_v: float = KesifBalance.FIRTINA_VINYET
+	if firtina_v < 0.9:
+		push_error("UZAK: firtina vinyeti gorusu kapatmiyor")
+	print("UZAKTEST: tipler=%s havuz_temiz=%s dogum=%s damar=%d firtina_v=%.2f" % [
+			str(tip_ok), str(not sizinti), str(dogdu), damar_n, firtina_v])

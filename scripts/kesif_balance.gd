@@ -138,6 +138,31 @@ const NABIZ_R := 6.0               # HUD nabzi hissedilme mesafesi
 ## Kisik fener uyandirmaz (16.5 stealth istisnasi); parlak (K2+) uyandirir.
 const PARLAK_UYANDIRIR_ISIK := 2
 
+# --- 16.6 Uzak tehditler (halka bazli; gece dalgasindan BAGIMSIZ) ---------
+## Ortam dogurucu: oyuncu sisli halkadayken bu araliklarla zar atilir.
+const UZAK_TIK_ARALIK := 12.0      # saniye
+const UZAK_MAX_AKTIF := 8          # ayni anda ortam yaratigi tavani
+const UZAK_DESPAWN_R := 26.0       # oyuncudan bu kadar uzaklasan erir
+const UZAK_SPAWN_R := 10.0         # dogum mesafesi (gorusun hemen disi)
+## Sis Surusu (halka 2+): 3-5'li hizli surus, tek tek zayif.
+const SURU_SANS := 0.35
+const SURU_MIN := 3
+const SURU_MAX := 5
+## Fener Avcisi (halka 2+): YALNIZ parlak isik varken dogar; isik
+## kisilinca ilgisini yitirir (erir) — seferde isik yonetiminin dusmani.
+const AVCI_SANS := 0.4
+## Catlak Dev (halka 3): kiricinin elit atasi — yavas, iri, korkutucu.
+const DEV_SANS := 0.15
+## Kul Firtinasi (halka 3, cevresel): gorus sifira iner, siginak ara.
+const FIRTINA_SANS := 0.12         # her uzak-tik degerlendirmesinde
+const FIRTINA_SURE := 35.0         # saniye
+const FIRTINA_BEKLEME := 150.0     # iki firtina arasi en az sure
+const FIRTINA_VINYET := 0.95       # zorunlu vinyet (siginakta yariya iner)
+const FIRTINA_SIGINAK_R := 5.0     # kamp atesi/Ocak yakini siginak sayilir
+## Damar Catlagi (halka 3, cevresel): isik sizan yariklar yaratik ceker.
+const DAMAR_SAYI := 6
+const DAMAR_CEKIM_R := 7.0         # bu yaricapta ortam yaratigi catlaga yonelir
+
 # --- Sorgular -------------------------------------------------------------
 
 static func ring_of(cell: Vector2i, merkez: Vector2i) -> int:
