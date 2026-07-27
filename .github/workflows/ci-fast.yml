@@ -86,7 +86,7 @@ jobs:
           fi
           # tail-60 uyari seliyle dolunca sayisal test satirlari
           # gorunmez kaliyordu; onemli olcum satirlarini ayrica bas.
-          grep -E "WATERCOLORTEST|TREETEST|KESIFTEST" /tmp/fast.log || true
+          grep -E "WATERCOLORTEST|TREETEST|KESIFTEST|KORTEST" /tmp/fast.log || true
           if ! grep -q "FASTTESTS: bitti" /tmp/fast.log; then
             echo "::error::Hizli testler tamamlanmadi"
             exit 1

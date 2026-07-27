@@ -47,6 +47,44 @@ const SIS_RENK := Color(0.62, 0.66, 0.78)  # soguk gri-lavanta
 ## gunduz de uyanik tehdit olabilir. Asama 5 tehditleri bunu okur.
 const YABANI_GUNDUZ_HALKA := 2
 
+# --- 16.3 Kor taslari -----------------------------------------------------
+## ANA HAT 6 tas: Ocak'tan disari YAY cizer (aci derece, yaricap hucre).
+## Sira ayni zamanda zorluk sirasi: 1-2 Halka 1, 3-4 Halka 2, 5-6 Halka 3.
+const TAS_ANA := [
+	{"aci": -140.0, "r": 21.0}, {"aci": -84.0, "r": 26.0},
+	{"aci": -28.0, "r": 37.0}, {"aci": 28.0, "r": 42.0},
+	{"aci": 84.0, "r": 52.0}, {"aci": 140.0, "r": 58.0},
+]
+## YAN taslar (opsiyonel, 16.7 odulleri Asama 6'da): yaydan sapmis.
+const TAS_YAN := {
+	"yanA": {"aci": 180.0, "r": 34.0},
+	"yanB": {"aci": -170.0, "r": 50.0},
+	"yanC": {"aci": 100.0, "r": 57.0},
+}
+## Yakma bedeli: 1 yol koru + tas basina ARTAN oz (ana sira; 16.3).
+const TAS_BEDEL := [
+	{"oz": 1}, {"oz": 1}, {"oz": 2}, {"oz": 2}, {"oz": 3}, {"oz": 3},
+]
+const TAS_YAN_BEDEL := {"oz": 2}
+## Bu halkadan itibaren yol korunu tasimak KOZ KABI ister (once mesale koru
+## yeter — 16.3 "Halka 1 taslari icin mesaleyle tasinabilir basit koz").
+const KOZ_SART_HALKA := 2
+## Yakilan tasin cevresinde KALICI sis temizligi yaricapi (16.2).
+const TEMIZ_R := 11.0
+## Gece sertlesmesi (HIKAYE 8 gorunurluk bedeli): yakilan ANA tas basina
+## dalga sayisi carpani artisi.
+const SERTLESME_TAS_BASI := 0.08
+
+static func gece_sertlesme(yanik_ana: int) -> float:
+	return 1.0 + SERTLESME_TAS_BASI * float(yanik_ana)
+
+## Ana tas indexi -> yanma bedeli (yan taslar icin TAS_YAN_BEDEL).
+static func tas_bedel(id: String) -> Dictionary:
+	if id.begins_with("ana"):
+		var i := int(id.substr(3)) - 1
+		return TAS_BEDEL[clampi(i, 0, TAS_BEDEL.size() - 1)]
+	return TAS_YAN_BEDEL
+
 # --- Sorgular -------------------------------------------------------------
 
 static func ring_of(cell: Vector2i, merkez: Vector2i) -> int:

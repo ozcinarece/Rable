@@ -1448,6 +1448,7 @@ func _run_fast_tests() -> void:
 	_run_muhendislik_selftest()
 	_run_creature_selftest()
 	_run_kesif_test()
+	_run_kor_test()
 	_run_save_load_selftest()
 	print("FASTTESTS: bitti")
 	get_tree().quit()
@@ -2206,7 +2207,41 @@ func to_save_data() -> Dictionary:
 		"held": _held_item,
 		"home_bed": [_home_bed.x, _home_bed.y],  # 14.2 aktif dogus noktasi
 		"farming": Farming.to_save_data(),  # tarim-3d: tarla/evre/islaklik/kap
+		"kesif": _kesif_to_save(),  # Bolum 16: tas durumlari + fener
 	}
+
+## KESIF kayit paketi: yalniz DURUM yazilir (konumlar deterministik ama
+## algoritma degisirse eski kayit bozulmasin diye hucre de saklanir).
+func _kesif_to_save() -> Dictionary:
+	var taslar: Array = []
+	for id: String in _kor_taslari:
+		var t: Dictionary = _kor_taslari[id]
+		taslar.append({"id": id, "x": Vector2i(t["cell"]).x,
+				"y": Vector2i(t["cell"]).y, "yanik": bool(t["yanik"])})
+	return {"taslar": taslar, "fener_kisik": _fener_kisik}
+
+func _kesif_from_save(data: Dictionary) -> void:
+	if data.is_empty():
+		return
+	_fener_kisik = bool(data.get("fener_kisik", false))
+	for kayit in data.get("taslar", []):
+		var id := String(kayit.get("id", ""))
+		if not _kor_taslari.has(id):
+			continue
+		# Konum kayittan (algoritma kaysa bile oyuncunun gordugu tas yerinde)
+		var cell := Vector2i(int(kayit.get("x", 0)), int(kayit.get("y", 0)))
+		if cell != Vector2i(_kor_taslari[id]["cell"]):
+			_solid_cells.erase(Vector2i(_kor_taslari[id]["cell"]))
+			_kor_taslari[id]["cell"] = cell
+			_solid_cells[cell] = true
+			if _kor_tas_gorseller.has(id) and is_instance_valid(_kor_tas_gorseller[id]):
+				_kor_tas_gorseller[id].position = _cell_center(cell) + Vector3(0, 0.62, 0)
+		_kor_taslari[id]["yanik"] = bool(kayit.get("yanik", false))
+		if _kor_tas_gorseller.has(id) and is_instance_valid(_kor_tas_gorseller[id]):
+			_kor_tas_isima(_kor_tas_gorseller[id], bool(_kor_taslari[id]["yanik"]))
+	_rebuild_temiz_bolgeler()
+	_update_alev_rengi()
+	_son_vinyet = -1.0
 
 ## kayit-sistemi: SAHNE durumunu (dünya) geri yükler. SaveManager çağırır;
 ## envanter/can/gün AYRI yüklenir (bu fonksiyon onlara dokunmaz — eldeki alet
@@ -2308,6 +2343,7 @@ func from_save_data(data: Dictionary) -> bool:
 	var held := String(data.get("held", ""))
 	if held != "" and Inventory.get_count(held) > 0:
 		_on_hold_requested(held)
+	_kesif_from_save(data.get("kesif", {}))  # Bolum 16: tas/fener durumu
 	_loading = false
 	return true
 
@@ -2395,6 +2431,9 @@ func _recompute_solids() -> void:
 			_solid_cells[cell] = true
 	for cell: Vector2i in _dummies:
 		_solid_cells[cell] = true  # kukla engeldir
+	# KESIF 16.3: kor taslari kalici engel (yanik/yanmamis farketmez)
+	for id: String in _kor_taslari:
+		_solid_cells[Vector2i(_kor_taslari[id]["cell"])] = true
 
 # Iki parmakla yakinlastirma (pinch); oyuncu hareketi 1. parmakta kalir
 func _unhandled_input(event: InputEvent) -> void:
@@ -2841,6 +2880,7 @@ func _build_world() -> void:
 	_build_spawn_camp()  # kamp dekoru (nesneler kurulduktan sonra)
 	_kamp_duzenini_uygula()  # data/camp_layout.json VARSA uzerine kurar
 	_build_ground_markers()  # harita-v2: kil işaretleri + yüzey cevher ipuçları
+	_place_kor_taslari()  # KESIF 16.3: Ocak belli olduktan sonra yay yerlesimi
 
 ## harita-v2: kil-işaretli kum hücrelerine kil-rengi yassı yama (kürek ipucu)
 ## + birkaç kaya öbeğinin yanına bakır-tonlu yüzey cevher ipucu. İkisi de
@@ -7310,6 +7350,15 @@ func _describe_target(cell: Vector2i) -> Dictionary:
 	if _ground_item_at(cell) != -1:
 		return {"type": "ground", "cell": cell, "icon": "grab",
 				"valid": true, "kind": "grab"}
+	# KESIF 16.3: yakilmamis kor tasi -> yakma etkilesimi
+	var kor_id := _kor_tas_at(cell)
+	if kor_id != "" and not bool(_kor_taslari[kor_id]["yanik"]):
+		return {"type": "kortasi", "cell": cell, "icon": "open",
+				"valid": true, "kind": "open", "kor_id": kor_id}
+	# KESIF 16.3: Ocak'a dokun -> yol koru al (tasima kabi varsa)
+	if cell == get_hearth() and Inventory.get_count("yol_koru") < 1:
+		return {"type": "yolkoru", "cell": cell, "icon": "open",
+				"valid": true, "kind": "open"}
 	# Cekic elde + yerlestirilmis yapi: SOKME (12.4). Istasyon acmadan once.
 	var placed := String(_placed.get(cell, ""))
 	if held == "cekic" and placed != "":
@@ -7423,6 +7472,12 @@ func _perform_tool_action(t: Dictionary) -> void:
 	match String(t["type"]):
 		"ground":
 			_try_pickup_ground(cell)
+			return
+		"kortasi":
+			_try_burn_kor_tas(String(t.get("kor_id", "")))
+			return
+		"yolkoru":
+			_take_yol_koru()
 			return
 		"station":
 			_interact_station(cell, String(t.get("placed", "")))
@@ -7831,6 +7886,10 @@ func _on_night_started() -> void:
 ## O gecenin yaratiklarini harita kenarindan dogurur.
 func _spawn_night_wave(night: int) -> void:
 	var want: int = CreatureBalance.min_wave_count(night)
+	# KESIF 16.3 gece sertlesmesi: yakilan ana tas basina dalga buyur
+	# (HIKAYE 8 gorunurluk bedeli — cemberi buyutmenin karsiligi).
+	want = int(round(float(want)
+			* KesifBalance.gece_sertlesme(_yanik_ana_sayisi())))
 	var room: int = CreatureBalance.MIN_MAX_ACTIVE - _live_creature_count()
 	want = mini(want, maxi(0, room))
 	var hp_mult: float = CreatureBalance.night_hp_mult(night)
@@ -9364,3 +9423,223 @@ func _run_kesif_test() -> void:
 			str([h0, h1, h2, h3]), str([t0, t1, t2, t3]),
 			v_yok, v_hafif, v_agir, str(tarif_ok), str(dugum_ok),
 			str(sis_temiz == 0.0)])
+
+# =========================================================================
+# KESIF Asama 2 (16.3) — KOR TASLARI
+# =========================================================================
+# 6 ana tas Ocak'tan disari yay cizer (KesifBalance.TAS_ANA), 3 yan tas
+# sapmis noktalarda. Yerlesim deterministik: aci+yaricap veriden, hucre
+# en yakin yurunebilir karaya oturtulur (spiral arama). Yakma bedeli
+# 1 yol_koru + artan oz; Halka 2+ taslari koz_kabi sart (tasiyici).
+# Yakilan tas: KALICI sis temizligi + arastirmaya "tas bilgisi" +
+# gece sertlesme carpani + Ocak alev rengi ilerlemesi (HIKAYE 7 kancasi).
+
+var _kor_taslari: Dictionary = {}   # id -> {cell, yanik, halka}
+var _kor_tas_gorseller: Dictionary = {}  # id -> MeshInstance3D
+
+## Dunya kurulunca cagrilir (kamp sonrasi): taslari yerlestir.
+func _place_kor_taslari() -> void:
+	for g in _kor_tas_gorseller.values():
+		if is_instance_valid(g):
+			g.queue_free()
+	_kor_taslari.clear()
+	_kor_tas_gorseller.clear()
+	var merkez := get_hearth()
+	if merkez == Vector2i(-999, -999):
+		merkez = _spawn_cell
+	for i in KesifBalance.TAS_ANA.size():
+		var t: Dictionary = KesifBalance.TAS_ANA[i]
+		_kor_tas_kur("ana%d" % (i + 1), merkez,
+				float(t["aci"]), float(t["r"]))
+	for id: String in KesifBalance.TAS_YAN:
+		var t: Dictionary = KesifBalance.TAS_YAN[id]
+		_kor_tas_kur(id, merkez, float(t["aci"]), float(t["r"]))
+
+func _kor_tas_kur(id: String, merkez: Vector2i, aci: float, r: float) -> void:
+	var rad := deg_to_rad(aci)
+	var hedef := merkez + Vector2i(roundi(cos(rad) * r), roundi(sin(rad) * r))
+	var cell := _kor_tas_yer_bul(hedef)
+	if cell == Vector2i(-999, -999):
+		print("KORTAS: %s icin yer yok (hedef %s)" % [id, str(hedef)])
+		return
+	_kor_taslari[id] = {"cell": cell, "yanik": false,
+			"halka": get_ring(cell)}
+	_solid_cells[cell] = true
+	_kor_tas_gorseller[id] = _kor_tas_gorsel_kur(id, cell)
+
+## Hedefin cevresinde yurunebilir, bos, kuru hucre ara (buyuyen halka).
+func _kor_tas_yer_bul(hedef: Vector2i) -> Vector2i:
+	for ring in 9:
+		for oy in range(-ring, ring + 1):
+			for ox in range(-ring, ring + 1):
+				if maxi(absi(ox), absi(oy)) != ring:
+					continue
+				var c := hedef + Vector2i(ox, oy)
+				if c.x < 1 or c.y < 1 or c.x >= _map_w - 1 or c.y >= _map_h - 1:
+					continue
+				if not is_walkable(c) or _placed.has(c) or _objects.has(c):
+					continue
+				return c
+	return Vector2i(-999, -999)
+
+## Placeholder gorsel: koyu tas silindiri + yanikken kor rengi isima.
+## Model gelirse (kor_tasi.glb) ayni kancadan takilir — kod degismez.
+func _kor_tas_gorsel_kur(id: String, cell: Vector2i) -> MeshInstance3D:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 0.30
+	mesh.bottom_radius = 0.44
+	mesh.height = 1.25
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.24, 0.23, 0.30)
+	mat.roughness = 0.9
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position = _cell_center(cell) + Vector3(0, 0.62, 0)
+	add_child(mi)
+	if bool(_kor_taslari[id]["yanik"]):
+		_kor_tas_isima(mi, true)
+	return mi
+
+func _kor_tas_isima(mi: MeshInstance3D, yanik: bool) -> void:
+	var mat := mi.material_override as StandardMaterial3D
+	if mat == null:
+		return
+	if yanik:
+		mat.emission_enabled = true
+		mat.emission = Color(1.0, 0.45, 0.16)
+		mat.emission_energy_multiplier = 1.4
+		mat.albedo_color = Color(0.34, 0.28, 0.30)
+	else:
+		mat.emission_enabled = false
+
+## Bu hucrede (yakilmamis) kor tasi var mi? -> id ya da ""
+func _kor_tas_at(cell: Vector2i) -> String:
+	for id: String in _kor_taslari:
+		if Vector2i(_kor_taslari[id]["cell"]) == cell:
+			return id
+	return ""
+
+func _yanik_ana_sayisi() -> int:
+	var n := 0
+	for id: String in _kor_taslari:
+		if id.begins_with("ana") and bool(_kor_taslari[id]["yanik"]):
+			n += 1
+	return n
+
+## Yanik taslardan kalici temiz bolgeleri yeniden kur (yukleme + yakma).
+func _rebuild_temiz_bolgeler() -> void:
+	_temiz_bolgeler.clear()
+	for id: String in _kor_taslari:
+		if bool(_kor_taslari[id]["yanik"]):
+			_temiz_bolgeler.append({
+				"cell": Vector2i(_kor_taslari[id]["cell"]),
+				"r": KesifBalance.TEMIZ_R})
+
+## Yakma denemesi: bedel + tasiyici kurali. Basarida KALICI etkiler.
+func _try_burn_kor_tas(id: String) -> bool:
+	if not _kor_taslari.has(id) or bool(_kor_taslari[id]["yanik"]):
+		return false
+	if Inventory.get_count("yol_koru") < 1:
+		_spawn_floating_text(Vector2i(_kor_taslari[id]["cell"]),
+				"Yol koru gerek (Ocak'tan al)", Color(1, 0.6, 0.4))
+		return false
+	if int(_kor_taslari[id]["halka"]) >= KesifBalance.KOZ_SART_HALKA \
+			and Inventory.get_count("koz_kabi") < 1:
+		_spawn_floating_text(Vector2i(_kor_taslari[id]["cell"]),
+				"Bu uzaklige koz kabi gerek", Color(1, 0.6, 0.4))
+		return false
+	var bedel: Dictionary = KesifBalance.tas_bedel(id)
+	for item_id: String in bedel:
+		if Inventory.get_count(item_id) < int(bedel[item_id]):
+			_spawn_floating_text(Vector2i(_kor_taslari[id]["cell"]),
+					"Eksik: %s x%d" % [Items.display_name(item_id),
+					int(bedel[item_id])], Color(1, 0.6, 0.4))
+			return false
+	Inventory.remove_item("yol_koru", 1)
+	for item_id: String in bedel:
+		Inventory.remove_item(item_id, int(bedel[item_id]))
+	_kor_taslari[id]["yanik"] = true
+	_rebuild_temiz_bolgeler()
+	var cell := Vector2i(_kor_taslari[id]["cell"])
+	if _kor_tas_gorseller.has(id) and is_instance_valid(_kor_tas_gorseller[id]):
+		_kor_tas_isima(_kor_tas_gorseller[id], true)
+	# Canlanma: sicak parcacik patlamasi + yazi. Sis o bolgede kalici gitti.
+	_spawn_particles(_cell_center(cell) + Vector3(0, 1.0, 0),
+			Color(1.0, 0.55, 0.2), 14)
+	_spawn_floating_text(cell, "Kor tasi yandi — bolge canlandi", Color(1, 0.8, 0.4))
+	# Arastirma: tas bilgisi dugumleri kademeli belirir (1./3./5. ana tas).
+	var yanik := _yanik_ana_sayisi()
+	if yanik >= 1:
+		Research.reveal_node("tas_bilgisi_1")
+	if yanik >= 3:
+		Research.reveal_node("tas_bilgisi_2")
+	if yanik >= 5:
+		Research.reveal_node("tas_bilgisi_3")
+	_update_alev_rengi()
+	_son_vinyet = -1.0  # sis durumu degisti; HUD tazelensin
+	_dirty = true
+	return true
+
+## HIKAYE 7 alev rengi ilerlemesi: yakilan ana tas sayisi Ocak aleyvinin
+## rengini sicak sariden derin kor kizilina tasir (gorunur ilerleme).
+func _update_alev_rengi() -> void:
+	if _hearth_light == null or not is_instance_valid(_hearth_light):
+		return
+	var t := float(_yanik_ana_sayisi()) / float(KesifBalance.TAS_ANA.size())
+	_hearth_light.light_color = Color(1.0, 0.66, 0.32).lerp(
+			Color(1.0, 0.42, 0.18), t)
+
+## Ana Ocak on kosulu (16.3): 6 ana tasin hepsi yanik mi? (final fazi okur)
+func ana_ocak_hazir() -> bool:
+	return _yanik_ana_sayisi() >= KesifBalance.TAS_ANA.size()
+
+## Ocak'tan yol koru alma: koz kabi ya da (basit koz) mesale sart.
+func _take_yol_koru() -> void:
+	if Inventory.get_count("koz_kabi") < 1 and Inventory.get_count("mesale") < 1:
+		_spawn_floating_text(get_hearth(), "Koru tasiyacak kap yok", Color(1, 0.6, 0.4))
+		return
+	Inventory.add_item("yol_koru", 1)
+	_spawn_floating_text(get_hearth(), "Yol koru alindi", Color(1, 0.8, 0.4))
+	_dirty = true
+
+## KORTEST (hizli CI): yerlesim sayisi + yakma zinciri + temizlik + carpan.
+func _run_kor_test() -> void:
+	var ana := 0
+	var yan := 0
+	for id: String in _kor_taslari:
+		if id.begins_with("ana"):
+			ana += 1
+		else:
+			yan += 1
+	if ana < KesifBalance.TAS_ANA.size():
+		push_error("KOR: ana tas eksik yerlesti (%d/%d)"
+				% [ana, KesifBalance.TAS_ANA.size()])
+	# Yakma zinciri (ana1, Halka 1: koz kabi sart degil ama mesale koru tasir)
+	var id1 := "ana1"
+	var ok := false
+	var sis_sonra := -1.0
+	var carpan0: float = KesifBalance.gece_sertlesme(_yanik_ana_sayisi())
+	if _kor_taslari.has(id1):
+		var eski_yanik: bool = bool(_kor_taslari[id1]["yanik"])
+		Inventory.add_item("yol_koru", 1)
+		var bedel: Dictionary = KesifBalance.tas_bedel(id1)
+		for item_id: String in bedel:
+			Inventory.add_item(item_id, int(bedel[item_id]))
+		ok = _try_burn_kor_tas(id1)
+		sis_sonra = _sis_at_cell(Vector2i(_kor_taslari[id1]["cell"]))
+		# Temizlik: testi izinsiz kalici yapma — durumu geri sar.
+		_kor_taslari[id1]["yanik"] = eski_yanik
+		_rebuild_temiz_bolgeler()
+		if _kor_tas_gorseller.has(id1) and is_instance_valid(_kor_tas_gorseller[id1]):
+			_kor_tas_isima(_kor_tas_gorseller[id1], eski_yanik)
+	var carpan1: float = KesifBalance.gece_sertlesme(1)
+	if not ok:
+		push_error("KOR: yakma zinciri basarisiz")
+	if ok and sis_sonra != 0.0:
+		push_error("KOR: yakilan tasin bolgesi temizlenmedi (sis=%.2f)" % sis_sonra)
+	if carpan1 <= carpan0 and carpan0 == 1.0:
+		push_error("KOR: gece sertlesme carpani artmiyor")
+	print("KORTEST: ana=%d yan=%d yakma=%s temiz=%s carpan=%.2f->%.2f" % [
+			ana, yan, str(ok), str(sis_sonra == 0.0), carpan0, carpan1])

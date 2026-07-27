@@ -75,6 +75,7 @@ const ITEMS: Dictionary = {
 	"cam": {"name": "Cam", "icon": "res://assets/items/cam.png"},
 	"kor_feneri": {"name": "Kor Feneri", "icon": "res://assets/items/kor_feneri.png"},
 	"koz_kabi": {"name": "Köz Kabı", "icon": "res://assets/items/koz_kabi.png"},
+	"yol_koru": {"name": "Yol Koru", "icon": "res://assets/items/yol_koru.png"},
 }
 
 ## Elde tutulunca yere yerlestirilebilen yapilar: esya -> harita karakteri.
@@ -166,6 +167,7 @@ const DESCRIPTIONS: Dictionary = {
 	"cam": "Kumun atesle sirri. Fener yapiminin anahtari.",
 	"kor_feneri": "Tasinabilir kor isigi (K2): Sis Kusagi'nda gorus acar.",
 	"koz_kabi": "Yol korunu tasiyan metal kap (K3): Derin Sis'e giris ve uzak kor taslarini yakma araci.",
+	"yol_koru": "Ocak'tan alinan canli koz: kor taslarini yakar, sefer kampini tutusturur.",
 }
 
 ## ENVANTER-MOCKUP "flavor" alani: bilgi seridindeki TEK SATIR kisilikli

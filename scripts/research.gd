@@ -71,6 +71,15 @@ const NODES: Dictionary = {
 	"koz_kabi_dugumu": {"branch": "aletler", "prereq": "fener_dugumu",
 			"cost": {"bakir": 2, "cam": 1},
 			"unlocks": ["koz_kabi"], "hidden": false},
+	# KESIF (16.3): "tas bilgisi" — kor taslari yakildikca agaca dusen
+	# gizli dugumler (yakma kodu reveal_node ile acar; tarif tasimiyorlar,
+	# gunluk/yazit ilerlemesinin agactaki izi. Icerik hikaye faziyla dolar).
+	"tas_bilgisi_1": {"branch": "istasyonlar", "prereq": "research_basics",
+			"cost": {}, "unlocks": [], "hidden": true},
+	"tas_bilgisi_2": {"branch": "istasyonlar", "prereq": "tas_bilgisi_1",
+			"cost": {}, "unlocks": [], "hidden": true},
+	"tas_bilgisi_3": {"branch": "istasyonlar", "prereq": "tas_bilgisi_2",
+			"cost": {}, "unlocks": [], "hidden": true},
 }
 
 var unlocked: Dictionary = {}  # node_id -> true
@@ -151,6 +160,15 @@ func do_research(node_id: String) -> bool:
 	_save()
 	changed.emit()
 	return true
+
+## Gizli dugumu dogrudan gorunur yapar (esya tetigi olmayan acilimlar:
+## KESIF 16.3 kor tasi yakildiginda "tas bilgisi" boyle duser).
+func reveal_node(node_id: String) -> void:
+	if not NODES.has(node_id) or revealed.has(node_id):
+		return
+	revealed[node_id] = true
+	_save()
+	changed.emit()
 
 ## Envantere yeni esya girdiginde cagrilir: gizli dugumleri tetikler
 func notify_item_collected(item_id: String) -> void:
