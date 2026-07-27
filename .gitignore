@@ -5,3 +5,6 @@
 # CI build output (APK'lar GitHub Release'e yukleniyor, repoda tutulmuyor)
 /builds/
 /android/
+
+# Maske PNG'lerinin editor importlari: repoya girmez (pull cakismasi olmasin)
+data/*.import

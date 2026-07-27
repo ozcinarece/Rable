@@ -1,47 +1,75 @@
-# HARİTA MASTER PLANI — DURDU: KESIF.md YOK
+# HARİTA MASTER PLANI — Aşama 1 TESLİM (makro tasarım maskeleri)
 
-Görev talimatı: "KESIF.md'yi OKU (halka yapısı 16.1, tehditler 16.6)
-— bu görevin tasarım anayasası. Yoksa RAPOR'a yaz, dur."
+Görev KESIF.md yokken durmuştu; KESIF.md artık repoda (keşif paketiyle
+geldi) — plan kaldığı yerden başladı. Bu teslim **Aşama 1**: üç makro
+maske üretildi ve oyuna bağlandı. Ressamın okuduğu formatta —
+**elle düzenlemen esas akış**, aşağıda rehberi var.
 
-**KESIF.md repoda yok.** Arama kapsamı: main dahil TÜM uzak dallar,
-tam ağaç (alt klasörler dahil), büyük/küçük harf varyantları. Kök
-dizindeki 36 .md dosyasının hiçbiri değil. DURUM.md'deki eski tespit
-de aynı: "KEŞİF/Ocak Nefesi/Eşik Gecesi: repo dokümanlarında bile yok
-— bu vizyon yalnız sohbetlerde."
+## ÜRETİLEN MASKELER (data/)
 
-Talimata uyup **hiçbir aşamaya başlamadım** — Aşama 0 ölçümü dahil.
-Anayasasız üretilen halka mesafeleri/tehdit eşlemesi sonra iki kez
-yazılırdı.
+| Dosya | İçerik |
+|---|---|
+| `map_mask.png` | Biyom tasarımı (7 sınıf; merkez SEED kampı ≈ 59,62) |
+| `height_mask.png` | H3 plato yayları — falez kenarlı, sınırlı geçişli |
+| `fog_mask.png` | Sis yoğunluğu (gri: 0/64/150/235 — halkalarla hizalı) |
 
-## DEVAM İÇİN GEREKEN
+Tasarım (16.1 halkaları, keşif sistemiyle AYNI merkez ve yarıçaplar):
 
-`KESIF.md` dosyasını repoya ekle (kök dizine). Görevin ihtiyaç
-duyduğu asgari bölümler:
+- **Merkez (R0):** bej kamp açıklığı; çevresi serbest kuşak (üreteç
+  karışımı — dağınık ağaç/taş/berry oradan gelir).
+- **H1:** çayır benekleri + öğretici göl (kamp yakını) + 1. harabe
+  alanı (bej leke). Sefer öğretisi: yarım günlük tur.
+- **H2:** SIK ORMAN kuşağı — geçitler 4 radyal koridora daraltıldı
+  (-120°/-30°/60°/150°); sazlık (doğu gölü kum şeridiyle), yan taş A
+  rezervi, 2. harabe.
+- **H3:** kayalık lekeler + `height_mask` plato yayları (kuzey ve
+  güneydoğu; geçit boşlukları doğal darboğaz), damar çatlağı vadisi
+  (güney gri koridor), yan taş B-C.
+- **Rezervler (mor):** 6 ana kor taşı alanı — `kesif_balance.TAS_ANA`
+  açılarıyla BİREBİR aynı yay + 3 yan taş + **Ana Ocak** (60°, r=76 —
+  en uç, zifiri bölge) + **göl adası ve kırık köprü** (batı gölü:
+  ada çayırı + ortası kırık kum köprüsü).
 
-- **16.1 Halka yapısı:** merkez + H1/H2/H3 tanımları, her halkanın
-  teması ve niyeti (görev metnindeki özet iskelet var ama anayasa
-  metni bağlayıcı olan).
-- **16.2 Sis / ışık-kapısı:** Aşama 4'ün "basit hali"nin neyin
-  basiti olduğunu bilmek için tam mekanik tarifi.
-- **16.6 Tehditler:** halka başına yaratık/tehdit listesi —
-  ring_balance.gd'nin sayıları buradan türeyecek.
+## SİS KATMANI OYUNA BAĞLANDI
 
-Dosya main'e düşer düşmez görev bu dalda (harita-master) kaldığı
-yerden başlar: Aşama 0 (boyut/chunk/LOD ölçümü) → maskeler → halka
-verisi → POI → sis v1 → doğrulama.
+`MapMask.load_fog_image()/fog_at()` + `world3d._sis_at_cell` artık
+önce KALICI temizliğe (yanan kor taşı), sonra **fog_mask.png**'ye,
+o yoksa halka fallback'ine bakar. Maske sınırı dışı = zifir (kenar
+kuşağı hep sisli). Yakılan taş maskeden bağımsız temizler — "çemberi
+büyüt" hissi maskeyle çelişmez.
 
-## HAZIR ZEMİN (dosya beklerken tespit)
+## AŞAMA 0 KARARI (boyut/chunk) — BİLİNÇLİ ERTELEME
 
-Yeniden başlatma hızlı olsun diye mevcut altyapının görevle kesişimi:
+16.8 "H3 = 2-3 gece yürüyüş" ister; 128×128'de mesafeler sıkışık.
+Büyütme kararı chunk/LOD ölçümü ister ve maskeler piksel=hücre eşli
+(büyütünce yeniden boyanır). Sıra bilinçli ters çevrildi: önce
+TASARIM DİLİ otursun (bu teslim; sen ressamda düzenleyip onayla),
+sonra boyut/chunk ölçüm dilimi gelsin — onaylı tasarım büyük tuvale
+bir kez taşınır. Ölçüm planı: 192/256 üretim süresi + örnek sayıları
++ cihaz FPS; chunk ancak ölçüm gerektirirse.
 
-- Harita bugün **128×128, tek parça** üretiliyor (chunk/LOD yok) —
-  Aşama 0'ın ölçüp karar vereceği ana konu bu.
-- **Maske altyapısı hazır:** `map_mask.png` (7 sınıf) +
-  `height_mask.png` (3 kademe) üretimde okunuyor; boyama aracı
-  (`scenes/tools/map_painter.tscn`) ikisini de düzenliyor.
-  `fog_mask.png` üçüncü katman olarak aynı kalıba oturur (ressama
-  yeni sekme + MapMask'e gri tonlama okuyucu).
-- Tohum sabit (`MapBalance.SEED_DEFAULT`), taban harita kayda
-  yazılmıyor → maske değişiklikleri deterministik, kayıt bozmaz.
-- Gece dalga sistemi minimal ama kanca almaya uygun
-  (`CreatureBalance.wave_mix` çağrısı tek noktada).
+## SENİN DÜZENLEME REHBERİN
+
+1. `git pull` → ressamı aç (F6). **Biyom** sekmesi = map_mask
+   (7 renk fırçası), **Yükseklik** sekmesi = height_mask (Tepe/Normal).
+   Alt çubukta "kaynak: kayıtlı maske" yazmalı — o artık BU tasarım.
+2. Sis katmanının ressam sekmesi HENÜZ YOK (borç, aşağıda) —
+   fog_mask.png'yi şimdilik herhangi bir resim editöründe düzenle
+   (gri tonlar: koyu=zifir, siyah=açık; 128×128, 1px=1hücre).
+3. Kaydet → oyunda **Yeni Oyun** (maske tabanı değiştirir; mevcut
+   kayıt eski dünyasında kalır).
+4. Mor rezervleri taşırsan kor taşları OTOMATİK taşınmaz (taş
+   yerleşimi kesif_balance açı/yarıçapından) — mor lekeler şimdilik
+   görsel plan işareti; taş-maske eşlemesi POI aşamasının işi.
+
+## KALAN AŞAMALAR (borç listesi)
+
+- **Aşama 0:** boyut ölçümü + büyütme/chunk kararı (tasarım onayından sonra).
+- **Aşama 2:** ring_balance verileri kesif_balance'ta VAR (get_ring,
+  sertleşme, halka tehditleri) — dalga çarpanı bağlı; kaynak kademesi
+  (H2 bakır yüzeyde / H3 demir) henüz değil.
+- **Aşama 3 POI:** harabe/anıtlık/mağara ağzı/kırık köprü GÖRSELLERİ
+  + mor rezerv→taş konumu eşlemesi; Kül Ormanı materyali.
+- **Aşama 4:** sis görseli keşiften hazır (vinyet+soğuma+düzlem);
+  fog_mask ressam sekmesi eksik.
+- **Aşama 5:** etiketli kuşbakışı plan görseli + RINGTEST/POI sayaçları.

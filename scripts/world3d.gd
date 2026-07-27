@@ -2816,6 +2816,7 @@ func _build_world() -> void:
 	# YUKSEKLIK MASKESI (v2): tepe/duzlik katmani (data/height_mask.png).
 	# Biyomdan SONRA biner: tepe boyanan yer ormanin ustune de gelebilir.
 	rows = MapMask.apply_height(rows, _map_seed)
+	_fog_img = MapMask.load_fog_image()  # sis katmani (yoksa null: halka fallback)
 	_map_h = rows.size()
 	_map_w = rows[0].length()
 	_clay_cells.clear()
@@ -9352,6 +9353,7 @@ var _son_vinyet: float = -1.0      # HUD'a yalniz degisince yaz
 var _fener_ui_son: bool = false    # fener butonu gorunurluk onbellegi
 ## Kor tasi temizligi (Asama 2 dolduracak): [{cell: Vector2i, r: float}]
 var _temiz_bolgeler: Array = []
+var _fog_img: Image = null      # data/fog_mask.png (varsa; harita-master)
 
 ## Hucrenin halkasi (0=Yuva .. 3=Derin Sis). Merkez: Ocak, yoksa dogus.
 func get_ring(cell: Vector2i) -> int:
@@ -9360,11 +9362,18 @@ func get_ring(cell: Vector2i) -> int:
 		merkez = _spawn_cell
 	return KesifBalance.ring_of(cell, merkez)
 
-## Hucredeki etkin sis: halka sisi, temizlenmis bolgede sifir (16.2).
+## Hucredeki etkin sis: once kalici temizlik (16.2), sonra SIS MASKESI
+## (data/fog_mask.png — harita-master tasarim katmani), o da yoksa
+## halka fallback'i. Maske ile halkalar ayni merkeze hizali uretiliyor;
+## elle boyanirsa maske kazanir (tasarim niyeti bu).
 func _sis_at_cell(cell: Vector2i) -> float:
 	for b in _temiz_bolgeler:
 		if Vector2(cell - Vector2i(b["cell"])).length() <= float(b["r"]):
 			return 0.0
+	if _fog_img != null:
+		var v := MapMask.fog_at(_fog_img, cell)
+		if v >= 0.0:
+			return v
 	return KesifBalance.sis_yogunluk(get_ring(cell))
 
 ## Yetersiz isikla siste miyiz? (hedefleme + kamp + uyuyan tespiti okur)
