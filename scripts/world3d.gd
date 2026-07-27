@@ -10447,14 +10447,6 @@ func _run_kesif_frames(save_path: String) -> void:
 					str(sv.modulate.a) if sv != null else "-"])
 		await get_tree().create_timer(0.8).timeout
 		_snap(save_path.replace(".png", "_kesif_sis.png"))
-		# TESHIS: ayni kadraji HUD'a DOGRUDAN vinyet basarak da cek —
-		# fark cikarsa hata boru hattinda, cikmazsa cizimde demektir.
-		if hud != null:
-			hud.set_sis(0.9, 0.4)
-		await get_tree().create_timer(0.4).timeout
-		_snap(save_path.replace(".png", "_kesif_sis_zorla.png"))
-		if hud != null:
-			hud.set_sis(0.0, 0.0)
 		for iid in isik_stash:
 			if isik_stash[iid] > 0:
 				Inventory.add_item(iid, isik_stash[iid])

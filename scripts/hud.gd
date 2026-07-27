@@ -2558,8 +2558,12 @@ func _make_sis_texture() -> ImageTexture:
 			var nx := (float(x) / w - 0.5) * 2.0
 			var ny := (float(y) / h - 0.5) * 2.0
 			var d := sqrt(nx * nx + ny * ny)
-			var a: float = clampf((d - 0.30) / 0.90, 0.0, 1.0)
-			img.set_pixel(x, y, Color(col.r, col.g, col.b, pow(a, 1.35)))
+			# GENIS gradyan: kenar ORTA noktalari da kapansin. Ilk surum
+			# (d-0.30)/0.90 idi; CI kare piksel olcumu etkinin yalniz
+			# koselere sikistigini gosterdi (kenar ortasi alfa ~0) —
+			# "ekran kenarlari kapanir" hissi yoktu.
+			var a: float = clampf((d - 0.08) / 0.60, 0.0, 1.0)
+			img.set_pixel(x, y, Color(col.r, col.g, col.b, pow(a, 1.6)))
 	return ImageTexture.create_from_image(img)
 
 # --- KESIF (16.4): sabah raporu paneli ------------------------------------
