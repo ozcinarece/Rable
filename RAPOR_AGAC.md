@@ -2,7 +2,7 @@
 
 ## DURUM: MODEL DOSYALARI REPODA YOK
 
-`pine_tree_v2.glb` ve `pine_tree_small.glb` **hiçbir dalda bulunamadı**
+`pinetree.glb` **hiçbir dalda bulunamadı**
 (tüm dallar tarandı). Görev "eklendi" diyor ama yükleme repoya
 düşmemiş — muhtemelen tamamlanmadı ya da başka bir yere gitti.
 
@@ -14,7 +14,7 @@ eski pinetree1/2 ile çiziliyor — davranış birebir eski hâli.
 ## KURULAN SİSTEM
 
 - **`TREE_SET`** (world3d.gd): iki boylu ağırlıklı karışım —
-  `pine_tree_v2` (%60, boy 3.1) + `pine_tree_small` (%40, boy 2.3).
+  `pinetree.glb` (%60, boy 3.1) + `pine_tree_small.glb` (%40, boy 2.3 — opsiyonel; gelmezse %100 büyük).
   Seçim hücreden deterministik hash ile; tek dosya gelirse %100 o,
   hiçbiri yoksa eski havuz.
 - **Ölçek kuralı:** node scale YOK — mesh, hedef boya göre AABB'den
@@ -39,7 +39,7 @@ eski pinetree1/2 ile çiziliyor — davranış birebir eski hâli.
 dağılım yüzdeleri ve toplam örnek. Yeni set tam olduğunda 60/40 karışımı
 %50–70 bandının dışına çıkarsa CI kırmızı yanar.
 
-Mevcut koşu (fallback): `pine_tree_v2.glb=YOK pine_tree_small.glb=YOK
+Mevcut koşu (fallback): `pinetree.glb=YOK pine_tree_small.glb=YOK
 yeni_set=false varyant=2` + pinetree1/2 üçgen sayıları.
 
 **FPS önce/sonra:** CI yazılım rasterizasyonunda FPS 1.0'a sabit —
@@ -58,7 +58,6 @@ yeni ormanı gösterecek.
 
 ## SENİN YAPMAN GEREKEN
 
-`pine_tree_v2.glb` (ve varsa `pine_tree_small.glb`) dosyalarını GitHub
-web'den **`assets/models/env/`** klasörüne yükle (Add file → Upload
+`pinetree.glb` dosyasını GitHub web'den **`assets/models/env/`** klasörüne yükle (yanlışlıkla `test/` altına düşerse de bulunur — çözümleyici iki klasöre bakıyor) (Add file → Upload
 files). Başka hiçbir şey gerekmiyor — sonraki CI koşusunda TREETEST
 `yeni_set=true` diyecek ve kareler yeni modelle gelecek.

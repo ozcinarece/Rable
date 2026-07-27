@@ -1355,7 +1355,7 @@ func _run_tree_test() -> void:
 	var dosyalar: Array = []
 	for e: Dictionary in TREE_SET:
 		dosyalar.append("%s=%s" % [String(e["path"]).get_file(),
-				"VAR" if ResourceLoader.exists(String(e["path"])) else "YOK"])
+				"VAR" if _tree_yol_coz(String(e["path"])) != "" else "YOK"])
 	var pool := _tree_set_pool()
 	var ucgen: Array = []
 	for e: Dictionary in pool:
@@ -1369,8 +1369,8 @@ func _run_tree_test() -> void:
 	for idx in _tree_group_counts:
 		dag.append("%s=%d(%%%.0f)" % [str(idx), int(_tree_group_counts[idx]),
 				float(_tree_group_counts[idx]) / maxf(1.0, float(toplam_ornek)) * 100.0])
-	var yeni_set_aktif: bool = ResourceLoader.exists(String(TREE_SET[0]["path"])) \
-			or ResourceLoader.exists(String(TREE_SET[1]["path"]))
+	var yeni_set_aktif: bool = _tree_yol_coz(String(TREE_SET[0]["path"])) != "" \
+			or _tree_yol_coz(String(TREE_SET[1]["path"])) != ""
 	print("TREETEST: %s yeni_set=%s varyant=%d ucgen=%s dagilim=[%s] ornek=%d" % [
 		" ".join(dosyalar), str(yeni_set_aktif), pool.size(), str(ucgen),
 		" ".join(dag), toplam_ornek])
@@ -1379,8 +1379,8 @@ func _run_tree_test() -> void:
 	if toplam_ornek == 0:
 		push_error("AGAC: haritada hic agac cizilmedi")
 	# Karisim yalniz yeni set TAM oldugunda olculur (60/40 sarti)
-	if ResourceLoader.exists(String(TREE_SET[0]["path"])) \
-			and ResourceLoader.exists(String(TREE_SET[1]["path"])):
+	if _tree_yol_coz(String(TREE_SET[0]["path"])) != "" \
+			and _tree_yol_coz(String(TREE_SET[1]["path"])) != "":
 		var buyuk: float = float(_tree_group_counts.get(0, 0)) \
 				/ maxf(1.0, float(toplam_ornek))
 		if buyuk < 0.5 or buyuk > 0.7:
@@ -5192,8 +5192,10 @@ const TREE_MODEL_OVERRIDES: Array[String] = [
 ## pinetree1/2 havuzuna duser — eski model SILINMEDI (fallback + ileride
 ## sis bolgesi varyanti / Retexture adayi). Dosyalar assets/models/env/
 ## altina dusunce kod degisikligi olmadan devreye girer (TREETEST izler).
+## Kullanici dosya adini netlestirdi: pinetree.glb (buyuk agac).
+## Kucuk boy dosyasi gelirse 60/40 karisim; gelmezse %100 buyuk.
 const TREE_SET := [
-	{"path": "res://assets/models/env/pine_tree_v2.glb",
+	{"path": "res://assets/models/env/pinetree.glb",
 			"agirlik": 60, "boy": 3.1},
 	{"path": "res://assets/models/env/pine_tree_small.glb",
 			"agirlik": 40, "boy": 2.3},
@@ -5219,8 +5221,8 @@ func _tree_pool() -> Array:
 func _tree_set_pool() -> Array:
 	var out: Array = []
 	for e: Dictionary in TREE_SET:
-		var pth := String(e["path"])
-		if not ResourceLoader.exists(pth):
+		var pth := _tree_yol_coz(String(e["path"]))
+		if pth == "":
 			continue
 		for m in _tree_model_yukle(pth, float(e["boy"])):
 			out.append({"mesh": m, "agirlik": int(e["agirlik"])})
@@ -5229,6 +5231,15 @@ func _tree_set_pool() -> Array:
 	for m in _tree_pool():
 		out.append({"mesh": m, "agirlik": 1})
 	return out
+
+## Klasor esnekligi (yaratik modelleriyle ayni kalip): once tablodaki
+## yol, yoksa assets/models/test/ — GitHub web yuklemeleri cogunlukla
+## oraya dusuyor. Dosya hicbirinde yoksa "".
+func _tree_yol_coz(yol: String) -> String:
+	if ResourceLoader.exists(yol):
+		return yol
+	var alt := "res://assets/models/test/" + yol.get_file()
+	return alt if ResourceLoader.exists(alt) else ""
 
 ## Yeni agac GLB yukleyici: Meshy Z-UP tespiti + duzeltmesi.
 ## OLCEK KURALI: node scale kullanilmiyor — mesh, hedef BOYA gore
