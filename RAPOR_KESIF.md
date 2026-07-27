@@ -154,6 +154,20 @@ Güncel sayılar CI logundaki `KESIFPERF:` satırında.
 Otomatik hali: KESIFTEST + KORTEST + SEFERTEST + UYUTEST + UZAKTEST +
 KESIFPERF her push'ta koşar (ci-fast logda satırları görünür).
 
+## GÖRSEL DOĞRULAMA (ağır CI kareleri, docs/screens/)
+
+- `3d_kesif_tas.png`: ana1 kor taşı (koyu silindir) kuş bakışı — NET.
+- `3d_kesif_uyuyan.png`: taşlaşmış küme + ortadaki ödül — NET.
+- `3d_kesif_sis.png`: ışıksız Halka 2 — **ışık kapısı görünür**: ekran
+  kenarları karanlıkla kapanıyor, merkez açık (piksel kanıtı: kenar
+  ortası su 60/93/147 → 58/76/105; ilk vinyet dokusu yalnız köşeleri
+  kapatıyordu, piksel ölçümüyle yakalanıp genişletildi).
+- `3d_kesif_damar.png`: kadraj borcu — çatlak bitki örtüsü altında
+  kalabiliyor (varlık kanıtı kesifdbg.txt: 6 görsel). Kare seçimi
+  "çevresi en boş çatlak"a çevrildi; bir sonraki ağır koşuda tazelenir.
+- `docs/screens/kesifdbg.txt`: her ağır koşuda taş/sis/damar değer
+  dökümü (ucuz teşhis kanalı).
+
 ## BİLİNEN SORUNLAR / BORÇLAR
 
 - Görsel borç: taş/heykel/yarık placeholder geometri (GLB kancaları

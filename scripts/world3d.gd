@@ -10450,11 +10450,22 @@ func _run_kesif_frames(save_path: String) -> void:
 		for iid in isik_stash:
 			if isik_stash[iid] > 0:
 				Inventory.add_item(iid, isik_stash[iid])
-	# 4) Damar catlagi — kus bakisina yakin
+	# 4) Damar catlagi — kus bakisina yakin. Ilk catlak calilarin altinda
+	# kalabiliyor (3. tur dersi): cevresi EN BOS catlagi sec.
 	if not _damar_catlaklari.is_empty():
 		var dc := Vector2i(_damar_catlaklari[0])
+		var en_az := 999
+		for aday: Vector2i in _damar_catlaklari:
+			var n := 0
+			for oy in range(-2, 3):
+				for ox in range(-2, 3):
+					if _objects.has(aday + Vector2i(ox, oy)):
+						n += 1
+			if n < en_az:
+				en_az = n
+				dc = aday
 		var dp := _cell_center(dc)
-		camera.position = dp + Vector3(0.4, 6.0, 2.6)
+		camera.position = dp + Vector3(0.3, 8.0, 2.0)
 		camera.look_at(dp)
 		dbg.append("damar cell=%s gorsel_n=%d" % [str(dc), _damar_gorseller.size()])
 		await get_tree().create_timer(0.7).timeout
