@@ -116,6 +116,8 @@ Durum değerleri: ÇALIŞIYOR / BRANCH'TE / YARIM / SADECE-PLAN / BOZUK.
 | Hikâye/Keşif | Ocak Nefesi | SADECE-PLAN | — | — | — | repo dokümanlarında yok | — |
 | Hikâye/Keşif | Eşik Gecesi | SADECE-PLAN | — | — | — | repo dokümanlarında yok | — |
 | Hikâye/Keşif | Hikâye teslimi / senaryo tetikleri | SADECE-PLAN | — | — | — | kodda hiçbir hikâye tetiği yok | — |
+| Dünya | Harita maskesi (data/map_mask.png üretim rehberi) | ÇALIŞIYOR | main | map_mask.gd, world3d.gd (_build_world) | üreteç | maske dosyası henüz repoda yok (fallback: tam prosedürel) | MASKTEST CI'da; 6 sınıf, kenar warp organikliği |
+| Araçlar | Harita Ressamı (map_painter.tscn, F6 masaüstü aracı) | ÇALIŞIYOR | main | scripts/tools/map_painter.gd | maske | masaüstü; mobil değil | fırça/silgi/kova + canlı 2D + istek üzerine 3D önizleme |
 | Araçlar | Test modu (sınırsız envanter + tüm eşyalar + kilitsiz araştırma) | ÇALIŞIYOR | main | test_mode.gd | — | KAPATMAK: TestMode.ENABLED=false | web'de de aktif |
 | Araçlar | Grip Ayar Modu (aleti oyun içinde hizala) | ÇALIŞIYOR | main | hud.gd, player3d.gd | — | yalnız debug build (web'de yok) | user://grip_overrides.json |
 | Legacy | 2D oyun (world.gd, World.tscn) | ÇALIŞIYOR | main | world.gd, player.gd | — | 3D ile İKİ AYRI OYUN; tarım+gece dalgası artık 3D'de de var | web kökünde yayında |
@@ -124,12 +126,12 @@ Durum değerleri: ÇALIŞIYOR / BRANCH'TE / YARIM / SADECE-PLAN / BOZUK.
 
 | Durum | Adet |
 |---|---|
-| ÇALIŞIYOR | 83 |
+| ÇALIŞIYOR | 85 |
 | BRANCH'TE | 12 |
 | YARIM | 3 |
 | SADECE-PLAN | 13 |
 | BOZUK | 0 |
-| **TOPLAM** | **111** |
+| **TOPLAM** | **113** |
 
 (BOZUK 0: bilinen iki cihaz hatası — Ayarlar Kapat taşması ve sandık
 overlay'i — bu denetim sırasında düzeltilip 01:19 APK'da yayınlandı.)

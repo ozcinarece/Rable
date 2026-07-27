@@ -397,6 +397,17 @@ func _ready() -> void:
 	SaveManager.world = self
 	# Açılışta kayıt varsa "Devam Et / Yeni Oyun" seçimi; yoksa taze dünya
 	# (zaten kuruldu). CI modunda atlanır ki sahneler hep temiz başlasın.
+	# BOYAMA ARACI 3D ONIZLEMESI: harita ressami bu sahneyi SubViewport
+	# icinde acar. Menu/HUD yok, kayit yuklenmez (taze uretim — maske
+	# yeni kaydedildi, onu gormek istiyoruz), kamera tepeden.
+	if OS.has_environment("RABLE_MASK_PREVIEW"):
+		hud.visible = false
+		DayNight.jump_to_day()
+		_cam_locked = true
+		var ctr := _cell_center(Vector2i(_map_w / 2, _map_h / 2))
+		camera.position = ctr + Vector3(0.0, 120.0, 0.5)
+		camera.look_at(ctr)
+		return
 	if not OS.has_environment("RABLE_SCREENSHOT") and SaveManager.has_save():
 		_show_start_menu()
 	# CI ekran goruntusu modu: birkac saniye sonra kare kaydet ve cik
@@ -1172,6 +1183,69 @@ func _run_camp_prefab_test() -> void:
 	if not tasima_ok:
 		push_error("Prefabta tasinan dugum kayda yansimadi (sahne->oyun hatti kopuk)")
 
+## MASKTEST — "maskede gol boya -> oyunda gol orada mi" zincirinin
+## otomatik hali. Dunya durumuna DOKUNMAZ: uretec + maske gecisi saf
+## fonksiyon oldugu icin dogrudan cagrilir.
+##  1) Ornekle: 128x128 cayir maskesi + (90..110, 20..40) SU blobu.
+##  2) Blobun ICI (warp payi kadar iceri cekilmis) su olmali.
+##  3) Blobtan uzak bir nokta uretecin dedigi gibi kalmali (fallback).
+##  4) ORGANIKLIK: keskin cizilen kenar birebir kopyalanMAMALI —
+##     kenar seridinde en az bir hucre kare sinirdan sapmali.
+func _run_mask_test() -> void:
+	var rows: Array[String] = MapGen.generate(MapBalance.SEED_DEFAULT)
+	var n := rows.size()
+	var img := Image.create(n, n, false, Image.FORMAT_RGBA8)
+	img.fill(Color(MapMask.COLORS["cayir"]))
+	for y in range(20, 41):
+		for x in range(90, 111):
+			img.set_pixel(x, y, Color(MapMask.COLORS["su"]))
+	var rows2 := MapMask.apply_img(rows, img, MapBalance.SEED_DEFAULT)
+	# 2) blob ici su mu (kenardan 3 hucre iceri: warp payi)
+	var ic_su := 0
+	var ic_top := 0
+	for y in range(24, 37):
+		for x in range(94, 107):
+			ic_top += 1
+			if rows2[y][x] == "~":
+				ic_su += 1
+	var ic_oran := float(ic_su) / maxf(1.0, float(ic_top))
+	# 3) uzak nokta: uretecin dedigi kalmis mi (cayir kurallari yumusak;
+	# birebir esitlik yerine SU OLMAMASI ve serbest siniflarin
+	# degismemesi olculuyor)
+	var uzak_su := 0
+	for y in range(80, 100):
+		for x in range(20, 40):
+			if rows2[y][x] == "~" and rows[y][x] != "~":
+				uzak_su += 1
+	# 4) organiklik: blob kenar seridinde (x=88..92 dikey serit) sonuc,
+	# keskin kare sinirdan en az bir hucrede sapmali
+	var sapma := 0
+	for y in range(20, 41):
+		for x in range(88, 93):
+			var kare_ici: bool = x >= 90
+			var su_mu: bool = rows2[y][x] == "~"
+			if su_mu != kare_ici:
+				sapma += 1
+	# fallback: maske yokken apply dokunmuyor mu (dosya repoda yok)
+	var ayni := true
+	var rows3 := MapMask.apply(rows, MapBalance.SEED_DEFAULT)
+	for y in n:
+		if rows3[y] != rows[y]:
+			ayni = false
+			break
+	var mask_var := ResourceLoader.exists(MapMask.PATH)
+	print(("MASKTEST: ic_su=%.0f%% uzak_yeni_su=%d kenar_sapma=%d "
+			+ "fallback_ayni=%s(mask_dosyasi=%s)") % [
+		ic_oran * 100.0, uzak_su, sapma, str(ayni), str(mask_var)])
+	if ic_oran < 0.9:
+		push_error("MASKE: boyanan gol oyuna gecmedi (ic %.0f%%)" % (ic_oran * 100.0))
+	if uzak_su > 0:
+		push_error("MASKE: boyanmayan bolgeye su sizdi")
+	if sapma == 0:
+		push_error("MASKE: kenar birebir kopyalandi — organiklik calismiyor")
+	if not mask_var and not ayni:
+		push_error("MASKE: dosya yokken fallback davranisi bozuk")
+
 ## HIZLI KATMAN: kare almayan, beklemesiz mantik testleri. Bunlar
 ## --headless'te de kosar; agir gorsel akisin hicbir parcasina dokunmaz.
 ## Kapsam BILEREK dar: harita uretimi, kamera, zaman, muhendislik,
@@ -1184,6 +1258,7 @@ func _run_fast_tests() -> void:
 	_run_road_scatter_test()
 	_run_editor_test()
 	_run_camp_prefab_test()
+	_run_mask_test()
 	_run_water_color_test()
 	_run_time_selftest()
 	_run_muhendislik_selftest()
@@ -1753,7 +1828,8 @@ func _process(delta: float) -> void:
 		_autosave_timer = 0.0
 		# EDITOR: kayit KAPALI (gorev 4 -- editor degisiklikleri normal
 		# oyun kaydina yazilmaz). Cikista dunya kayittan yeniden yuklenir.
-		if _dirty and not _editor_on:
+		if _dirty and not _editor_on \
+				and not OS.has_environment("RABLE_MASK_PREVIEW"):
 			SaveManager.save()
 
 # Uygulama arka plana alininca / kapatilinca son durumu kaydet.
@@ -1764,7 +1840,8 @@ func _notification(what: int) -> void:
 			or what == NOTIFICATION_WM_CLOSE_REQUEST \
 			or what == NOTIFICATION_WM_GO_BACK_REQUEST:
 		if _map_w > 0 and not OS.has_environment("RABLE_SCREENSHOT") \
-				and not _editor_on:
+				and not _editor_on \
+				and not OS.has_environment("RABLE_MASK_PREVIEW"):
 			SaveManager.save()
 
 func is_walkable(cell: Vector2i) -> bool:
@@ -2484,6 +2561,10 @@ func _build_world() -> void:
 	# Kayıt taban haritayı yazmaz; delta (kazı/nesne/yapı) yazar — bu yüzden
 	# seed sabit ki reload'da taban aynı çıksın.
 	var rows: Array[String] = MapGen.generate(_map_seed)
+	# HARITA MASKESI: data/map_mask.png varsa uretime rehber olur
+	# (elle boyanan biyomlar + noise kenar organikligi). Dosya yoksa
+	# bu satir hicbir sey degistirmez — tam-proseduerel fallback.
+	rows = MapMask.apply(rows, _map_seed)
 	_map_h = rows.size()
 	_map_w = rows[0].length()
 	_clay_cells.clear()
@@ -3466,6 +3547,7 @@ func _add_path_strip(from: Vector2i, dir: Vector2i, len_cells: int,
 #      goz "izgara" gormez.
 const RoadTiles = preload("res://scripts/road_tiles.gd")
 const RoadScatter = preload("res://scripts/road_scatter.gd")
+const MapMask = preload("res://scripts/map_mask.gd")
 
 const ROAD_NB: Array[Vector2i] = [Vector2i(0, -1), Vector2i(1, 0),
 		Vector2i(0, 1), Vector2i(-1, 0)]   # K, D, G, B (yaw 0/90/180/270)
