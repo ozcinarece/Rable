@@ -117,6 +117,20 @@ const CRAFT_RECIPES: Dictionary = {
 	# Metal kova (GAME_DESIGN 8): su tasima; ileride sicak sivi. 2 metal_part.
 	"metal_kova": {"output": {"metal_kova": 1}, "cost": {"bakir": 2, "ip": 1},
 			"station": "tezgah", "category": "muhendislik", "time": 4.0},
+	# --- KESIF (Bolum 16.1): cam + isik kademeleri ---
+	# Cam: kum + komur, ocakta (item flavor'inin verdigi soz tutuldu).
+	"cam": {"output": {"cam": 1}, "cost": {"kum": 2, "komur": 1},
+			"station": "ocak", "category": "malzeme", "time": 3.0},
+	# Kor Feneri (K2): 16.1 tarifi "2 cam + 1 bakir kulce + 1 ip".
+	# Canli katalogda kulce yok; pompa/vana emsaline uyup "bakir" kullanildi.
+	"kor_feneri": {"output": {"kor_feneri": 1},
+			"cost": {"cam": 2, "bakir": 1, "ip": 1},
+			"station": "tezgah", "category": "alet", "time": 5.0},
+	# Koz Kabi (K3): 16.1 tarifi "2 metal parca + 1 cam" — metal parca da
+	# katalogda yok; ayni emsalle bakir 2 (muhafazakar, RAPOR_KESIF'te).
+	"koz_kabi": {"output": {"koz_kabi": 1},
+			"cost": {"bakir": 2, "cam": 1},
+			"station": "tezgah", "category": "alet", "time": 6.0},
 	# --- Tarim ---
 	"tohum": {"output": {"tohum": 2}, "cost": {"meyve": 1},
 			"station": "", "category": "tarim", "time": 1.0},

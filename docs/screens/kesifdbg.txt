@@ -1,0 +1,4 @@
+tas ana1 cell=(43, 49) gorsel=true poz=(43.5, 0.668381, 49.5) visible=true
+sis hedef=(97, 62) pc=(97, 62) halka=2 sis=0.60 isik=0 acik=2 son_vinyet=0.84
+hud sis_vinyet=true alpha=0.83999997377396
+damar cell=(44, 122) gorsel_n=6

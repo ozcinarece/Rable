@@ -33,6 +33,7 @@ const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const ChestStore = preload("res://scripts/inventory.gd")  # 14.1 sandik deposu
 const TestMode = preload("res://scripts/test_mode.gd")
+const KesifBalance = preload("res://scripts/kesif_balance.gd")  # Bolum 16
 
 ## Zemin turleri: renk + ust yuzey yuksekligi. "speckled": true olan
 ## turler icin benekli doku CALISMA ANINDA kodla uretilir (dosya
@@ -126,6 +127,11 @@ const PLACE_MODELS := {
 	"mesale": {"model": "res://assets/models/tools/campfire-stand.glb",
 			"h": 0.7, "solid": false,
 			"behavior": "torch", "max_hp": 30},
+	# KESIF 16.4: yol koru yere konunca MINI KAMP ATESI olur (isik cemberi
+	# + pisirme + kayit noktasi). Yerlestirme isik kapisina tabidir.
+	"yol_koru": {"model": "res://assets/models/tools/campfire-pit.glb",
+			"h": 0.5, "solid": false,
+			"behavior": "sefer_atesi", "max_hp": 20},
 	# MUHENDISLIK 11.5: merdiven — kazilmis cukura (pit_only) konur, kenara
 	# yaslanir (rotatable = hangi kenar). Cukurdan cikis saglar (can_step).
 	"merdiven": {"model": "ladder", "h": 1.0, "solid": false,
@@ -384,6 +390,8 @@ func _ready() -> void:
 	# otomatigi, sonra buyume tick'i — sira world3d'de, belirsizlik yok)
 	Farming.plot_changed.connect(_on_plot_changed)
 	DayNight.dawn_started.connect(_on_farm_dawn)
+	DayNight.dawn_started.connect(_on_kesif_dawn)  # 16.4 sefer sabahi
+	hud.fener_kisik_toggled.connect(set_fener_kisik)  # 16.5 stealth
 	# GECE DALGASI (minimal): kanca artik BOS degil — gece dogur, safakta erit.
 	DayNight.night_started.connect(_on_night_started)
 	DayNight.dawn_started.connect(_on_dawn_clear_creatures)
@@ -534,6 +542,7 @@ func _setup_screenshot(save_path: String) -> void:
 		_snap(save_path.replace(".png", "_maske_kumsal.png"))
 		_cam_locked = false
 	await _run_tree_frames(save_path)
+	await _run_kesif_frames(save_path)  # Bolum 16: tas/uyuyan/sis/damar
 	# CLICKTEST EN BASTA (180sn oyun sinirina takilmasin diye): GERCEK
 	# dokunus simulasyonu — "menuler acilmiyor/kapanmiyor" sinifi cihaz
 	# hatalarini CI'da yakalar.
@@ -1446,6 +1455,12 @@ func _run_fast_tests() -> void:
 	_run_time_selftest()
 	_run_muhendislik_selftest()
 	_run_creature_selftest()
+	_run_kesif_test()
+	_run_kor_test()
+	_run_sefer_test()
+	_run_uyuyan_test()
+	_run_uzak_test()
+	_run_kesif_perf()
 	_run_save_load_selftest()
 	print("FASTTESTS: bitti")
 	get_tree().quit()
@@ -2002,6 +2017,13 @@ func _process(delta: float) -> void:
 	if _station_timer >= 0.25:
 		_station_timer = 0.0
 		_update_station_proximity()
+	# KESIF (16.1-16.2): oyuncunun halkasi + isigi -> sis/vinyet/kapi
+	_kesif_timer += delta
+	if _kesif_timer >= 0.2:
+		_kesif_timer = 0.0
+		_update_kesif()
+		_tick_uyuyanlar(0.2)  # 16.5: uyanma/gecikme/yeniden uyuma/nabiz
+		_tick_uzak_tehditler(0.2)  # 16.6: ortam dogurucu + firtina + avci
 	# Eldeki esya envanterden ciktiysa birak
 	if _held_item != "" and Inventory.get_count(_held_item) <= 0:
 		_on_hold_requested("")
@@ -2199,7 +2221,46 @@ func to_save_data() -> Dictionary:
 		"held": _held_item,
 		"home_bed": [_home_bed.x, _home_bed.y],  # 14.2 aktif dogus noktasi
 		"farming": Farming.to_save_data(),  # tarim-3d: tarla/evre/islaklik/kap
+		"kesif": _kesif_to_save(),  # Bolum 16: tas durumlari + fener
 	}
+
+## KESIF kayit paketi: yalniz DURUM yazilir (konumlar deterministik ama
+## algoritma degisirse eski kayit bozulmasin diye hucre de saklanir).
+func _kesif_to_save() -> Dictionary:
+	var taslar: Array = []
+	for id: String in _kor_taslari:
+		var t: Dictionary = _kor_taslari[id]
+		taslar.append({"id": id, "x": Vector2i(t["cell"]).x,
+				"y": Vector2i(t["cell"]).y, "yanik": bool(t["yanik"])})
+	return {"taslar": taslar, "fener_kisik": _fener_kisik,
+			"nefes": _ocak_nefes, "uyuyanlar": _uyuyan_to_save()}
+
+func _kesif_from_save(data: Dictionary) -> void:
+	if data.is_empty():
+		return
+	_fener_kisik = bool(data.get("fener_kisik", false))
+	var nefes := String(data.get("nefes", "harla"))
+	if KesifBalance.NEFES_CARPAN.has(nefes):
+		_ocak_nefes = nefes
+	for kayit in data.get("taslar", []):
+		var id := String(kayit.get("id", ""))
+		if not _kor_taslari.has(id):
+			continue
+		# Konum kayittan (algoritma kaysa bile oyuncunun gordugu tas yerinde)
+		var cell := Vector2i(int(kayit.get("x", 0)), int(kayit.get("y", 0)))
+		if cell != Vector2i(_kor_taslari[id]["cell"]):
+			_solid_cells.erase(Vector2i(_kor_taslari[id]["cell"]))
+			_kor_taslari[id]["cell"] = cell
+			_solid_cells[cell] = true
+			if _kor_tas_gorseller.has(id) and is_instance_valid(_kor_tas_gorseller[id]):
+				_kor_tas_gorseller[id].position = _cell_center(cell) + Vector3(0, 0.62, 0)
+		_kor_taslari[id]["yanik"] = bool(kayit.get("yanik", false))
+		if _kor_tas_gorseller.has(id) and is_instance_valid(_kor_tas_gorseller[id]):
+			_kor_tas_isima(_kor_tas_gorseller[id], bool(_kor_taslari[id]["yanik"]))
+	_rebuild_temiz_bolgeler()
+	_uyuyan_from_save(data.get("uyuyanlar", []))
+	_update_alev_rengi()
+	_son_vinyet = -1.0
 
 ## kayit-sistemi: SAHNE durumunu (dünya) geri yükler. SaveManager çağırır;
 ## envanter/can/gün AYRI yüklenir (bu fonksiyon onlara dokunmaz — eldeki alet
@@ -2301,6 +2362,7 @@ func from_save_data(data: Dictionary) -> bool:
 	var held := String(data.get("held", ""))
 	if held != "" and Inventory.get_count(held) > 0:
 		_on_hold_requested(held)
+	_kesif_from_save(data.get("kesif", {}))  # Bolum 16: tas/fener durumu
 	_loading = false
 	return true
 
@@ -2388,6 +2450,9 @@ func _recompute_solids() -> void:
 			_solid_cells[cell] = true
 	for cell: Vector2i in _dummies:
 		_solid_cells[cell] = true  # kukla engeldir
+	# KESIF 16.3: kor taslari kalici engel (yanik/yanmamis farketmez)
+	for id: String in _kor_taslari:
+		_solid_cells[Vector2i(_kor_taslari[id]["cell"])] = true
 
 # Iki parmakla yakinlastirma (pinch); oyuncu hareketi 1. parmakta kalir
 func _unhandled_input(event: InputEvent) -> void:
@@ -2834,6 +2899,9 @@ func _build_world() -> void:
 	_build_spawn_camp()  # kamp dekoru (nesneler kurulduktan sonra)
 	_kamp_duzenini_uygula()  # data/camp_layout.json VARSA uzerine kurar
 	_build_ground_markers()  # harita-v2: kil işaretleri + yüzey cevher ipuçları
+	_place_kor_taslari()  # KESIF 16.3: Ocak belli olduktan sonra yay yerlesimi
+	_place_uyuyanlar()   # KESIF 16.5: sis kusagi kumeleri (taslardan sonra)
+	_place_damar_catlaklari()  # KESIF 16.6: H3 isik sizan yariklar
 
 ## harita-v2: kil-işaretli kum hücrelerine kil-rengi yassı yama (kürek ipucu)
 ## + birkaç kaya öbeğinin yanına bakır-tonlu yüzey cevher ipucu. İkisi de
@@ -6197,6 +6265,11 @@ func _try_pour(cell: Vector2i) -> bool:
 func _try_place(cell: Vector2i) -> bool:
 	if _placed.has(cell) or _objects.has(cell) or cell == _player_cell():
 		return false
+	# KESIF 16.1/16.4: yetersiz isikla siste KAMP KURULAMAZ (kapi kurali).
+	if _held_item == "yol_koru" and not kesif_kamp_izni():
+		_spawn_floating_text(cell, "Cok karanlik — kamp kurulamaz",
+				Color(1, 0.6, 0.4))
+		return false
 	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
 		return false
 	if not (_ground_char.get(cell, "") in [".", "d", "s"]):
@@ -6239,6 +6312,14 @@ func _set_placed(cell: Vector2i, item_id: String, rot: int = 0) -> void:
 			_solid_cells[cell] = true  # kapali kapi katidir
 	elif behavior == "torch":
 		_add_torch_light(cell, holder)
+	elif behavior == "sefer_atesi":
+		# KESIF 16.4: mini isik cemberi + KAYIT NOKTASI (yerlestirme aninda)
+		_add_torch_light(cell, holder)
+		if not _loading and not _editor_on \
+				and not OS.has_environment("RABLE_MASK_PREVIEW"):
+			SaveManager.save()
+			_spawn_floating_text(cell, "Kamp kuruldu — kayit alindi",
+					Color(1, 0.85, 0.5))
 	elif behavior == "hearth":
 		_activate_hearth(cell, holder)   # 14.3 tek aktif ocak + oncelikli isik
 	elif behavior == "platform":
@@ -6675,6 +6756,8 @@ func _update_station_proximity() -> void:
 					near_res = true
 				"ocak":
 					near_hearth = true  # 14.3 pisirme istasyonu (arayuz)
+				"yol_koru":
+					near_hearth = true  # KESIF 16.4: kampta yemek pisirilir
 	Crafting.near_station = near_bench
 	Crafting.near_research = near_res
 	Crafting.near_hearth = near_hearth
@@ -6990,6 +7073,10 @@ func _try_pickup_ground(cell: Vector2i) -> bool:
 
 ## Oyuncunun onunde ~90 derece koni: baktigi hucre once, sonra komsular.
 func _candidate_cells() -> Array:
+	# KESIF 16.1: yetersiz isikla siste genis tarama KAPANIR — yalniz on
+	# hucre. "Hedefleme mesafesi duser" kapisinin hucre-tabanli karsiligi.
+	if _isik_acik > 0 and KesifBalance.KISITLI_HEDEFLEME:
+		return [_facing_cell()]
 	var pc := _player_cell()
 	var fo := Vector2i(player.facing.round())
 	if fo == Vector2i.ZERO:
@@ -7299,6 +7386,15 @@ func _describe_target(cell: Vector2i) -> Dictionary:
 	if _ground_item_at(cell) != -1:
 		return {"type": "ground", "cell": cell, "icon": "grab",
 				"valid": true, "kind": "grab"}
+	# KESIF 16.3: yakilmamis kor tasi -> yakma etkilesimi
+	var kor_id := _kor_tas_at(cell)
+	if kor_id != "" and not bool(_kor_taslari[kor_id]["yanik"]):
+		return {"type": "kortasi", "cell": cell, "icon": "open",
+				"valid": true, "kind": "open", "kor_id": kor_id}
+	# KESIF 16.3: Ocak'a dokun -> yol koru al (tasima kabi varsa)
+	if cell == get_hearth() and Inventory.get_count("yol_koru") < 1:
+		return {"type": "yolkoru", "cell": cell, "icon": "open",
+				"valid": true, "kind": "open"}
 	# Cekic elde + yerlestirilmis yapi: SOKME (12.4). Istasyon acmadan once.
 	var placed := String(_placed.get(cell, ""))
 	if held == "cekic" and placed != "":
@@ -7413,6 +7509,12 @@ func _perform_tool_action(t: Dictionary) -> void:
 		"ground":
 			_try_pickup_ground(cell)
 			return
+		"kortasi":
+			_try_burn_kor_tas(String(t.get("kor_id", "")))
+			return
+		"yolkoru":
+			_take_yol_koru()
+			return
 		"station":
 			_interact_station(cell, String(t.get("placed", "")))
 			return
@@ -7432,6 +7534,9 @@ func _perform_tool_action(t: Dictionary) -> void:
 
 ## Strike aninda cagrilir: gercek oyun etkisi burada uygulanir (12.3).
 func _apply_strike(kind: String, cell: Vector2i) -> void:
+	# KESIF 16.5: kazma/kesme/kazi GURULTUDUR — yakin uyuyanlari uyandirir.
+	if kind in ["chop", "harvest", "mine", "dig"]:
+		_uyuyan_gurultu(cell)
 	match kind:
 		"chop", "harvest", "mine":
 			_try_harvest(cell)
@@ -7812,14 +7917,30 @@ var _night_wave_active: bool = false
 var _night_damage_taken: bool = false  # sabah ozeti icin (hasarsiz gece mi)
 
 ## Gece basladi: o gecenin kademesine gore tek grup dogur.
+## KESIF 16.4: oyuncu Ocak'tan uzaksa (sefer) base dalgasi SIMULE edilir
+## (gercek zamanli cift sahne yok — mobil); oyuncunun yanina yalniz
+## atesli kampin cektigi kucuk karsilasma gelir.
 func _on_night_started() -> void:
 	_night_wave_active = true
 	_night_damage_taken = false
-	_spawn_night_wave(DayNight.day)
+	var hc := get_hearth()
+	var uzak: bool = hc != Vector2i(-999, -999) \
+			and Vector2(_player_cell() - hc).length() > KesifBalance.SEFER_UZAK_R
+	_sefer_gecesi = uzak
+	if uzak:
+		var sonuc := _sefer_dalga_simule(DayNight.day)
+		_sabah_raporu = String(sonuc["rapor"])
+		_kamp_gecesi_karsilasma(DayNight.day)
+	else:
+		_spawn_night_wave(DayNight.day)
 
 ## O gecenin yaratiklarini harita kenarindan dogurur.
 func _spawn_night_wave(night: int) -> void:
 	var want: int = CreatureBalance.min_wave_count(night)
+	# KESIF 16.3 gece sertlesmesi: yakilan ana tas basina dalga buyur
+	# (HIKAYE 8 gorunurluk bedeli — cemberi buyutmenin karsiligi).
+	want = int(round(float(want)
+			* KesifBalance.gece_sertlesme(_yanik_ana_sayisi())))
 	var room: int = CreatureBalance.MIN_MAX_ACTIVE - _live_creature_count()
 	want = mini(want, maxi(0, room))
 	var hp_mult: float = CreatureBalance.night_hp_mult(night)
@@ -7918,6 +8039,14 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 		hedef_hucre = _camp_at("ocak")
 	var target := _cell_center(hedef_hucre) if hedef_hucre != Vector2i(-999, -999) \
 			else ppos
+	# KESIF 16.6: ortam yaratiklari base'e YURUMEZ — dert oyuncudur.
+	# Damar catlagi yakindaysa isiga cekilir (dogal oz lambasi: akilli
+	# oyuncu tuzak olarak kullanir).
+	if cr.has_meta("uzak"):
+		target = ppos
+		var damar := _damar_yakin(Vector2i(int(cr.position.x), int(cr.position.z)))
+		if damar != Vector2i(-999, -999):
+			target = _cell_center(damar)
 	# Oyuncu YOLA GIRDIYSE yine de vurur: bu bir hedef degisimi degil,
 	# temas tepkisi. Olmasaydi yaratik seni doverken bile umursamaz
 	# gorunurdu.
@@ -9203,3 +9332,1152 @@ func _run_editor_test() -> void:
 		push_error("EDITOR: disa aktarim bos")
 	if not birebir:
 		push_error("EDITOR: dosyadan kurulan duzen orijinaliyle AYNI DEGIL")
+
+# =========================================================================
+# KESIF (Bolum 16) — halka + sis + isik kapisi altyapisi (Asama 1)
+# =========================================================================
+# Kapsam: hucrenin halkasi, oyuncunun tasidigi isik, ikisinin farki
+# (isik acigi) ve bunun uc etkisi: vinyet/soguma (HUD), hedefleme
+# daralmasi (_candidate_cells) ve kamp izni (Asama 3 okur). Sis gorseli
+# mobil dostu: ekran vinyeti + oyuncuyu izleyen tek alcak sis duzlemi.
+# TUM sayilar kesif_balance.gd'de.
+
+var _kesif_timer: float = 0.0
+var _sis_yogun: float = 0.0        # oyuncunun bulundugu hucrede sis (0..1)
+var _isik_acik: int = 0            # eksik isik kademesi (0 = kapi acik)
+var _fener_kisik: bool = false     # 16.5 stealth: parlak/kisik
+var _sis_duzlem: MeshInstance3D = null
+var _sis_duzlem_mat: StandardMaterial3D = null
+var _son_vinyet: float = -1.0      # HUD'a yalniz degisince yaz
+var _fener_ui_son: bool = false    # fener butonu gorunurluk onbellegi
+## Kor tasi temizligi (Asama 2 dolduracak): [{cell: Vector2i, r: float}]
+var _temiz_bolgeler: Array = []
+
+## Hucrenin halkasi (0=Yuva .. 3=Derin Sis). Merkez: Ocak, yoksa dogus.
+func get_ring(cell: Vector2i) -> int:
+	var merkez := get_hearth()
+	if merkez == Vector2i(-999, -999):
+		merkez = _spawn_cell
+	return KesifBalance.ring_of(cell, merkez)
+
+## Hucredeki etkin sis: halka sisi, temizlenmis bolgede sifir (16.2).
+func _sis_at_cell(cell: Vector2i) -> float:
+	for b in _temiz_bolgeler:
+		if Vector2(cell - Vector2i(b["cell"])).length() <= float(b["r"]):
+			return 0.0
+	return KesifBalance.sis_yogunluk(get_ring(cell))
+
+## Yetersiz isikla siste miyiz? (hedefleme + kamp + uyuyan tespiti okur)
+func _sis_kisitli() -> bool:
+	return _isik_acik > 0
+
+## Kamp kurulabilir mi (16.1: yetersiz isikta KURULAMAZ). Asama 3 okur.
+func kesif_kamp_izni() -> bool:
+	if not KesifBalance.KAMP_ISIK_SART:
+		return true
+	return not _sis_kisitli()
+
+func set_fener_kisik(on: bool) -> void:
+	_fener_kisik = on
+	_son_vinyet = -1.0  # vinyet degisti, HUD'i zorla tazele
+
+## 0.2 sn'de bir: oyuncunun halkasi/isigi -> HUD vinyeti + sis duzlemi.
+func _update_kesif() -> void:
+	var pc := _player_cell()
+	_sis_yogun = _sis_at_cell(pc)
+	var isik: int = KesifBalance.tasinan_isik(Inventory)
+	if _sis_yogun <= 0.0:
+		_isik_acik = 0
+	else:
+		_isik_acik = KesifBalance.isik_acigi(get_ring(pc), isik)
+	var gorunur: bool = isik >= 2
+	if gorunur != _fener_ui_son:
+		_fener_ui_son = gorunur
+		hud.set_fener_gorunur(gorunur)
+	var v: float = KesifBalance.vinyet(_sis_yogun, _isik_acik,
+			_fener_kisik and isik >= 2)
+	# KESIF 16.6 Kul Firtinasi: gorus zorla kapanir; siginakta yari.
+	if _firtina_kalan > 0.0:
+		v = KesifBalance.FIRTINA_VINYET
+		if _firtina_siginakta():
+			v *= 0.5
+	if absf(v - _son_vinyet) > 0.01:
+		_son_vinyet = v
+		hud.set_sis(v, KesifBalance.soguk(_sis_yogun))
+	_update_sis_duzlem()
+
+## Oyuncuyu izleyen tek yari-seffaf duzlem: "alcak sis" (16.2 gorseli).
+func _update_sis_duzlem() -> void:
+	if _sis_yogun <= 0.0:
+		if _sis_duzlem != null:
+			_sis_duzlem.visible = false
+		return
+	if _sis_duzlem == null:
+		var mesh := PlaneMesh.new()
+		mesh.size = Vector2(KesifBalance.SIS_DUZLEM_BOYUT,
+				KesifBalance.SIS_DUZLEM_BOYUT)
+		_sis_duzlem_mat = StandardMaterial3D.new()
+		_sis_duzlem_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_sis_duzlem_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_sis_duzlem_mat.albedo_color = KesifBalance.SIS_RENK
+		_sis_duzlem_mat.no_depth_test = false
+		_sis_duzlem = MeshInstance3D.new()
+		_sis_duzlem.mesh = mesh
+		_sis_duzlem.material_override = _sis_duzlem_mat
+		_sis_duzlem.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		add_child(_sis_duzlem)
+	_sis_duzlem.visible = true
+	var c := KesifBalance.SIS_RENK
+	c.a = KesifBalance.SIS_DUZLEM_ALFA * _sis_yogun
+	_sis_duzlem_mat.albedo_color = c
+	_sis_duzlem.position = Vector3(player.position.x,
+			KesifBalance.SIS_DUZLEM_YUKSEK, player.position.z)
+
+## KESIFTEST (hizli CI): halka matematigi, isik kademesi, kapi etkileri,
+## tarif/dugum varligi. Sayilar degisirse test degil VERI guncellenir.
+func _run_kesif_test() -> void:
+	var merkez := Vector2i(64, 64)
+	var h0: int = KesifBalance.ring_of(merkez, merkez)
+	var h1: int = KesifBalance.ring_of(merkez + Vector2i(20, 0), merkez)
+	var h2: int = KesifBalance.ring_of(merkez + Vector2i(40, 0), merkez)
+	var h3: int = KesifBalance.ring_of(merkez + Vector2i(60, 0), merkez)
+	if [h0, h1, h2, h3] != [0, 1, 2, 3]:
+		push_error("KESIF: halka matematigi bozuk: %s" % str([h0, h1, h2, h3]))
+	# Isik kademesi: envantere gecici esya ekle/cikar (deterministik fark).
+	var eski := {}
+	for tier in KesifBalance.ISIK_ESYA:
+		var id: String = String(KesifBalance.ISIK_ESYA[tier])
+		eski[id] = Inventory.get_count(id)
+		if eski[id] > 0:
+			Inventory.remove_item(id, eski[id])
+	var t0: int = KesifBalance.tasinan_isik(Inventory)
+	Inventory.add_item("mesale", 1)
+	var t1: int = KesifBalance.tasinan_isik(Inventory)
+	Inventory.add_item("kor_feneri", 1)
+	var t2: int = KesifBalance.tasinan_isik(Inventory)
+	Inventory.add_item("koz_kabi", 1)
+	var t3: int = KesifBalance.tasinan_isik(Inventory)
+	Inventory.remove_item("mesale", 1)
+	Inventory.remove_item("kor_feneri", 1)
+	Inventory.remove_item("koz_kabi", 1)
+	for id in eski:
+		if eski[id] > 0:
+			Inventory.add_item(id, eski[id])
+	if [t0, t1, t2, t3] != [0, 1, 2, 3]:
+		push_error("KESIF: isik kademesi bozuk: %s" % str([t0, t1, t2, t3]))
+	# Kapi etkileri: aciksiz vinyet hafif, acikli agir, sissiz sifir.
+	var v_yok: float = KesifBalance.vinyet(0.0, 2, false)
+	var v_hafif: float = KesifBalance.vinyet(0.6, 0, false)
+	var v_agir: float = KesifBalance.vinyet(0.6, 2, false)
+	if v_yok != 0.0 or v_agir <= v_hafif:
+		push_error("KESIF: vinyet egrisi bozuk (%.2f/%.2f/%.2f)"
+				% [v_yok, v_hafif, v_agir])
+	# Tarifler + dugumler yerinde mi (canli katalog).
+	var tarif_ok: bool = Recipes.CRAFT_RECIPES.has("cam") \
+			and Recipes.CRAFT_RECIPES.has("kor_feneri") \
+			and Recipes.CRAFT_RECIPES.has("koz_kabi")
+	var dugum_ok: bool = Research.NODES.has("fener_dugumu") \
+			and Research.NODES.has("koz_kabi_dugumu")
+	if not tarif_ok:
+		push_error("KESIF: isik tarifleri katalogda eksik")
+	if not dugum_ok:
+		push_error("KESIF: arastirma dugumleri eksik")
+	# Temiz bolge sis'i sifirlar (Asama 2'nin okuyacagi mekanizma).
+	_temiz_bolgeler = [{"cell": Vector2i(5, 5), "r": 4.0}]
+	var sis_temiz: float = _sis_at_cell(Vector2i(6, 5))
+	_temiz_bolgeler = []
+	if sis_temiz != 0.0:
+		push_error("KESIF: temiz bolge sisi sifirlamiyor")
+	print("KESIFTEST: halka=%s isik=%s vinyet=%.2f/%.2f/%.2f tarif=%s dugum=%s temiz_ok=%s" % [
+			str([h0, h1, h2, h3]), str([t0, t1, t2, t3]),
+			v_yok, v_hafif, v_agir, str(tarif_ok), str(dugum_ok),
+			str(sis_temiz == 0.0)])
+
+# =========================================================================
+# KESIF Asama 2 (16.3) — KOR TASLARI
+# =========================================================================
+# 6 ana tas Ocak'tan disari yay cizer (KesifBalance.TAS_ANA), 3 yan tas
+# sapmis noktalarda. Yerlesim deterministik: aci+yaricap veriden, hucre
+# en yakin yurunebilir karaya oturtulur (spiral arama). Yakma bedeli
+# 1 yol_koru + artan oz; Halka 2+ taslari koz_kabi sart (tasiyici).
+# Yakilan tas: KALICI sis temizligi + arastirmaya "tas bilgisi" +
+# gece sertlesme carpani + Ocak alev rengi ilerlemesi (HIKAYE 7 kancasi).
+
+var _kor_taslari: Dictionary = {}   # id -> {cell, yanik, halka}
+var _kor_tas_gorseller: Dictionary = {}  # id -> MeshInstance3D
+
+## Dunya kurulunca cagrilir (kamp sonrasi): taslari yerlestir.
+func _place_kor_taslari() -> void:
+	for g in _kor_tas_gorseller.values():
+		if is_instance_valid(g):
+			g.queue_free()
+	_kor_taslari.clear()
+	_kor_tas_gorseller.clear()
+	var merkez := get_hearth()
+	if merkez == Vector2i(-999, -999):
+		merkez = _spawn_cell
+	for i in KesifBalance.TAS_ANA.size():
+		var t: Dictionary = KesifBalance.TAS_ANA[i]
+		_kor_tas_kur("ana%d" % (i + 1), merkez,
+				float(t["aci"]), float(t["r"]))
+	for id: String in KesifBalance.TAS_YAN:
+		var t: Dictionary = KesifBalance.TAS_YAN[id]
+		_kor_tas_kur(id, merkez, float(t["aci"]), float(t["r"]))
+
+func _kor_tas_kur(id: String, merkez: Vector2i, aci: float, r: float) -> void:
+	var rad := deg_to_rad(aci)
+	var hedef := merkez + Vector2i(roundi(cos(rad) * r), roundi(sin(rad) * r))
+	var cell := _kor_tas_yer_bul(hedef)
+	if cell == Vector2i(-999, -999):
+		print("KORTAS: %s icin yer yok (hedef %s)" % [id, str(hedef)])
+		return
+	_kor_taslari[id] = {"cell": cell, "yanik": false,
+			"halka": get_ring(cell)}
+	_solid_cells[cell] = true
+	_kor_tas_gorseller[id] = _kor_tas_gorsel_kur(id, cell)
+
+## Hedefin cevresinde yurunebilir, bos, kuru hucre ara (buyuyen halka).
+func _kor_tas_yer_bul(hedef: Vector2i) -> Vector2i:
+	for ring in 9:
+		for oy in range(-ring, ring + 1):
+			for ox in range(-ring, ring + 1):
+				if maxi(absi(ox), absi(oy)) != ring:
+					continue
+				var c := hedef + Vector2i(ox, oy)
+				if c.x < 1 or c.y < 1 or c.x >= _map_w - 1 or c.y >= _map_h - 1:
+					continue
+				if not is_walkable(c) or _placed.has(c) or _objects.has(c):
+					continue
+				return c
+	return Vector2i(-999, -999)
+
+## Placeholder gorsel: koyu tas silindiri + yanikken kor rengi isima.
+## Model gelirse (kor_tasi.glb) ayni kancadan takilir — kod degismez.
+func _kor_tas_gorsel_kur(id: String, cell: Vector2i) -> MeshInstance3D:
+	var mesh := CylinderMesh.new()
+	mesh.top_radius = 0.30
+	mesh.bottom_radius = 0.44
+	mesh.height = 1.25
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.24, 0.23, 0.30)
+	mat.roughness = 0.9
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position = _cell_center(cell) + Vector3(0, 0.62, 0)
+	add_child(mi)
+	if bool(_kor_taslari[id]["yanik"]):
+		_kor_tas_isima(mi, true)
+	return mi
+
+func _kor_tas_isima(mi: MeshInstance3D, yanik: bool) -> void:
+	var mat := mi.material_override as StandardMaterial3D
+	if mat == null:
+		return
+	if yanik:
+		mat.emission_enabled = true
+		mat.emission = Color(1.0, 0.45, 0.16)
+		mat.emission_energy_multiplier = 1.4
+		mat.albedo_color = Color(0.34, 0.28, 0.30)
+	else:
+		mat.emission_enabled = false
+
+## Bu hucrede (yakilmamis) kor tasi var mi? -> id ya da ""
+func _kor_tas_at(cell: Vector2i) -> String:
+	for id: String in _kor_taslari:
+		if Vector2i(_kor_taslari[id]["cell"]) == cell:
+			return id
+	return ""
+
+func _yanik_ana_sayisi() -> int:
+	var n := 0
+	for id: String in _kor_taslari:
+		if id.begins_with("ana") and bool(_kor_taslari[id]["yanik"]):
+			n += 1
+	return n
+
+## Yanik taslardan kalici temiz bolgeleri yeniden kur (yukleme + yakma).
+func _rebuild_temiz_bolgeler() -> void:
+	_temiz_bolgeler.clear()
+	for id: String in _kor_taslari:
+		if bool(_kor_taslari[id]["yanik"]):
+			_temiz_bolgeler.append({
+				"cell": Vector2i(_kor_taslari[id]["cell"]),
+				"r": KesifBalance.TEMIZ_R})
+
+## Yakma denemesi: bedel + tasiyici kurali. Basarida KALICI etkiler.
+func _try_burn_kor_tas(id: String) -> bool:
+	if not _kor_taslari.has(id) or bool(_kor_taslari[id]["yanik"]):
+		return false
+	if Inventory.get_count("yol_koru") < 1:
+		_spawn_floating_text(Vector2i(_kor_taslari[id]["cell"]),
+				"Yol koru gerek (Ocak'tan al)", Color(1, 0.6, 0.4))
+		return false
+	if int(_kor_taslari[id]["halka"]) >= KesifBalance.KOZ_SART_HALKA \
+			and Inventory.get_count("koz_kabi") < 1:
+		_spawn_floating_text(Vector2i(_kor_taslari[id]["cell"]),
+				"Bu uzaklige koz kabi gerek", Color(1, 0.6, 0.4))
+		return false
+	var bedel: Dictionary = KesifBalance.tas_bedel(id)
+	for item_id: String in bedel:
+		if Inventory.get_count(item_id) < int(bedel[item_id]):
+			_spawn_floating_text(Vector2i(_kor_taslari[id]["cell"]),
+					"Eksik: %s x%d" % [Items.display_name(item_id),
+					int(bedel[item_id])], Color(1, 0.6, 0.4))
+			return false
+	Inventory.remove_item("yol_koru", 1)
+	for item_id: String in bedel:
+		Inventory.remove_item(item_id, int(bedel[item_id]))
+	_kor_taslari[id]["yanik"] = true
+	_rebuild_temiz_bolgeler()
+	var cell := Vector2i(_kor_taslari[id]["cell"])
+	if _kor_tas_gorseller.has(id) and is_instance_valid(_kor_tas_gorseller[id]):
+		_kor_tas_isima(_kor_tas_gorseller[id], true)
+	# Canlanma: sicak parcacik patlamasi + yazi. Sis o bolgede kalici gitti.
+	_spawn_particles(_cell_center(cell) + Vector3(0, 1.0, 0),
+			Color(1.0, 0.55, 0.2), 14)
+	_spawn_floating_text(cell, "Kor tasi yandi — bolge canlandi", Color(1, 0.8, 0.4))
+	# Arastirma: tas bilgisi dugumleri kademeli belirir (1./3./5. ana tas).
+	var yanik := _yanik_ana_sayisi()
+	if yanik >= 1:
+		Research.reveal_node("tas_bilgisi_1")
+	if yanik >= 3:
+		Research.reveal_node("tas_bilgisi_2")
+	if yanik >= 5:
+		Research.reveal_node("tas_bilgisi_3")
+	# 16.7 YAN TAS ODULLERI (opsiyonel yol: %100'cu oyuncu odullenir)
+	if id == "yanA":
+		var acilan := 0
+		for dugum: String in KesifBalance.YANA_BEDAVA_DUGUMLER:
+			if not Research.unlocked.has(dugum):
+				Research.revealed[dugum] = true
+				Research.unlocked[dugum] = true
+				acilan += 1
+		if acilan > 0:
+			Research._save()
+			Research.changed.emit()
+			_spawn_floating_text(cell, "Eski usta tarifleri cozuldu",
+					Color(0.7, 0.95, 1.0))
+		else:
+			Inventory.add_item("oz", KesifBalance.YANA_YEDEK_OZ)
+			_spawn_floating_text(cell, "Ustanin zulasi: oz", Color(0.7, 0.95, 1.0))
+	elif id == "yanB":
+		# Gunluk sayfalari hikaye borcu (HIKAYE.md gelince): simdilik depo.
+		Inventory.add_item("oz", KesifBalance.YANB_OZ)
+		_spawn_floating_text(cell, "Buyuk oz deposu!", Color(0.7, 0.95, 1.0))
+	elif id == "yanC":
+		_spawn_floating_text(cell, "Muhur Cagi bonusu: sabah ekonomisi +%10",
+				Color(0.7, 0.95, 1.0))
+	_update_alev_rengi()
+	_son_vinyet = -1.0  # sis durumu degisti; HUD tazelensin
+	_dirty = true
+	return true
+
+## HIKAYE 7 alev rengi ilerlemesi: yakilan ana tas sayisi Ocak aleyvinin
+## rengini sicak sariden derin kor kizilina tasir (gorunur ilerleme).
+func _update_alev_rengi() -> void:
+	if _hearth_light == null or not is_instance_valid(_hearth_light):
+		return
+	var t := float(_yanik_ana_sayisi()) / float(KesifBalance.TAS_ANA.size())
+	_hearth_light.light_color = Color(1.0, 0.66, 0.32).lerp(
+			Color(1.0, 0.42, 0.18), t)
+
+## Ana Ocak on kosulu (16.3): 6 ana tasin hepsi yanik mi? (final fazi okur)
+func ana_ocak_hazir() -> bool:
+	return _yanik_ana_sayisi() >= KesifBalance.TAS_ANA.size()
+
+## Ocak'tan yol koru alma: koz kabi ya da (basit koz) mesale sart.
+func _take_yol_koru() -> void:
+	if Inventory.get_count("koz_kabi") < 1 and Inventory.get_count("mesale") < 1:
+		_spawn_floating_text(get_hearth(), "Koru tasiyacak kap yok", Color(1, 0.6, 0.4))
+		return
+	Inventory.add_item("yol_koru", 1)
+	_spawn_floating_text(get_hearth(), "Yol koru alindi", Color(1, 0.8, 0.4))
+	_dirty = true
+
+## KORTEST (hizli CI): yerlesim sayisi + yakma zinciri + temizlik + carpan.
+func _run_kor_test() -> void:
+	var ana := 0
+	var yan := 0
+	for id: String in _kor_taslari:
+		if id.begins_with("ana"):
+			ana += 1
+		else:
+			yan += 1
+	if ana < KesifBalance.TAS_ANA.size():
+		push_error("KOR: ana tas eksik yerlesti (%d/%d)"
+				% [ana, KesifBalance.TAS_ANA.size()])
+	# Yakma zinciri (ana1, Halka 1: koz kabi sart degil ama mesale koru tasir)
+	var id1 := "ana1"
+	var ok := false
+	var sis_sonra := -1.0
+	var carpan0: float = KesifBalance.gece_sertlesme(_yanik_ana_sayisi())
+	if _kor_taslari.has(id1):
+		var eski_yanik: bool = bool(_kor_taslari[id1]["yanik"])
+		Inventory.add_item("yol_koru", 1)
+		var bedel: Dictionary = KesifBalance.tas_bedel(id1)
+		for item_id: String in bedel:
+			Inventory.add_item(item_id, int(bedel[item_id]))
+		ok = _try_burn_kor_tas(id1)
+		sis_sonra = _sis_at_cell(Vector2i(_kor_taslari[id1]["cell"]))
+		# Temizlik: testi izinsiz kalici yapma — durumu geri sar.
+		_kor_taslari[id1]["yanik"] = eski_yanik
+		_rebuild_temiz_bolgeler()
+		if _kor_tas_gorseller.has(id1) and is_instance_valid(_kor_tas_gorseller[id1]):
+			_kor_tas_isima(_kor_tas_gorseller[id1], eski_yanik)
+	var carpan1: float = KesifBalance.gece_sertlesme(1)
+	if not ok:
+		push_error("KOR: yakma zinciri basarisiz")
+	if ok and sis_sonra != 0.0:
+		push_error("KOR: yakilan tasin bolgesi temizlenmedi (sis=%.2f)" % sis_sonra)
+	if carpan1 <= carpan0 and carpan0 == 1.0:
+		push_error("KOR: gece sertlesme carpani artmiyor")
+	print("KORTEST: ana=%d yan=%d yakma=%s temiz=%s carpan=%.2f->%.2f" % [
+			ana, yan, str(ok), str(sis_sonra == 0.0), carpan0, carpan1])
+
+# =========================================================================
+# KESIF Asama 3 (16.4) — SEFER, KAMP, OCAK SIMULASYONU
+# =========================================================================
+# Sefer = gece basinda Ocak'tan SEFER_UZAK_R'den uzak olmak. O gece:
+# - Base dalgasi SIMULE edilir: savunma puani vs dalga gucu (formul
+#   kesif_balance.gd basliginda). Hasar once savunma yapilarini yer,
+#   artani Ocak'a gecer. Sonuc sabah raporu olarak HUD'a.
+# - Oyuncunun yaninda atesli kamp (placed yol_koru) varsa kucuk cekim
+#   karsilasmasi dogar (2-4 yaratik — dalga degil).
+# - Ates yoksa: gorunmezsin ama ussursun — safakta hafif hp/aclik cezasi.
+
+var _sefer_gecesi: bool = false
+var _sabah_raporu: String = ""
+var _ocak_nefes: String = "harla"  # HIKAYE 9 kancasi: "kozle" = saklan modu
+
+## Nefes secimi (UI hikaye fazinda; API + kayit hazir).
+func set_ocak_nefes(mode: String) -> void:
+	if KesifBalance.NEFES_CARPAN.has(mode):
+		_ocak_nefes = mode
+		_dirty = true
+
+## Savunma puani: Ocak cevresi SAVUNMA_R icindeki yapilar + su hendegi.
+func _savunma_puani() -> float:
+	var hc := get_hearth()
+	if hc == Vector2i(-999, -999):
+		return 0.0
+	var puan := 0.0
+	for cell: Vector2i in _placed:
+		if Vector2(cell - hc).length() > KesifBalance.SAVUNMA_R:
+			continue
+		var id: String = _placed[cell]
+		if not KesifBalance.SAVUNMA_AGIRLIK.has(id):
+			continue
+		var max_hp: int = int(PLACE_MODELS.get(id, {}).get("max_hp", 100))
+		var hp: float = _structures.hp_ratio(cell) * float(max_hp)
+		puan += hp * float(KesifBalance.SAVUNMA_AGIRLIK[id])
+	var r := int(ceil(KesifBalance.SAVUNMA_R))
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			var c := hc + Vector2i(dx, dy)
+			if Vector2(c - hc).length() > KesifBalance.SAVUNMA_R:
+				continue
+			# Su hendegi: kazilmis + su dolu hucre
+			if int(_depth.get(c, 0)) > 0 and float(_water_level.get(c, 0.0)) > 0.2:
+				puan += KesifBalance.SU_PUAN
+	return puan
+
+## Gece dalgasini SIMULE et (oyuncu uzakta). Hasari gercekten uygular;
+## sonucu rapor metniyle dondurur. {rapor: String, hasar: float}
+func _sefer_dalga_simule(night: int) -> Dictionary:
+	var savunma := _savunma_puani()
+	var dalga: float = KesifBalance.dalga_gucu(night, _yanik_ana_sayisi(),
+			_ocak_nefes)
+	var hasar: float = maxf(0.0,
+			dalga - savunma * KesifBalance.SAVUNMA_ETKI)
+	var rapor := ""
+	if hasar <= 0.0:
+		rapor = "Ocak dayandi — savunma gece boyunca tuttu."
+	else:
+		# Hasar puanini Ocak'a yakin savunma yapilarindan duserek harca;
+		# yapi kalmazsa artani Ocak yer.
+		var kalan: float = hasar * KesifBalance.HASAR_YAPI_CARPAN
+		var hc := get_hearth()
+		var hedefler: Array = []
+		for cell: Vector2i in _placed:
+			if cell != hc and KesifBalance.SAVUNMA_AGIRLIK.has(String(_placed[cell])) \
+					and Vector2(cell - hc).length() <= KesifBalance.SAVUNMA_R:
+				hedefler.append(cell)
+		hedefler.sort_custom(func(a, b):
+			return Vector2(a - hc).length() > Vector2(b - hc).length())
+		var kirilan := 0
+		var hasarli := 0
+		for cell: Vector2i in hedefler:
+			if kalan <= 0.0:
+				break
+			var id: String = _placed[cell]
+			var max_hp: int = int(PLACE_MODELS.get(id, {}).get("max_hp", 100))
+			var hp: float = _structures.hp_ratio(cell) * float(max_hp)
+			var vur: float = minf(kalan, hp)
+			kalan -= vur
+			_structure_take_hit(cell, int(ceil(vur)), Vector3.FORWARD)
+			if vur >= hp:
+				kirilan += 1
+			else:
+				hasarli += 1
+		if kalan > 0.0 and _placed.has(hc):
+			_structure_take_hit(hc, int(ceil(kalan)), Vector3.FORWARD)
+			rapor = "Ocak hasarli! Eve don."
+		elif kirilan > 0:
+			rapor = "Ocak dayandi — %d yapi yikildi, %d hasar aldi." % [kirilan, hasarli]
+		else:
+			rapor = "Ocak dayandi — savunma hasar aldi (%d yapi)." % hasarli
+	print("SEFERSIM: gece=%d savunma=%.1f dalga=%.1f hasar=%.1f nefes=%s" % [
+			night, savunma, dalga, hasar, _ocak_nefes])
+	return {"rapor": rapor, "hasar": hasar}
+
+## Oyuncunun yakininda yanik kamp atesi var mi (placed yol_koru)?
+func _kamp_atesi_yakinimda() -> bool:
+	var pc := _player_cell()
+	for cell: Vector2i in _placed:
+		if String(_placed[cell]) == "yol_koru" \
+				and Vector2(cell - pc).length() <= KesifBalance.KAMP_YAKIN_R:
+			return true
+	return false
+
+## Kamp gecesi cekimi (16.4): ates yaniyorsa 2-4 yaratik oyuncunun
+## cevresinde dogar (dalga DEGIL — kamp isiginin bedeli).
+func _kamp_gecesi_karsilasma(night: int) -> void:
+	if not _kamp_atesi_yakinimda():
+		return  # atessiz gece: gorunmezsin (bedeli sabah)
+	var zar := DigWaterVisual.hash01(_player_cell().x, _player_cell().y, night * 31)
+	if zar > KesifBalance.KAMP_KARSILASMA_SANS:
+		return
+	var n: int = KesifBalance.KAMP_KARSILASMA_MIN + int(
+			DigWaterVisual.hash01(night, 7, 13) * float(KesifBalance.KAMP_KARSILASMA_MAX
+			- KesifBalance.KAMP_KARSILASMA_MIN + 1))
+	n = clampi(n, KesifBalance.KAMP_KARSILASMA_MIN, KesifBalance.KAMP_KARSILASMA_MAX)
+	var pc := _player_cell()
+	var made := 0
+	for i in 24:
+		if made >= n:
+			break
+		var aci := TAU * DigWaterVisual.hash01(i, night, 77)
+		var cell := pc + Vector2i(roundi(cos(aci) * 8.0), roundi(sin(aci) * 8.0))
+		if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
+			continue
+		if not is_walkable(cell):
+			continue
+		spawn_creature(cell, "normal", CreatureBalance.night_hp_mult(night))
+		made += 1
+	if made > 0 and hud != null:
+		hud.flash_pill("Ates dikkat cekti...")
+	print("KAMPGECE: gece=%d dogan=%d ates=%s" % [night, made, "true"])
+
+## Safak (sefer tarafi): atessiz gece cezasi + sabah raporu.
+func _on_kesif_dawn() -> void:
+	if not _sefer_gecesi:
+		return
+	_sefer_gecesi = false
+	if not _kamp_atesi_yakinimda():
+		Health.damage(KesifBalance.ATESSIZ_HP_CEZA)
+		Hunger.value = maxf(0.0, Hunger.value - KesifBalance.ATESSIZ_ACLIK_CEZA)
+		Hunger.changed.emit()
+		if hud != null:
+			hud.flash_pill("Soguk bir gece gecirdin")
+	if _sabah_raporu != "" and hud != null:
+		hud.show_sabah_raporu(_sabah_raporu)
+	_sabah_raporu = ""
+
+## SEFERTEST (hizli CI): formul yonleri + kamp izni kapisi + rapor uretimi.
+func _run_sefer_test() -> void:
+	var d_harla: float = KesifBalance.dalga_gucu(3, 0, "harla")
+	var d_kozle: float = KesifBalance.dalga_gucu(3, 0, "kozle")
+	var d_sert: float = KesifBalance.dalga_gucu(3, 4, "harla")
+	if d_kozle >= d_harla:
+		push_error("SEFER: kozle indirimi calismiyor")
+	if d_sert <= d_harla:
+		push_error("SEFER: tas sertlesmesi dalgaya yansimiyor")
+	var savunma := _savunma_puani()
+	var sonuc := _sefer_dalga_simule(1)
+	if String(sonuc["rapor"]) == "":
+		push_error("SEFER: sabah raporu bos")
+	# Kamp izni kapisi: isik acigi varken kapali, yokken acik.
+	var eski_acik := _isik_acik
+	_isik_acik = 2
+	var kapali: bool = not kesif_kamp_izni()
+	_isik_acik = 0
+	var acik: bool = kesif_kamp_izni()
+	_isik_acik = eski_acik
+	if not kapali or not acik:
+		push_error("SEFER: kamp isik kapisi calismiyor")
+	print("SEFERTEST: dalga=%.1f/%.1f/%.1f savunma=%.1f rapor='%s' kapi=%s" % [
+			d_harla, d_kozle, d_sert, savunma,
+			String(sonuc["rapor"]), str(kapali and acik)])
+
+# =========================================================================
+# KESIF Asama 4 (16.5) — UYUYANLAR (tas kesilmis Kulgezer kumeleri)
+# =========================================================================
+# Sis kusaklarinda (Halka 2+) gunduz tasllasmis kumeler. Aralarinda YAVAS
+# yurumek guvenli; kosmak/alet sallamak (is_exerting), yakin gurultu
+# (kazma/kesme/kazi) ya da PARLAK isik (K2+, kisik degil) kumeyi uyandirir:
+# kabuk catlar (goz isimasi + uyari) -> UYANMA_GECIKME sonra saldiri.
+# Oyuncu YENIDEN_UYKU_R disina cikinca uyananlar geri tasllasir (takinti
+# yok). Kume ortasinda odul (16.5 risk-odul dengesi). Sayilar veri dosyasinda.
+
+## kume: {merkez, uyeler: [Vector2i], durum: uyuyor|uyaniyor|uyanik|bos,
+##        sayac: float, yaratiklar: [Node3D]}
+var _uyuyan_kumeler: Array = []
+var _uyuyan_gorseller: Dictionary = {}  # "kumeIdx:uyeIdx" -> MeshInstance3D
+var _nabiz_son: float = -1.0
+
+func _place_uyuyanlar() -> void:
+	for g in _uyuyan_gorseller.values():
+		if is_instance_valid(g):
+			g.queue_free()
+	_uyuyan_gorseller.clear()
+	_uyuyan_kumeler.clear()
+	var merkez := get_hearth()
+	if merkez == Vector2i(-999, -999):
+		merkez = _spawn_cell
+	var kurulan := 0
+	# Deterministik yerlesim: aci taramasi, Halka 2+ yurunebilir merkezler.
+	for i in 40:
+		if kurulan >= KesifBalance.UYUYAN_KUME_SAYI:
+			break
+		var aci := TAU * DigWaterVisual.hash01(i, 3, 555)
+		var r := 34.0 + DigWaterVisual.hash01(i, 5, 556) * 24.0
+		var aday := merkez + Vector2i(roundi(cos(aci) * r), roundi(sin(aci) * r))
+		aday = _kor_tas_yer_bul(aday)  # ayni spiral: yurunebilir bos hucre
+		if aday == Vector2i(-999, -999):
+			continue
+		if get_ring(aday) < KesifBalance.UYUYAN_HALKA_MIN:
+			continue
+		var cakisti := false
+		for k in _uyuyan_kumeler:
+			if Vector2(aday - Vector2i(k["merkez"])).length() < 10.0:
+				cakisti = true
+				break
+		if cakisti:
+			continue
+		_uyuyan_kume_kur(aday)
+		kurulan += 1
+
+func _uyuyan_kume_kur(merkez: Vector2i) -> void:
+	var n: int = KesifBalance.UYUYAN_KUME_MIN + int(
+			DigWaterVisual.hash01(merkez.x, merkez.y, 557)
+			* float(KesifBalance.UYUYAN_KUME_MAX - KesifBalance.UYUYAN_KUME_MIN + 1))
+	n = clampi(n, KesifBalance.UYUYAN_KUME_MIN, KesifBalance.UYUYAN_KUME_MAX)
+	var uyeler: Array = []
+	for j in 16:
+		if uyeler.size() >= n:
+			break
+		var oa := TAU * DigWaterVisual.hash01(merkez.x + j, merkez.y, 558)
+		var od := 1.0 + DigWaterVisual.hash01(merkez.x, merkez.y + j, 559) * 1.8
+		var c := merkez + Vector2i(roundi(cos(oa) * od), roundi(sin(oa) * od))
+		if c == merkez or not is_walkable(c) or c in uyeler:
+			continue
+		uyeler.append(c)
+	if uyeler.is_empty():
+		return
+	var idx := _uyuyan_kumeler.size()
+	_uyuyan_kumeler.append({"merkez": merkez, "uyeler": uyeler,
+			"durum": "uyuyor", "sayac": 0.0, "yaratiklar": []})
+	for j in uyeler.size():
+		_uyuyan_gorseller["%d:%d" % [idx, j]] = _uyuyan_gorsel_kur(
+				Vector2i(uyeler[j]), false)
+	# Kume ortasi odul: yerde oz yigini (toplamak = kumenin icine girmek)
+	for item_id: String in KesifBalance.UYUYAN_ODUL:
+		_add_ground_item(merkez, item_id, int(KesifBalance.UYUYAN_ODUL[item_id]))
+
+## Tasllasmis Kulgezer: govde yaratik paletinin grileri, goz SONUK.
+## Uyanirken gozler isir (emission) — "kabuk catlamasi" gorseli.
+func _uyuyan_gorsel_kur(cell: Vector2i, gozler: bool) -> MeshInstance3D:
+	var mesh := CapsuleMesh.new()
+	mesh.radius = 0.28
+	mesh.height = 0.9
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.45, 0.45, 0.50)
+	mat.roughness = 1.0
+	if gozler:
+		mat.emission_enabled = true
+		mat.emission = CreatureBalance.EYE_COLOR
+		mat.emission_energy_multiplier = 1.2
+	var mi := MeshInstance3D.new()
+	mi.mesh = mesh
+	mi.material_override = mat
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.position = _cell_center(cell) + Vector3(0, 0.45, 0)
+	# Hafif one egik durus: "cokmus kabuk" hissi (donuk heykel)
+	mi.rotation_degrees.x = 12.0 * (DigWaterVisual.hash01(cell.x, cell.y, 560) - 0.5)
+	add_child(mi)
+	return mi
+
+## Gurultu kancasi (_apply_strike cagirir): kazma/kesme/kazi sesi.
+func _uyuyan_gurultu(cell: Vector2i) -> void:
+	for i in _uyuyan_kumeler.size():
+		var k: Dictionary = _uyuyan_kumeler[i]
+		if String(k["durum"]) != "uyuyor":
+			continue
+		if Vector2(cell - Vector2i(k["merkez"])).length() \
+				<= KesifBalance.UYANMA_GURULTU_R:
+			_uyuyan_uyandir(i)
+
+## Kume uyanma baslangici: gozler isir, gecikme sayaci kurulur.
+func _uyuyan_uyandir(idx: int) -> void:
+	var k: Dictionary = _uyuyan_kumeler[idx]
+	if String(k["durum"]) != "uyuyor":
+		return
+	k["durum"] = "uyaniyor"
+	k["sayac"] = KesifBalance.UYANMA_GECIKME
+	for j in Array(k["uyeler"]).size():
+		var g = _uyuyan_gorseller.get("%d:%d" % [idx, j])
+		if g != null and is_instance_valid(g):
+			var mat := (g as MeshInstance3D).material_override as StandardMaterial3D
+			mat.emission_enabled = true
+			mat.emission = CreatureBalance.EYE_COLOR
+			mat.emission_energy_multiplier = 1.6
+	if hud != null:
+		hud.flash_pill("Kabuk catliyor...")
+
+## Kesif dongusunden (0.2 sn) cagrilir: uyanma kosullari + gecikme +
+## yeniden uyuma + HUD nabzi.
+func _tick_uyuyanlar(delta: float) -> void:
+	if _uyuyan_kumeler.is_empty():
+		return
+	var pc := _player_cell()
+	var isik: int = KesifBalance.tasinan_isik(Inventory)
+	var parlak: bool = isik >= KesifBalance.PARLAK_UYANDIRIR_ISIK \
+			and not _fener_kisik
+	var en_yakin := 1e9
+	for i in _uyuyan_kumeler.size():
+		var k: Dictionary = _uyuyan_kumeler[i]
+		var durum := String(k["durum"])
+		if durum == "bos":
+			continue
+		var d := Vector2(pc - Vector2i(k["merkez"])).length()
+		if durum != "uyanik":
+			en_yakin = minf(en_yakin, d)
+		match durum:
+			"uyuyor":
+				if d <= KesifBalance.UYANMA_R and (parlak or player.is_exerting()):
+					_uyuyan_uyandir(i)
+				elif d <= KesifBalance.UYANMA_CARPMA_R:
+					_uyuyan_uyandir(i)  # ustlerine yurudun: carpma
+			"uyaniyor":
+				k["sayac"] = float(k["sayac"]) - delta
+				if float(k["sayac"]) <= 0.0:
+					_uyuyan_saldiri(i)
+			"uyanik":
+				if d > KesifBalance.YENIDEN_UYKU_R:
+					_uyuyan_yeniden_uyut(i)
+	# HUD nabzi: uyuyan (uyanik olmayan) en yakin kumeye yaklastikca artar.
+	var nabiz := 0.0
+	if en_yakin < KesifBalance.NABIZ_R:
+		nabiz = clampf(1.0 - en_yakin / KesifBalance.NABIZ_R, 0.0, 1.0)
+	if absf(nabiz - _nabiz_son) > 0.03:
+		_nabiz_son = nabiz
+		if hud != null:
+			hud.set_nabiz(nabiz)
+
+## Gecikme doldu: heykeller gercek yaratiklara donusur.
+func _uyuyan_saldiri(idx: int) -> void:
+	var k: Dictionary = _uyuyan_kumeler[idx]
+	k["durum"] = "uyanik"
+	var yaratiklar: Array = []
+	for j in Array(k["uyeler"]).size():
+		var g = _uyuyan_gorseller.get("%d:%d" % [idx, j])
+		if g != null and is_instance_valid(g):
+			g.visible = false
+		var cr = spawn_creature(Vector2i(k["uyeler"][j]), "normal", 1.0)
+		yaratiklar.append(cr)
+	k["yaratiklar"] = yaratiklar
+
+## Oyuncu menzilden cikti: sag kalan yaratiklar geri tasllasir. Hepsi
+## olduyse kume BOS kalir (odul zaten ortadaydi — risk alindi, kazanildi).
+func _uyuyan_yeniden_uyut(idx: int) -> void:
+	var k: Dictionary = _uyuyan_kumeler[idx]
+	var sag := 0
+	for cr in Array(k["yaratiklar"]):
+		if is_instance_valid(cr) and cr.is_alive():
+			sag += 1
+			cr.queue_free()
+			_creatures.erase(cr)
+	k["yaratiklar"] = []
+	if sag == 0:
+		k["durum"] = "bos"
+		return
+	k["durum"] = "uyuyor"
+	k["sayac"] = 0.0
+	for j in Array(k["uyeler"]).size():
+		var g = _uyuyan_gorseller.get("%d:%d" % [idx, j])
+		if g != null and is_instance_valid(g):
+			g.visible = true
+			var mat := (g as MeshInstance3D).material_override as StandardMaterial3D
+			mat.emission_enabled = false
+
+## Kayit: kume durumlari (bos/uyuyor); uyaniklar kayitta uyuyor sayilir
+## (kayit anini stealth kacisina cevirme — muhafazakar).
+func _uyuyan_to_save() -> Array:
+	var out: Array = []
+	for k in _uyuyan_kumeler:
+		out.append({"x": Vector2i(k["merkez"]).x, "y": Vector2i(k["merkez"]).y,
+				"bos": String(k["durum"]) == "bos"})
+	return out
+
+func _uyuyan_from_save(liste: Array) -> void:
+	for kayit in liste:
+		var m := Vector2i(int(kayit.get("x", 0)), int(kayit.get("y", 0)))
+		for i in _uyuyan_kumeler.size():
+			var k: Dictionary = _uyuyan_kumeler[i]
+			if Vector2i(k["merkez"]) == m and bool(kayit.get("bos", false)):
+				k["durum"] = "bos"
+				for j in Array(k["uyeler"]).size():
+					var g = _uyuyan_gorseller.get("%d:%d" % [i, j])
+					if g != null and is_instance_valid(g):
+						g.visible = false
+
+## UYUTEST (hizli CI): yerlesim + uyandirma zinciri + yeniden uyuma.
+func _run_uyuyan_test() -> void:
+	var kume_n := _uyuyan_kumeler.size()
+	if kume_n == 0:
+		push_error("UYUYAN: hic kume yerlesmedi")
+		print("UYUTEST: kume=0")
+		return
+	var k: Dictionary = _uyuyan_kumeler[0]
+	var uye_n: int = Array(k["uyeler"]).size()
+	_uyuyan_uyandir(0)
+	var uyaniyor: bool = String(k["durum"]) == "uyaniyor"
+	_uyuyan_saldiri(0)
+	var dogan: int = Array(k["yaratiklar"]).size()
+	_uyuyan_yeniden_uyut(0)
+	var geri: bool = String(k["durum"]) == "uyuyor"
+	if not uyaniyor or dogan != uye_n or not geri:
+		push_error("UYUYAN: uyanma zinciri bozuk (%s/%d-%d/%s)"
+				% [str(uyaniyor), dogan, uye_n, str(geri)])
+	# Gurultu: merkeze vurunca uyanmali
+	_uyuyan_gurultu(Vector2i(k["merkez"]))
+	var gurultu_ok: bool = String(k["durum"]) == "uyaniyor"
+	# Temizle: uyuyan durumuna geri dondur
+	k["durum"] = "uyuyor"
+	k["sayac"] = 0.0
+	for j in uye_n:
+		var g = _uyuyan_gorseller.get("0:%d" % j)
+		if g != null and is_instance_valid(g):
+			g.visible = true
+			var mat := (g as MeshInstance3D).material_override as StandardMaterial3D
+			mat.emission_enabled = false
+	print("UYUTEST: kume=%d uye=%d uyanma=%s dogan=%d yeniden_uyku=%s gurultu=%s" % [
+			kume_n, uye_n, str(uyaniyor), dogan, str(geri), str(gurultu_ok)])
+
+# =========================================================================
+# KESIF Asama 5 (16.6) — UZAK TEHDITLER (halka bazli, dalga DEGIL)
+# =========================================================================
+# Sisli halkalarda "gunduz guvenli" kurali KIRILIR (16.2): ortam
+# dogurucu UZAK_TIK_ARALIK'ta bir zar atar. Sis Surusu (H2+), Fener
+# Avcisi (H2+, YALNIZ parlak isik varken; isik kisilinca ilgisini
+# yitirir), Catlak Dev (H3). Cevresel: Kul Firtinasi (H3, gorus kapanir,
+# siginak ara) + Damar Catlagi (H3, isik sizan yarik yaratik ceker —
+# akilli oyuncu tuzak olarak kullanir). Hepsi mevcut AI iskeletinin
+# varyanti (stat + "uzak" metasi); take_hit/oz aynen calisir.
+
+var _uzak_timer: float = 0.0
+var _uzak_yaratiklar: Array = []
+var _firtina_kalan: float = 0.0
+var _firtina_bekleme: float = 0.0
+var _damar_catlaklari: Array = []   # [Vector2i]
+var _damar_gorseller: Array = []
+
+func _place_damar_catlaklari() -> void:
+	for g in _damar_gorseller:
+		if is_instance_valid(g):
+			g.queue_free()
+	_damar_gorseller.clear()
+	_damar_catlaklari.clear()
+	var merkez := get_hearth()
+	if merkez == Vector2i(-999, -999):
+		merkez = _spawn_cell
+	for i in 30:
+		if _damar_catlaklari.size() >= KesifBalance.DAMAR_SAYI:
+			break
+		var aci := TAU * DigWaterVisual.hash01(i, 9, 661)
+		var r := 48.0 + DigWaterVisual.hash01(i, 11, 662) * 14.0
+		var aday := merkez + Vector2i(roundi(cos(aci) * r), roundi(sin(aci) * r))
+		aday = _kor_tas_yer_bul(aday)
+		if aday == Vector2i(-999, -999) or get_ring(aday) < 3:
+			continue
+		if aday in _damar_catlaklari:
+			continue
+		_damar_catlaklari.append(aday)
+		# Gorsel: zeminde isik sizan yarik (yassi emissive serit)
+		var mesh := BoxMesh.new()
+		mesh.size = Vector3(1.4, 0.05,
+				0.22 + DigWaterVisual.hash01(aday.x, aday.y, 663) * 0.2)
+		var mat := StandardMaterial3D.new()
+		mat.albedo_color = Color(0.15, 0.12, 0.18)
+		mat.emission_enabled = true
+		mat.emission = Color(0.4, 0.9, 0.9)
+		mat.emission_energy_multiplier = 1.1
+		var mi := MeshInstance3D.new()
+		mi.mesh = mesh
+		mi.material_override = mat
+		mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		mi.position = _cell_center(aday) + Vector3(0, 0.04, 0)
+		mi.rotation_degrees.y = 360.0 * DigWaterVisual.hash01(aday.x, aday.y, 664)
+		add_child(mi)
+		_damar_gorseller.append(mi)
+
+## Yaratiga en yakin cekim catlagi (yoksa gecersiz hucre).
+func _damar_yakin(cell: Vector2i) -> Vector2i:
+	for c: Vector2i in _damar_catlaklari:
+		if Vector2(cell - c).length() <= KesifBalance.DAMAR_CEKIM_R:
+			return c
+	return Vector2i(-999, -999)
+
+## Ortam dogurucu tik'i (kesif dongusu cagirir, UZAK_TIK_ARALIK'ta bir).
+func _tick_uzak_tehditler(delta: float) -> void:
+	# Firtina saatleri
+	_firtina_bekleme = maxf(0.0, _firtina_bekleme - delta)
+	if _firtina_kalan > 0.0:
+		_firtina_kalan = maxf(0.0, _firtina_kalan - delta)
+		if _firtina_kalan <= 0.0:
+			_son_vinyet = -1.0
+			if hud != null:
+				hud.flash_pill("Firtina dindi")
+	# Uzaklasan ortam yaratiklarini temizle (dert oyuncunun pesinde
+	# surunmek degil, BOLGENIN tekinsizligi).
+	var pc := _player_cell()
+	for cr in _uzak_yaratiklar.duplicate():
+		if not is_instance_valid(cr) or not cr.is_alive():
+			_uzak_yaratiklar.erase(cr)
+			continue
+		var d := Vector2(cr.position.x - float(pc.x) - 0.5,
+				cr.position.z - float(pc.y) - 0.5).length()
+		if d > KesifBalance.UZAK_DESPAWN_R:
+			cr.melt(0.6)
+			_creatures.erase(cr)
+			_uzak_yaratiklar.erase(cr)
+	# Fener Avcisi ilgi kaybi: parlak isik yoksa erir (isik yonetimi ODULU)
+	var parlak: bool = KesifBalance.tasinan_isik(Inventory) \
+			>= KesifBalance.PARLAK_UYANDIRIR_ISIK and not _fener_kisik
+	if not parlak and not _kamp_atesi_yakinimda():
+		for cr in _uzak_yaratiklar.duplicate():
+			if is_instance_valid(cr) and String(cr.type) == "fener_avcisi":
+				cr.melt(0.8)
+				_creatures.erase(cr)
+				_uzak_yaratiklar.erase(cr)
+	# Zar zamani mi?
+	_uzak_timer += delta
+	if _uzak_timer < KesifBalance.UZAK_TIK_ARALIK:
+		return
+	_uzak_timer = 0.0
+	var ring := get_ring(pc)
+	if ring < 2 or _sis_at_cell(pc) <= 0.0:
+		return  # temizlenmis bolge Yuva kurallarina doner (16.2)
+	if _uzak_yaratiklar.size() >= KesifBalance.UZAK_MAX_AKTIF:
+		return
+	var tohum: int = pc.x * 131 + pc.y * 17 + int(Time.get_ticks_msec() / 1000)
+	var zar := DigWaterVisual.hash01(tohum, ring, 665)
+	if zar < KesifBalance.SURU_SANS:
+		var n: int = KesifBalance.SURU_MIN + int(
+				DigWaterVisual.hash01(tohum, 3, 666)
+				* float(KesifBalance.SURU_MAX - KesifBalance.SURU_MIN + 1))
+		for i in n:
+			_uzak_dogur(pc, "sis_surusu", i)
+	if parlak and DigWaterVisual.hash01(tohum, 5, 667) < KesifBalance.AVCI_SANS:
+		_uzak_dogur(pc, "fener_avcisi", 9)
+	if ring >= 3:
+		if DigWaterVisual.hash01(tohum, 7, 668) < KesifBalance.DEV_SANS:
+			_uzak_dogur(pc, "catlak_dev", 12)
+		if _firtina_kalan <= 0.0 and _firtina_bekleme <= 0.0 \
+				and DigWaterVisual.hash01(tohum, 8, 669) < KesifBalance.FIRTINA_SANS:
+			_firtina_kalan = KesifBalance.FIRTINA_SURE
+			_firtina_bekleme = KesifBalance.FIRTINA_BEKLEME
+			_son_vinyet = -1.0
+			if hud != null:
+				hud.flash_pill("Kul firtinasi! Siginak bul")
+			# Firtinada uyuyanlar homurdanir (16.6): nabiz hissi
+			if hud != null:
+				hud.set_nabiz(0.5)
+
+func _uzak_dogur(pc: Vector2i, tip: String, salt: int) -> void:
+	if _uzak_yaratiklar.size() >= KesifBalance.UZAK_MAX_AKTIF:
+		return
+	for i in 12:
+		var aci := TAU * DigWaterVisual.hash01(pc.x + salt, pc.y + i, 670)
+		var cell := pc + Vector2i(
+				roundi(cos(aci) * KesifBalance.UZAK_SPAWN_R),
+				roundi(sin(aci) * KesifBalance.UZAK_SPAWN_R))
+		if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
+			continue
+		if not is_walkable(cell):
+			continue
+		var cr = spawn_creature(cell, tip, 1.0)
+		cr.set_meta("uzak", true)
+		_uzak_yaratiklar.append(cr)
+		return
+
+## Firtina siginagi: kamp atesi ya da Ocak yakini.
+func _firtina_siginakta() -> bool:
+	var pc := _player_cell()
+	var hc := get_hearth()
+	if hc != Vector2i(-999, -999) \
+			and Vector2(pc - hc).length() <= KesifBalance.FIRTINA_SIGINAK_R:
+		return true
+	return _kamp_atesi_yakinimda()
+
+## UZAKTEST (hizli CI): tip verileri + dogurucu + avci isik kurali +
+## damar yerlesimi + firtina vinyeti.
+func _run_uzak_test() -> void:
+	var tip_ok: bool = CreatureBalance.TYPES.has("sis_surusu") \
+			and CreatureBalance.TYPES.has("fener_avcisi") \
+			and CreatureBalance.TYPES.has("catlak_dev")
+	if not tip_ok:
+		push_error("UZAK: tehdit tipleri CreatureBalance'ta eksik")
+	# Dalga havuzuna sizmamalilar (first_night 999)
+	var havuz: Array = CreatureBalance.unlocked_types(50)
+	var sizinti: bool = "sis_surusu" in havuz or "fener_avcisi" in havuz \
+			or "catlak_dev" in havuz
+	if sizinti:
+		push_error("UZAK: uzak tehdit gece dalgasi havuzuna sizdi")
+	# Dogurucu: zorla dogur -> uzak metasi + canli
+	var onceki: int = _uzak_yaratiklar.size()
+	_uzak_dogur(Vector2i(64, 64), "sis_surusu", 1)
+	var dogdu: bool = _uzak_yaratiklar.size() == onceki + 1
+	if dogdu:
+		var cr = _uzak_yaratiklar[-1]
+		if not cr.has_meta("uzak"):
+			push_error("UZAK: ortam yaratiginda 'uzak' metasi yok")
+		cr.queue_free()
+		_creatures.erase(cr)
+		_uzak_yaratiklar.erase(cr)
+	else:
+		push_error("UZAK: ortam dogurucu calismiyor")
+	var damar_n := _damar_catlaklari.size()
+	var firtina_v: float = KesifBalance.FIRTINA_VINYET
+	if firtina_v < 0.9:
+		push_error("UZAK: firtina vinyeti gorusu kapatmiyor")
+	print("UZAKTEST: tipler=%s havuz_temiz=%s dogum=%s damar=%d firtina_v=%.2f" % [
+			str(tip_ok), str(not sizinti), str(dogdu), damar_n, firtina_v])
+
+# =========================================================================
+# KESIF Asama 6 (16.7-16.8) — odul sorgusu + performans + gorsel kanit
+# =========================================================================
+
+## Muhur Cagi kalici bonusu (16.7 yanC): sabah ekonomisi isi geldiginde
+## carpani buradan okur (KesifBalance.YANC_SABAH_CARPAN). Tas durumundan
+## TURETILIR — ayri kayit alani yok, bozulacak ikinci gercek yok.
+func muhur_bonusu_aktif() -> bool:
+	return _kor_taslari.has("yanC") and bool(_kor_taslari["yanC"]["yanik"])
+
+## KESIFPERF (hizli CI): sis/simulasyon maliyetinin DURUST olcumu.
+## CI yazilim rasterizasyonunda FPS anlamsiz; anlamli olan: (1) kesif
+## dongusunun CPU suresi, (2) dalga simulasyonunun CPU suresi, (3) bolum
+## 16'nin sahneye ekledigi dugum sayisi. Mobil butcesi bunlardan okunur.
+func _run_kesif_perf() -> void:
+	var t0 := Time.get_ticks_usec()
+	for i in 100:
+		_update_kesif()
+	var kesif_us := (Time.get_ticks_usec() - t0) / 100.0
+	t0 = Time.get_ticks_usec()
+	for i in 20:
+		_savunma_puani()
+	var savunma_us := (Time.get_ticks_usec() - t0) / 20.0
+	var dugum := _kor_tas_gorseller.size() + _uyuyan_gorseller.size() \
+			+ _damar_gorseller.size() + (1 if _sis_duzlem != null else 0)
+	# Butce bekcisi: kesif dongusu karede degil 0.2 sn'de bir kosar;
+	# yine de tek cagri 2 ms'yi asarsa mobilde hissedilir — kirmizi.
+	if kesif_us > 2000.0:
+		push_error("KESIFPERF: kesif dongusu cok pahali (%.0f us)" % kesif_us)
+	if savunma_us > 5000.0:
+		push_error("KESIFPERF: savunma puani cok pahali (%.0f us)" % savunma_us)
+	print("KESIFPERF: kesif_dongusu=%.0fus savunma_puani=%.0fus ek_dugum=%d" % [
+			kesif_us, savunma_us, dugum])
+
+## Agir CI kareleri: kor tasi yakin, uyuyan kumesi, sisli halka vinyeti
+## (oyuncu isiksiz Halka 2'de), damar catlagi. Oyuncu konumu geri sarilir.
+func _run_kesif_frames(save_path: String) -> void:
+	_cam_locked = true
+	var eski_poz := player.position
+	# KADRAJ DERSI (ilk turdan): yakin-alcak kamera engebeli arazide
+	# yamacin icine gomuluyor (tas/damar kareleri bos cikti). Yuksek ve
+	# geriden bak — tepe olsa da hedef gorunur.
+	var dbg: Array = []
+	# 1) Kor tasi (ana1) — neredeyse kus bakisi: arada agac kalmasin
+	if _kor_taslari.has("ana1"):
+		var tc := Vector2i(_kor_taslari["ana1"]["cell"])
+		var tp := _cell_center(tc)
+		camera.position = tp + Vector3(0.6, 7.5, 3.2)
+		camera.look_at(tp + Vector3(0, 0.6, 0))
+		var g = _kor_tas_gorseller.get("ana1")
+		dbg.append("tas ana1 cell=%s gorsel=%s poz=%s visible=%s" % [
+				str(tc), str(g != null and is_instance_valid(g)),
+				str(g.position) if g != null and is_instance_valid(g) else "-",
+				str(g.visible) if g != null and is_instance_valid(g) else "-"])
+		await get_tree().create_timer(0.7).timeout
+		_snap(save_path.replace(".png", "_kesif_tas.png"))
+	# 2) Uyuyan kumesi
+	if not _uyuyan_kumeler.is_empty():
+		var mp := _cell_center(Vector2i(_uyuyan_kumeler[0]["merkez"]))
+		camera.position = mp + Vector3(-3.5, 3.2, 4.5)
+		camera.look_at(mp + Vector3(0, 0.5, 0))
+		await get_tree().create_timer(0.7).timeout
+		_snap(save_path.replace(".png", "_kesif_uyuyan.png"))
+	# 3) Sis vinyeti: oyuncu Halka 2'de ISIKSIZ olmali. CI turu envantere
+	# fener/koz kabi da veriyor (ilk turda kapi hic kapanmadi) — isik
+	# esyalarini gecici cikar, kareyi al, geri ver.
+	var merkez := get_hearth()
+	if merkez == Vector2i(-999, -999):
+		merkez = _spawn_cell
+	var hedef := _kor_tas_yer_bul(merkez + Vector2i(38, 0))
+	if hedef != Vector2i(-999, -999):
+		var isik_stash := {}
+		for tier in KesifBalance.ISIK_ESYA:
+			var iid: String = String(KesifBalance.ISIK_ESYA[tier])
+			isik_stash[iid] = Inventory.get_count(iid)
+			if isik_stash[iid] > 0:
+				Inventory.remove_item(iid, isik_stash[iid])
+		player.position = _cell_center(hedef)
+		camera.position = player.position + _camera_offset()
+		_update_kesif()  # zamanlayiciyi bekleme: kapi etkisi hemen
+		var pc2 := _player_cell()
+		dbg.append("sis hedef=%s pc=%s halka=%d sis=%.2f isik=%d acik=%d son_vinyet=%.2f" % [
+				str(hedef), str(pc2), get_ring(pc2), _sis_at_cell(pc2),
+				KesifBalance.tasinan_isik(Inventory), _isik_acik, _son_vinyet])
+		if hud != null:
+			var sv = hud.get("_sis_vinyet")
+			dbg.append("hud sis_vinyet=%s alpha=%s" % [
+					str(sv != null),
+					str(sv.modulate.a) if sv != null else "-"])
+		await get_tree().create_timer(0.8).timeout
+		_snap(save_path.replace(".png", "_kesif_sis.png"))
+		for iid in isik_stash:
+			if isik_stash[iid] > 0:
+				Inventory.add_item(iid, isik_stash[iid])
+	# 4) Damar catlagi — kus bakisina yakin. Ilk catlak calilarin altinda
+	# kalabiliyor (3. tur dersi): cevresi EN BOS catlagi sec.
+	if not _damar_catlaklari.is_empty():
+		var dc := Vector2i(_damar_catlaklari[0])
+		var en_az := 999
+		for aday: Vector2i in _damar_catlaklari:
+			var n := 0
+			for oy in range(-2, 3):
+				for ox in range(-2, 3):
+					if _objects.has(aday + Vector2i(ox, oy)):
+						n += 1
+			if n < en_az:
+				en_az = n
+				dc = aday
+		var dp := _cell_center(dc)
+		camera.position = dp + Vector3(0.3, 8.0, 2.0)
+		camera.look_at(dp)
+		dbg.append("damar cell=%s gorsel_n=%d" % [str(dc), _damar_gorseller.size()])
+		await get_tree().create_timer(0.7).timeout
+		_snap(save_path.replace(".png", "_kesif_damar.png"))
+	player.position = eski_poz
+	camera.position = player.position + _camera_offset()
+	_update_kesif()
+	# Teshis dokumu: agir CI auto-commit'iyle repoya gelir (attachdbg kalibi)
+	var f := FileAccess.open("res://docs/screens/kesifdbg.txt", FileAccess.WRITE)
+	if f != null:
+		for satir in dbg:
+			f.store_line(String(satir))
+		f.close()
+	await get_tree().create_timer(0.4).timeout
+	_cam_locked = false

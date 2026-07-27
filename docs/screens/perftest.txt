@@ -1,1 +1,1 @@
-PERFTEST: kamp kamerasi | ONCE fps=1.0 draw=119 | SONRA fps=1.0 draw=168 | serpinti_dugum=2 yol_dugum=0 kamp_dugum=17 yol_karo_dugum=3
+PERFTEST: kamp kamerasi | ONCE fps=1.9 draw=116 | SONRA fps=1.5 draw=165 | serpinti_dugum=2 yol_dugum=0 kamp_dugum=17 yol_karo_dugum=3
