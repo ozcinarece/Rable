@@ -9,7 +9,7 @@ config_version=5
 config/name="Survival Sandbox 3D"
 config/description="Survival sandbox - 3D deneme dali (Asama B: Go-Go Town / Animal Crossing gorunumu)"
 run/main_scene="res://scenes/World3D.tscn"
-config/features=PackedStringArray("4.3", "GL Compatibility")
+config/features=PackedStringArray("4.7", "GL Compatibility")
 
 [autoload]
 

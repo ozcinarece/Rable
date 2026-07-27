@@ -21,7 +21,7 @@ on:
   workflow_dispatch: {}
 
 env:
-  GODOT_TAG: "4.4-stable"
+  GODOT_TAG: "4.7-stable"
 
 jobs:
   hizli:
