@@ -1,3 +1,102 @@
+# RAPOR — HARİTA BOYAMA ARACI (maske sistemi + ressam)
+
+İki parça: dünya üretimine rehber olan **maske sistemi** ve o maskeyi
+çizmek için **masaüstü boyama aracı**. Branch: `harita-boyama`.
+(Bu dosyanın altında önceki turun raporu duruyor: harita-v2 / üreteç.)
+
+## PARÇA 1 — MASKE SİSTEMİ
+
+**Dosya:** `res://data/map_mask.png` (1 piksel = 1 hücre, 128×128).
+**Veri:** `scripts/map_mask.gd` — renk sözlüğü, eşikler, yoğunluklar;
+kodda başka yerde renk tanımı yok.
+
+| Renk | Sınıf | Oyundaki etkisi |
+|---|---|---|
+| Mavi #3B7DC4 | Su | hücre göl olur |
+| Koyu yeşil #1E5B2E | Sık orman | boş çim/toprak %55 ağaç |
+| Açık yeşil #7FBF4D | Çayır | ağaçların %94'ü kalkar, kaya/plato düzlenir |
+| Gri #8A8A8A | Kayalık | boş hücre %14 kaya, orman seyrelir |
+| Bej #D9C79A | Açıklık | tüm engeller kalkar, düz çim |
+| Mor #8E5AC8 | Rezerv | engelsiz boş alan (gelecek içerik için) |
+
+**Nasıl biniyor:** `MapGen.generate()` normal koşuyor; maske **sonradan
+bir geçiş** olarak uygulanıyor (`MapMask.apply`). Dosya yoksa oyun
+*birebir* eski davranışta — fallback bedava, üretecin içine dokunulmadı.
+Repo şu an maske **içermiyor**: bugün oyunda hiçbir şey değişmedi; ilk
+maskeyi sen kaydedip commit'lediğinde devreye girecek.
+
+**Kenar organikliği (görev şartı):** maske pikseli doğrudan okunmaz —
+örnekleme noktası iki ayrı noise ile ±2,5 hücre kaydırılır (domain
+warp). Çizilen keskin kare kenar oyuna saçaklı geçer, birebir
+kopyalanmaz. MASKTEST bunu ölçüyor (aşağıda).
+
+**Korumalar:** kenar kumsal halkası, doğuş işareti ve doğuşun 6 hücre
+çevresi maske **dinlemez** — doğuşa su/orman boyansa oyun açılamaz hâle
+gelirdi. Palet dışı her renk ve saydam piksel "serbest"tir: üreteç ne
+dediyse o kalır (yalnız istediğin bölgeyi boyaman yeterli).
+
+## PARÇA 2 — BOYAMA ARACI
+
+`scenes/tools/map_painter.tscn` — Godot'ta aç, **F6** (Run Current
+Scene). Editör eklentisi değil, normal sahne. Fare öncelikli, pencere
+yeniden boyutlanabilir.
+
+- **Sol:** tuval. 6 büyük renkli buton (hex girme yok), Fırça / Silgi /
+  Kova, boyut kaydırıcısı (1–14), Geri Al (10 adım), Kaydet, Yükle.
+  Kova **sınıf** doldurur (piksel eşitliği değil — PNG yumuşatması
+  renkleri milim oynatabilir, aynı bölge yine tek bölge sayılır).
+- **Sağ üst:** canlı 2D biyom önizlemesi — maske + noise'un **birleşik**
+  sonucu, her fırça darbesinde güncellenir (karede bir; sürükleme
+  akıcı kalır).
+- **Sağ alt:** **3D Önizle** butonu — önce kaydeder, sonra gerçek oyun
+  sahnesini bir SubViewport içinde kurup tepeden bir kare alır ve
+  sahneyi boşaltır. Pahalı olduğu için butonla (görev şartı). Bu modda
+  (`RABLE_MASK_PREVIEW`) kayıt yükleme/menü/HUD kapalı ve oyun kaydına
+  **asla yazılmaz**.
+- **İlk açılış:** kayıtlı maske varsa o; yoksa **mevcut haritanın
+  yaklaşık çevirisi** (üreteç çıktısı sınıf renklerine indirgenir, 3×3
+  çoğunluk süzgeciyle lekeleştirilir — boş sayfa yok). Oyun seed'i
+  sabit (`SEED_DEFAULT`) olduğu için çeviri oynadığın haritanın kendisi.
+
+## DOĞRULAMA — MASKTEST (hızlı CI, her push)
+
+"Maskede göl boya-kaydet → F5 → göl orada mı" zincirinin otomatik hâli.
+Bellekte 128×128 çayır maskesi + (90..110, 20..40) su blobu üretilir,
+gerçek üreteç çıktısına uygulanır:
+
+- blob içi (warp payı kadar içeri çekilmiş) ≥ %90 su hücresi,
+- boyanmayan uzak bölgeye **yeni su sızmamış**,
+- kenar şeridinde sonuç, çizilen keskin kare sınırdan **en az bir
+  hücre sapmış** (organiklik gerçekten çalışıyor),
+- maske dosyası yokken `apply` çıktıyı **hiç değiştirmemiş** (fallback).
+
+Dördü de `push_error` ile CI'yı kırmızı yakar.
+
+## KULLANIM REHBERİ (5 madde)
+
+1. **Aç:** Godot'ta FileSystem → `scenes/tools/map_painter.tscn` → çift
+   tıkla → **F6** ("Run Current Scene"). Sol tarafta mevcut haritanın
+   maske çevirisi hazır gelir.
+2. **Boya:** üstten renk seç, boyutu ayarla, tuvale sürükleyerek çiz.
+   Büyük alan için **Kova**; yanlışları **Silgi** ile serbest bırak
+   (silinen yer prosedürele döner) ya da **Geri Al** (10 adım).
+3. **Sonucu gör:** sağdaki canlı önizleme her darbede güncellenir —
+   gördüğün şey maske+noise birleşimi, yani oyunun kuracağı biyom
+   haritası. Emin olmak için **3D Önizle** (birkaç saniye, kuşbakışı
+   gerçek dünya).
+4. **Kaydet ve oyna:** **💾 Kaydet** → `data/map_mask.png` yazılır →
+   oyuna dön, **Yeni Oyun** başlat (maske dünya *üretiminde* okunur;
+   mevcut kayıtlı dünyayı değiştirmez). Kalıcı olsun istiyorsan
+   `data/map_mask.png`'yi commit'le — CI ve web sürümü de o haritayla
+   üretir.
+5. **Sınırlar:** doğuş çevresi (6 hücre) ve harita kenarı maske
+   dinlemez; renkleri araç butonlarından seç (dış araçta boyarsan
+   palet dışı renkler "serbest" sayılır — hata değil, o bölge
+   prosedürel kalır); maske yol/kamp yerleşimine karışmaz — kamp
+   `camp_start.tscn`'de, yol oyun içi editörde.
+
+---
+
 # HARİTA YENİDEN ÜRETİMİ + KAMERA — Uygulama Raporu
 
 Otonom mod. Branch: `harita-v2` (hayatta-kalma üstüne). Kapsam: 128×128 noise
