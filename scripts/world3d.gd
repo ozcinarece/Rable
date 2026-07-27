@@ -10820,8 +10820,19 @@ func _run_cim_frames(save_path: String) -> void:
 		return
 	_cam_locked = true
 	var eski_poz := player.position
-	# En yogun sus otu bolgesi: decor hucrelerinden orta bir tanesi
-	var hedef: Vector2i = _decor_cells[_decor_cells.size() / 2]
+	# _decor_cells TUM cim hucreleri; tutam yalniz hash<20 olanlarda
+	# (_build_decor filtresiyle AYNI kural) — bos hucreye kadraj olmasin.
+	var hedef := Vector2i(-999, -999)
+	var say := 0
+	for c: Vector2i in _decor_cells:
+		if absi(c.x * 92821 + c.y * 68917) % 100 < 20:
+			say += 1
+			if say >= 20:
+				hedef = c
+				break
+	if hedef == Vector2i(-999, -999):
+		_cam_locked = false
+		return
 	var hp := _cell_center(hedef)
 	camera.position = hp + Vector3(-2.5, 2.2, 3.5)
 	camera.look_at(hp + Vector3(0, 0.2, 0))
