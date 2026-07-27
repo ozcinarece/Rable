@@ -10398,11 +10398,18 @@ func _run_kesif_frames(save_path: String) -> void:
 	# KADRAJ DERSI (ilk turdan): yakin-alcak kamera engebeli arazide
 	# yamacin icine gomuluyor (tas/damar kareleri bos cikti). Yuksek ve
 	# geriden bak — tepe olsa da hedef gorunur.
-	# 1) Kor tasi (ana1)
+	var dbg: Array = []
+	# 1) Kor tasi (ana1) — neredeyse kus bakisi: arada agac kalmasin
 	if _kor_taslari.has("ana1"):
-		var tp := _cell_center(Vector2i(_kor_taslari["ana1"]["cell"]))
-		camera.position = tp + Vector3(-3.5, 5.0, 5.5)
+		var tc := Vector2i(_kor_taslari["ana1"]["cell"])
+		var tp := _cell_center(tc)
+		camera.position = tp + Vector3(0.6, 7.5, 3.2)
 		camera.look_at(tp + Vector3(0, 0.6, 0))
+		var g = _kor_tas_gorseller.get("ana1")
+		dbg.append("tas ana1 cell=%s gorsel=%s poz=%s visible=%s" % [
+				str(tc), str(g != null and is_instance_valid(g)),
+				str(g.position) if g != null and is_instance_valid(g) else "-",
+				str(g.visible) if g != null and is_instance_valid(g) else "-"])
 		await get_tree().create_timer(0.7).timeout
 		_snap(save_path.replace(".png", "_kesif_tas.png"))
 	# 2) Uyuyan kumesi
@@ -10429,20 +10436,45 @@ func _run_kesif_frames(save_path: String) -> void:
 		player.position = _cell_center(hedef)
 		camera.position = player.position + _camera_offset()
 		_update_kesif()  # zamanlayiciyi bekleme: kapi etkisi hemen
+		var pc2 := _player_cell()
+		dbg.append("sis hedef=%s pc=%s halka=%d sis=%.2f isik=%d acik=%d son_vinyet=%.2f" % [
+				str(hedef), str(pc2), get_ring(pc2), _sis_at_cell(pc2),
+				KesifBalance.tasinan_isik(Inventory), _isik_acik, _son_vinyet])
+		if hud != null:
+			var sv = hud.get("_sis_vinyet")
+			dbg.append("hud sis_vinyet=%s alpha=%s" % [
+					str(sv != null),
+					str(sv.modulate.a) if sv != null else "-"])
 		await get_tree().create_timer(0.8).timeout
 		_snap(save_path.replace(".png", "_kesif_sis.png"))
+		# TESHIS: ayni kadraji HUD'a DOGRUDAN vinyet basarak da cek —
+		# fark cikarsa hata boru hattinda, cikmazsa cizimde demektir.
+		if hud != null:
+			hud.set_sis(0.9, 0.4)
+		await get_tree().create_timer(0.4).timeout
+		_snap(save_path.replace(".png", "_kesif_sis_zorla.png"))
+		if hud != null:
+			hud.set_sis(0.0, 0.0)
 		for iid in isik_stash:
 			if isik_stash[iid] > 0:
 				Inventory.add_item(iid, isik_stash[iid])
-	# 4) Damar catlagi
+	# 4) Damar catlagi — kus bakisina yakin
 	if not _damar_catlaklari.is_empty():
-		var dp := _cell_center(Vector2i(_damar_catlaklari[0]))
-		camera.position = dp + Vector3(-2.5, 4.0, 3.5)
+		var dc := Vector2i(_damar_catlaklari[0])
+		var dp := _cell_center(dc)
+		camera.position = dp + Vector3(0.4, 6.0, 2.6)
 		camera.look_at(dp)
+		dbg.append("damar cell=%s gorsel_n=%d" % [str(dc), _damar_gorseller.size()])
 		await get_tree().create_timer(0.7).timeout
 		_snap(save_path.replace(".png", "_kesif_damar.png"))
 	player.position = eski_poz
 	camera.position = player.position + _camera_offset()
 	_update_kesif()
+	# Teshis dokumu: agir CI auto-commit'iyle repoya gelir (attachdbg kalibi)
+	var f := FileAccess.open("res://docs/screens/kesifdbg.txt", FileAccess.WRITE)
+	if f != null:
+		for satir in dbg:
+			f.store_line(String(satir))
+		f.close()
 	await get_tree().create_timer(0.4).timeout
 	_cam_locked = false
