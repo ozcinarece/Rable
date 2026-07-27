@@ -543,6 +543,7 @@ func _setup_screenshot(save_path: String) -> void:
 		_cam_locked = false
 	await _run_tree_frames(save_path)
 	await _run_kesif_frames(save_path)  # Bolum 16: tas/uyuyan/sis/damar
+	await _run_su_frames(save_path)  # SU V1: golet/gece-isik/hendek/kanal
 	# CLICKTEST EN BASTA (180sn oyun sinirina takilmasin diye): GERCEK
 	# dokunus simulasyonu — "menuler acilmiyor/kapanmiyor" sinifi cihaz
 	# hatalarini CI'da yakalar.
@@ -950,13 +951,29 @@ func _run_water_color_test() -> void:
 	var satir := "WATERCOLORTEST:"
 	var kirmizi_baskin := false
 	for e: Dictionary in ornek:
-		var c := _water_rgba(float(e["d"]), 10.0, 10.0)
+		var c: Color
+		if DigWaterVisual.SU_SHADER_V1:
+			# v1 SOZLESME: vertex COLOR artik VERIDIR (r=derinlik!) —
+			# kirmizi-baskinlik EKRAN rengiyle olculur: shader bant
+			# hesabinin CPU replikasi (v1_band_color). Encoder + replika
+			# + shader tek sozlesme; biri kayarsa bu satir kirmizi yanar.
+			var enc := DigWaterVisual.v1_encode(float(e["d"]))
+			if enc.g >= DigWaterVisual.V1_FOAM_ESIK:
+				c = DigWaterVisual.V1_FOAM_COLOR
+				c.a = 1.0
+			else:
+				c = DigWaterVisual.v1_band_color(enc.r)
+				c.a = lerpf(DigWaterVisual.V1_ALPHA_SIG,
+						DigWaterVisual.V1_ALPHA_DERIN, enc.r)
+		else:
+			c = _water_rgba(float(e["d"]), 10.0, 10.0)
 		satir += " %s(%.2fm)=#%s a=%.2f" % [
 			String(e["ad"]), float(e["d"]), c.to_html(false), c.a]
 		# Su MAVI/TURKUAZ ailesinde: kirmizi asla mavinin onune gecmemeli
 		if c.r > c.b + 0.02:
 			kirmizi_baskin = true
-	satir += " kirmizi_baskin=%s" % str(kirmizi_baskin)
+	satir += " kirmizi_baskin=%s v1=%s" % [str(kirmizi_baskin),
+			str(DigWaterVisual.SU_SHADER_V1)]
 	print(satir)
 	if kirmizi_baskin:
 		push_error("SU RENGI BOZUK: kirmizi kanal maviyi geciyor")
@@ -3553,8 +3570,12 @@ func _build_lake_surface() -> void:
 			lake_cells[cell] = true
 	if lake_cells.is_empty():
 		return
+	_lake_cells_list = lake_cells.keys()  # sicak isik siralamasi icin
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	if DigWaterVisual.SU_SHADER_V1:
+		# CUSTOM0 = akis yonu (sozlesme); golde durgun (0,0)
+		st.set_custom_format(0, SurfaceTool.CUSTOM_RGBA_FLOAT)
 	var res := 4  # 0.25 m karolar: kiyi kopugu bandi puruzsuz olsun
 	var step := 1.0 / float(res)
 	var quads := 0
@@ -3568,14 +3589,17 @@ func _build_lake_surface() -> void:
 					[Vector2(x0 + step, z0), Vector2(x0 + step, z0 + step), Vector2(x0, z0 + step)]]:
 				for p: Vector2 in tri:
 					st.set_normal(Vector3.UP)
-					# Su derinligi kose rengine islenir: shader bununla
-					# sig/derin rengi ve kiyi kopugunu cizer (derinlik
-					# dokusu gerektirmez - telefon GL'inde garantili).
-					# Derinlik ARAZIDEN olculur: kopuk, su cizgisinin
-					# dogal kavisini izler (hucre zikzaki olmaz)
-					st.set_color(_water_rgba(
-							maxf(0.0, LAKE_Y - ground_height(p.x, p.y)),
-							p.x, p.y))
+					# Derinlik ARAZIDEN olculur: kopuk/kiyi, su cizgisinin
+					# dogal kavisini izler (hucre zikzaki olmaz).
+					var dm := maxf(0.0, LAKE_Y - ground_height(p.x, p.y))
+					if DigWaterVisual.SU_SHADER_V1:
+						# SOZLESME: COLOR=(derinlik,kiyi,akis), UV=dunya/olcek,
+						# CUSTOM0=akis yonu. Renk hesabi ARTIK SHADER'DA.
+						st.set_color(DigWaterVisual.v1_encode(dm))
+						st.set_uv(Vector2(p.x, p.y) / DigWaterVisual.V1_UV_OLCEK)
+						st.set_custom(0, Color(0, 0, 0, 0))
+					else:
+						st.set_color(_water_rgba(dm, p.x, p.y))
 					st.add_vertex(Vector3(p.x, LAKE_Y, p.y))
 			quads += 1
 	if quads == 0:
@@ -3631,9 +3655,29 @@ func _near_lake(lake_cells: Dictionary, x: float, z: float) -> bool:
 	return false
 
 var _lake_mat: ShaderMaterial
+var _lake_cells_list: Array = []   # gol hucreleri (sicak isik mesafesi icin)
+var _flow_dirs: Dictionary = {}    # hucre -> {dir: Vector2, t: ms} (boru akisi)
 
 func _lake_material() -> ShaderMaterial:
 	if _lake_mat != null:
+		return _lake_mat
+	if DigWaterVisual.SU_SHADER_V1:
+		# SU SHADER V1: dosyadan (assets/models/env/water.gdshader).
+		# Mesh sozlesmesi v1_encode'da; noise CI dahil kodla uretilir
+		# (dosya dokusu yok — her platformda ayni).
+		_lake_mat = ShaderMaterial.new()
+		_lake_mat.shader = load("res://assets/models/env/water.gdshader")
+		var fn := FastNoiseLite.new()
+		fn.noise_type = FastNoiseLite.TYPE_SIMPLEX_SMOOTH
+		fn.frequency = 0.012
+		var nt := NoiseTexture2D.new()
+		nt.noise = fn
+		nt.seamless = true
+		nt.width = 256
+		nt.height = 256
+		_lake_mat.set_shader_parameter("noise_tex", nt)
+		_apply_water_tier()
+		_update_water_warm_lights()
 		return _lake_mat
 	var shader := Shader.new()
 	shader.code = """
@@ -3681,6 +3725,14 @@ void fragment() {
 ## Ayarlar'dan kademe degisince de cagrilir (apply_quality).
 func _apply_water_tier() -> void:
 	if _lake_mat == null:
+		return
+	if DigWaterVisual.SU_SHADER_V1:
+		# v1: tek anahtar — Dusuk kademede hareket/parilti/fresnel kapali
+		# (quality=0: yalniz bant+kopuk; shader sozlesmesi).
+		var t2 := DigWaterVisual.tier_of(_quality_tier)
+		_lake_mat.set_shader_parameter("quality",
+				1 if bool(t2["wave"]) else 0)
+		_update_water_night()
 		return
 	var t := DigWaterVisual.tier_of(_quality_tier)
 	var wave_on: bool = bool(t["wave"])
@@ -6084,6 +6136,11 @@ func _transfer_in_component(cells: Array, amount: float) -> void:
 			if src_elev >= _cell_elevation(tc) or has_pump:
 				var taken := take_water(src_cell, amount)
 				if taken > 0.0:
+					# SU SHADER V1: hedef hucre "akan" isaretlenir (yon
+					# borudan hucreye). Mesh seviye degisiminde zaten
+					# yeniden kurulur; isaret orada okunur.
+					_flow_dirs[tc] = {"dir": Vector2(tc - pc).normalized(),
+							"t": Time.get_ticks_msec()}
 					add_water(tc, taken)
 					# Asama 5 cila: akis varken hedefte minik su parildamasi.
 					_spawn_particles(_cell_center(tc) + Vector3(0, 0.25, 0),
@@ -6196,6 +6253,8 @@ func _update_water_visuals() -> void:
 func _build_pool_mesh(wet: Dictionary, surface_y: float) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	if DigWaterVisual.SU_SHADER_V1:
+		st.set_custom_format(0, SurfaceTool.CUSTOM_RGBA_FLOAT)
 	var res := 4
 	var step := 1.0 / float(res)
 	for c: Vector2i in wet:
@@ -6213,13 +6272,30 @@ func _build_pool_mesh(wet: Dictionary, surface_y: float) -> ArrayMesh:
 					z0 -= 0.03
 				if j == res - 1 and not wet.has(c + Vector2i(0, 1)):
 					z1 += 0.03
+				# Akis verisi: boru transferi bu hucreye TAZE su bastiysa
+				# akan cizilir (yon transferden; _flow_dirs'i tick yazar).
+				var akis := 0.0
+				var akis_yon := Vector2.ZERO
+				if DigWaterVisual.SU_SHADER_V1 and _flow_dirs.has(c):
+					var kayit: Dictionary = _flow_dirs[c]
+					if Time.get_ticks_msec() - int(kayit["t"]) \
+							< DigWaterVisual.V1_AKIS_TAZE_MS:
+						akis = 0.8
+						akis_yon = Vector2(kayit["dir"])
+					else:
+						_flow_dirs.erase(c)
 				for tri in [[Vector2(x0, z0), Vector2(x1, z0), Vector2(x0, z1)],
 						[Vector2(x1, z0), Vector2(x1, z1), Vector2(x0, z1)]]:
 					for p: Vector2 in tri:
 						st.set_normal(Vector3.UP)
 						var dm: float = maxf(0.0, surface_y
 								- float(_sample_terrain(p.x, p.y)[0]))
-						st.set_color(_water_rgba(dm, p.x, p.y))
+						if DigWaterVisual.SU_SHADER_V1:
+							st.set_color(DigWaterVisual.v1_encode(dm, akis))
+							st.set_uv(Vector2(p.x, p.y) / DigWaterVisual.V1_UV_OLCEK)
+							st.set_custom(0, Color(akis_yon.x, akis_yon.y, 0, 0))
+						else:
+							st.set_color(_water_rgba(dm, p.x, p.y))
 						st.add_vertex(Vector3(p.x, 0.0, p.y))
 	return st.commit()
 
@@ -6583,6 +6659,7 @@ func _release_structure_cell(cell: Vector2i) -> void:
 	_placed.erase(cell)
 	_structures.remove(cell)
 	_torch_lights.erase(cell)
+	_update_water_warm_lights()  # SU V1: isik listesi degisti
 	_solid_cells.erase(cell)
 	_platform_cells.erase(cell)
 	if _chests.has(cell):
@@ -6906,6 +6983,7 @@ func _activate_hearth(cell: Vector2i, holder: Node3D) -> void:
 	light.shadow_enabled = false
 	holder.add_child(light)
 	_hearth_light = light
+	_update_water_warm_lights()  # SU V1: Ocak sudaki sicak yansimaya girer
 
 ## Global sorgu (14.3): yaratik sistemi (B kismi) gece hedefi icin kullanacak.
 ## Aktif ocak yoksa gecersiz hucre doner.
@@ -8323,6 +8401,7 @@ func _add_torch_light(cell: Vector2i, holder: Node3D) -> void:
 
 ## Grafik kalitesini uygular: gunes golgesi ac/kapa + menzil + atlas
 ## cozunurlugu + mesale isik butcesi. Ayarlar'dan secilir; user://'ye kaydedilir.
+	_update_water_warm_lights()  # SU V1: yeni sicak isik
 func apply_quality(tier: String) -> void:
 	if not PerfBalance.TIERS.has(tier):
 		tier = PerfBalance.DEFAULT_TIER
@@ -10488,5 +10567,134 @@ func _run_kesif_frames(save_path: String) -> void:
 		for satir in dbg:
 			f.store_line(String(satir))
 		f.close()
+	await get_tree().create_timer(0.4).timeout
+	_cam_locked = false
+
+# =========================================================================
+# SU SHADER V1 (su-shader-v1) — sicak isiklar + gorsel kanit kareleri
+# =========================================================================
+
+## Sudaki sicak yansima isiklari: aktif Ocak + mesaleler/sefer atesleri
+## icinden SUYA en yakin 4'u. HER KARede DEGIL: yalniz isik degisiminde
+## cagrilir (_activate_hearth / _add_torch_light / yapi sokumu) —
+## sozlesmenin performans sarti.
+func _update_water_warm_lights() -> void:
+	if not DigWaterVisual.SU_SHADER_V1 or _lake_mat == null:
+		return
+	var adaylar: Array = []
+	var hc := get_hearth()
+	if hc != Vector2i(-999, -999):
+		adaylar.append(hc)
+	for c: Vector2i in _torch_lights:
+		adaylar.append(c)
+	var skorlu: Array = []
+	for c: Vector2i in adaylar:
+		var en := 1e9
+		for w: Vector2i in _lake_cells_list:
+			en = minf(en, Vector2(c - w).length())
+			if en <= 1.5:
+				break
+		if en > 1.5:
+			for w2 in _water_level:
+				en = minf(en, Vector2(c - Vector2i(w2)).length())
+		if en <= 12.0:
+			skorlu.append({"c": c, "d": en})
+	skorlu.sort_custom(func(a, b): return float(a["d"]) < float(b["d"]))
+	var isiklar := PackedVector3Array()
+	var n: int = mini(4, skorlu.size())
+	for i in n:
+		isiklar.append(_cell_center(Vector2i(skorlu[i]["c"])))
+	while isiklar.size() < 4:
+		isiklar.append(Vector3.ZERO)
+	_lake_mat.set_shader_parameter("warm_lights", isiklar)
+	_lake_mat.set_shader_parameter("warm_light_count", n)
+
+## Agir CI kareleri: golet gunduz / gece (kiyida sicak isik!) / su dolu
+## hendek / akan kanal. Kazi GERCEK yoldan yapilir (kurek + _try_dig) —
+## dogrudan _depth yazmak terrain'i guncellemez, su yuzeyi arazinin
+## altinda kalirdi (yol karolarindan ogrenilen tuzak).
+func _run_su_frames(save_path: String) -> void:
+	if _lake_cells_list.is_empty():
+		return
+	_cam_locked = true
+	var eski_poz := player.position
+	var eski_el := _held_item
+	# Gol kiyisi: komsusu kara olan ilk gol hucresi
+	var kiyi := Vector2i(-999, -999)
+	var kara := Vector2i(-999, -999)
+	for w: Vector2i in _lake_cells_list:
+		for nn: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			var k := w + nn
+			if is_walkable(k) and not _placed.has(k) and not _objects.has(k):
+				kiyi = w
+				kara = k
+				break
+		if kiyi != Vector2i(-999, -999):
+			break
+	if kiyi == Vector2i(-999, -999):
+		_cam_locked = false
+		return
+	var kp := _cell_center(kiyi)
+	# 1) GOLET GUNDUZ
+	camera.position = kp + Vector3(-4.0, 4.5, 6.0)
+	camera.look_at(kp)
+	await get_tree().create_timer(0.9).timeout
+	_snap(save_path.replace(".png", "_su_golet.png"))
+	# 2) GECE + KIYIDA SICAK ISIK: kiyiya mesale (gorevdeki "Ocak kiyisinda"
+	# niyeti sicak yansima; Ocak'i tasimak kamp merkezini bozacagi icin
+	# ayni sicak-isik yolunu kullanan mesale konur — RAPOR'da gerekceli).
+	_set_placed(kara, "mesale")
+	_update_water_warm_lights()
+	DayNight.jump_to_night()
+	_clear_creatures()
+	await get_tree().create_timer(1.0).timeout
+	_snap(save_path.replace(".png", "_su_golet_gece.png"))
+	DayNight.jump_to_day()
+	_release_structure_cell(kara)
+	if _placed_nodes.has(kara):
+		(_placed_nodes[kara] as Node3D).queue_free()
+		_placed_nodes.erase(kara)
+	# 3) SU DOLU HENDEK: kamptan uzakta temiz zemin, gercek kazi + su dok
+	var merkez := get_hearth()
+	if merkez == Vector2i(-999, -999):
+		merkez = _spawn_cell
+	var hendek := _kor_tas_yer_bul(merkez + Vector2i(10, 8))
+	if hendek != Vector2i(-999, -999):
+		Inventory.add_item("kurek", 1)
+		_on_hold_requested("kurek")
+		_try_dig(hendek)
+		_try_dig(hendek)
+		add_water(hendek, 1.6)
+		var hp2 := _cell_center(hendek)
+		camera.position = hp2 + Vector3(-2.2, 2.6, 3.2)
+		camera.look_at(hp2)
+		await get_tree().create_timer(0.8).timeout
+		_snap(save_path.replace(".png", "_su_hendek.png"))
+	# 4) AKAN KANAL: 4 hucre kanal + akis isareti (+x). Akis VERISI oyunda
+	# boru transferinden gelir (_transfer_in_component yazar); karede ayni
+	# veri yolu elle beslenir — shader'in akis cizimi kanitlanir.
+	var k0 := _kor_tas_yer_bul(merkez + Vector2i(-12, 9))
+	if k0 != Vector2i(-999, -999):
+		var kanal: Array = []
+		for i in 4:
+			var c2 := k0 + Vector2i(i, 0)
+			if is_walkable(c2) and not _placed.has(c2) and not _objects.has(c2):
+				kanal.append(c2)
+		if kanal.size() >= 3:
+			for c2: Vector2i in kanal:
+				_try_dig(c2)
+				_flow_dirs[c2] = {"dir": Vector2(1, 0),
+						"t": Time.get_ticks_msec()}
+			add_water(kanal[0], 1.2 * kanal.size())
+			var cp := _cell_center(Vector2i(kanal[1]))
+			camera.position = cp + Vector3(-1.5, 2.4, 3.4)
+			camera.look_at(cp)
+			await get_tree().create_timer(0.8).timeout
+			_snap(save_path.replace(".png", "_su_kanal.png"))
+	# Toparla
+	if eski_el != "":
+		_on_hold_requested(eski_el)
+	player.position = eski_poz
+	camera.position = player.position + _camera_offset()
 	await get_tree().create_timer(0.4).timeout
 	_cam_locked = false
