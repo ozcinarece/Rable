@@ -533,6 +533,7 @@ func _setup_screenshot(save_path: String) -> void:
 		await get_tree().create_timer(0.7).timeout
 		_snap(save_path.replace(".png", "_maske_kumsal.png"))
 		_cam_locked = false
+	await _run_tree_frames(save_path)
 	# CLICKTEST EN BASTA (180sn oyun sinirina takilmasin diye): GERCEK
 	# dokunus simulasyonu — "menuler acilmiyor/kapanmiyor" sinifi cihaz
 	# hatalarini CI'da yakalar.
@@ -1348,6 +1349,85 @@ func _run_mask_test() -> void:
 	if plato.x != -1 and plato_kaldi:
 		push_error("MASKE v2: normal kademesi mevcut platoyu duzlemedi")
 
+## AGAC SETI TESTI (agac-degisim): yeni modeller devrede mi, karisim
+## 60/40 mi, poligon butcesi ne, MultiMesh dogru mu.
+func _run_tree_test() -> void:
+	var dosyalar: Array = []
+	for e: Dictionary in TREE_SET:
+		dosyalar.append("%s=%s" % [String(e["path"]).get_file(),
+				"VAR" if ResourceLoader.exists(String(e["path"])) else "YOK"])
+	var pool := _tree_set_pool()
+	var ucgen: Array = []
+	for e: Dictionary in pool:
+		var m: Mesh = e["mesh"]
+		ucgen.append(m.get_faces().size() / 3)
+	# Gercek haritadaki dagilim (agirlikli secimin kaniti)
+	var dag: Array = []
+	var toplam_ornek := 0
+	for idx in _tree_group_counts:
+		toplam_ornek += int(_tree_group_counts[idx])
+	for idx in _tree_group_counts:
+		dag.append("%s=%d(%%%.0f)" % [str(idx), int(_tree_group_counts[idx]),
+				float(_tree_group_counts[idx]) / maxf(1.0, float(toplam_ornek)) * 100.0])
+	var yeni_set_aktif: bool = ResourceLoader.exists(String(TREE_SET[0]["path"])) \
+			or ResourceLoader.exists(String(TREE_SET[1]["path"]))
+	print("TREETEST: %s yeni_set=%s varyant=%d ucgen=%s dagilim=[%s] ornek=%d" % [
+		" ".join(dosyalar), str(yeni_set_aktif), pool.size(), str(ucgen),
+		" ".join(dag), toplam_ornek])
+	if pool.is_empty():
+		push_error("AGAC: havuz bos — fallback da yuklenemedi")
+	if toplam_ornek == 0:
+		push_error("AGAC: haritada hic agac cizilmedi")
+	# Karisim yalniz yeni set TAM oldugunda olculur (60/40 sarti)
+	if ResourceLoader.exists(String(TREE_SET[0]["path"])) \
+			and ResourceLoader.exists(String(TREE_SET[1]["path"])):
+		var buyuk: float = float(_tree_group_counts.get(0, 0)) \
+				/ maxf(1.0, float(toplam_ornek))
+		if buyuk < 0.5 or buyuk > 0.7:
+			push_error("AGAC: 60/40 karisimi tutmadi (buyuk %%%.0f)" % (buyuk * 100.0))
+
+## AGAC KARELERI: orman geneli + tek agac yakin, gunduz + gece.
+func _run_tree_frames(save_path: String) -> void:
+	# En yogun orman hucresi (komsu sayisi max) ve tek basina bir agac
+	var yogun := Vector2i(-999, -999)
+	var yogun_n := -1
+	var tek := Vector2i(-999, -999)
+	for c: Vector2i in _objects:
+		if _objects[c] != "T":
+			continue
+		var nn := _tree_neighbor_count(c)
+		if nn > yogun_n:
+			yogun_n = nn
+			yogun = c
+		if nn == 0 and tek == Vector2i(-999, -999):
+			tek = c
+	if yogun == Vector2i(-999, -999):
+		return
+	if tek == Vector2i(-999, -999):
+		tek = yogun
+	_cam_locked = true
+	var op := _cell_center(yogun)
+	camera.position = op + Vector3(-6.0, 5.5, 8.0)
+	camera.look_at(op + Vector3(0, 1.2, 0))
+	await get_tree().create_timer(0.7).timeout
+	_snap(save_path.replace(".png", "_agac_orman.png"))
+	var tp := _cell_center(tek)
+	camera.position = tp + Vector3(-2.2, 2.2, 3.2)
+	camera.look_at(tp + Vector3(0, 1.4, 0))
+	await get_tree().create_timer(0.7).timeout
+	_snap(save_path.replace(".png", "_agac_tek.png"))
+	DayNight.jump_to_night()
+	_clear_creatures()
+	await get_tree().create_timer(0.9).timeout
+	_snap(save_path.replace(".png", "_agac_tek_gece.png"))
+	camera.position = op + Vector3(-6.0, 5.5, 8.0)
+	camera.look_at(op + Vector3(0, 1.2, 0))
+	await get_tree().create_timer(0.7).timeout
+	_snap(save_path.replace(".png", "_agac_orman_gece.png"))
+	DayNight.jump_to_day()
+	await get_tree().create_timer(0.4).timeout
+	_cam_locked = false
+
 ## HIZLI KATMAN: kare almayan, beklemesiz mantik testleri. Bunlar
 ## --headless'te de kosar; agir gorsel akisin hicbir parcasina dokunmaz.
 ## Kapsam BILEREK dar: harita uretimi, kamera, zaman, muhendislik,
@@ -1361,6 +1441,7 @@ func _run_fast_tests() -> void:
 	_run_editor_test()
 	_run_camp_prefab_test()
 	_run_mask_test()
+	_run_tree_test()
 	_run_water_color_test()
 	_run_time_selftest()
 	_run_muhendislik_selftest()
@@ -5106,6 +5187,23 @@ const TREE_MODEL_OVERRIDES: Array[String] = [
 	"res://assets/models/test/pinetree2.glb",
 ]
 
+# --- AGAC DEGISIM (agac-degisim dali) ------------------------------------
+## YENI SET: iki boylu karisim. Dosya(lar) henuz repoda YOKSA eski
+## pinetree1/2 havuzuna duser — eski model SILINMEDI (fallback + ileride
+## sis bolgesi varyanti / Retexture adayi). Dosyalar assets/models/env/
+## altina dusunce kod degisikligi olmadan devreye girer (TREETEST izler).
+const TREE_SET := [
+	{"path": "res://assets/models/env/pine_tree_v2.glb",
+			"agirlik": 60, "boy": 3.1},
+	{"path": "res://assets/models/env/pine_tree_small.glb",
+			"agirlik": 40, "boy": 2.3},
+]
+## Ornek basina olcek bandi (gorev: %70-130). DIKKAT: _cell_variance'a
+## DOKUNULMADI — o tas/cali/cicekle ortak; bandi orada genisletmek
+## kayalari da sisirirdi. Agaca ozel varyans asagida.
+const TREE_SCALE_MIN := 0.7
+const TREE_SCALE_MAX := 1.3
+
 func _tree_pool() -> Array:
 	var out: Array = []
 	if not TREE_MODEL_OVERRIDES.is_empty():
@@ -5115,6 +5213,51 @@ func _tree_pool() -> Array:
 	for m: String in TREE_MODELS:
 		out += _model_pool(m, TREE_HEIGHT)
 	return out
+
+## Agirlikli havuz: [{mesh, agirlik}]. Yeni set dosyalari varsa onlar,
+## yoksa eski havuz esit agirlikla.
+func _tree_set_pool() -> Array:
+	var out: Array = []
+	for e: Dictionary in TREE_SET:
+		var pth := String(e["path"])
+		if not ResourceLoader.exists(pth):
+			continue
+		for m in _tree_model_yukle(pth, float(e["boy"])):
+			out.append({"mesh": m, "agirlik": int(e["agirlik"])})
+	if not out.is_empty():
+		return out
+	for m in _tree_pool():
+		out.append({"mesh": m, "agirlik": 1})
+	return out
+
+## Yeni agac GLB yukleyici: Meshy Z-UP tespiti + duzeltmesi.
+## OLCEK KURALI: node scale kullanilmiyor — mesh, hedef BOYA gore
+## AABB'den normalize edilip TEK ArrayMesh'e pisiriliyor (mevcut
+## _merged_node_mesh hatti; karakter 1 birim referans).
+func _tree_model_yukle(pth: String, boy: float) -> Array:
+	var key := "agac:" + pth + ":" + str(boy)
+	if _pool_cache.has(key):
+		return _pool_cache[key]
+	var inst: Node3D = load(pth).instantiate()
+	var holder := Node3D.new()
+	holder.add_child(inst)
+	var ab := _scene_aabb(holder)
+	# Yatik (Z-up) geldiyse dikelt: derinlik boydan belirgin buyukse
+	# model yatiyor demektir (yol taslarinda ayni durum olculmustu).
+	if ab.size.z > ab.size.y * 1.4:
+		inst.rotation_degrees.x = -90.0
+	var pool: Array = [_merged_node_mesh(holder, boy)]
+	holder.free()
+	_pool_cache[key] = pool
+	return pool
+
+## Agaca ozel ornek varyansi: rastgele Y-donus + %70-130 olcek
+## (deterministik: ayni hucre hep ayni agac).
+func _tree_variance(cell: Vector2i) -> Basis:
+	var a := EnvModels.hash01(cell.x, cell.y, 977) * TAU
+	var sc := TREE_SCALE_MIN + EnvModels.hash01(cell.x, cell.y, 983) \
+			* (TREE_SCALE_MAX - TREE_SCALE_MIN)
+	return Basis(Vector3.UP, a).scaled(Vector3(sc, sc, sc))
 
 ## STIL: orman havasi icin obekli sikligi kontrol eder. Eskiden 8-komsuda
 ## TEK agac varsa bile hucre bos kalirdi (satranc tahtasi maks yogunluk).
@@ -5133,19 +5276,36 @@ func _tree_neighbor_count(cell: Vector2i) -> int:
 				c += 1
 	return c
 
+var _tree_group_counts: Dictionary = {}   # TREETEST: varyant -> ornek sayisi
+
 func _build_trees(cells: Array[Vector2i]) -> void:
-	var pool := _tree_pool()
+	var pool := _tree_set_pool()
+	var toplam := 0
+	for e: Dictionary in pool:
+		toplam += int(e["agirlik"])
 	var groups: Dictionary = {}
+	_tree_group_counts.clear()
 	for cell in cells:
-		var idx := absi(cell.x * 31 + cell.y * 57) % pool.size()
+		# AGIRLIKLI secim (60/40): hucreden deterministik hash, agirlik
+		# araligina dusen varyanti alir. Eski esit-bolusum %50/50'ydi.
+		var r := int(EnvModels.hash01(cell.x, cell.y, 991) * float(toplam))
+		var idx := 0
+		for i in pool.size():
+			r -= int(pool[i]["agirlik"])
+			if r < 0:
+				idx = i
+				break
 		if not groups.has(idx):
 			groups[idx] = []
-		groups[idx].append(Transform3D(_cell_variance(cell), _cell_center(cell)))
+		groups[idx].append(Transform3D(_tree_variance(cell), _cell_center(cell)))
+		_tree_group_counts[idx] = int(_tree_group_counts.get(idx, 0)) + 1
 	for idx in groups:
 		# MOBIL PERF: yogun orman golge yansitmaz (golge gecisi tum agaclari
 		# ikinci kez cizerdi — en pahali kalem). Agaclar isik ALIR ama GOLGE
 		# ATMAZ; AC/Longvinter stili. Buyuk FPS kazanci, sik ormani korur.
-		_keep(_make_mesh_multimesh(pool[idx], groups[idx], false))
+		# MULTIMESH DOGRULAMASI: varyant basina TEK MultiMesh (TREETEST'te
+		# dugum sayisi olarak olculuyor).
+		_keep(_make_mesh_multimesh(pool[idx]["mesh"], groups[idx], false))
 
 # Hucrenin tas turu: %60 normal (iki gorunum), %30 komur, %10 altin
 func _stone_variant(cell: Vector2i) -> int:
