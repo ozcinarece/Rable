@@ -16,6 +16,9 @@ extends RefCounted
 
 const PATH := "res://data/map_mask.png"
 const HEIGHT_PATH := "res://data/height_mask.png"
+## harita-master: sis yogunlugu katmani (gri tonlama; 0=acik, 255=zifiri).
+## Dosya yoksa kesif sistemi halka fallback'ini kullanir (kesif_balance).
+const FOG_PATH := "res://data/fog_mask.png"
 const MB = preload("res://scripts/map_balance.gd")
 
 ## Renk sozlugu (gorevdeki 6 sinif). Boyama araci da bu paleti kullanir —
@@ -382,3 +385,28 @@ static func translate_rows(rows: Array[String]) -> Image:
 					top = k2
 			img.set_pixel(x, y, COLORS[top])
 	return img
+
+
+## harita-master: sis maskesi. load_height_image ile ayni iki asamali
+## yol (import edilmis kaynak -> ham dosya fallback).
+static func load_fog_image() -> Image:
+	if ResourceLoader.exists(FOG_PATH):
+		var tex: Variant = load(FOG_PATH)
+		if tex is Texture2D:
+			return (tex as Texture2D).get_image()
+	var gp := ProjectSettings.globalize_path(FOG_PATH)
+	if FileAccess.file_exists(gp):
+		var img := Image.new()
+		if img.load(gp) == OK:
+			return img
+	return null
+
+## Hucredeki sis yogunlugu (0..1). Maske sinir disinda kalirsa 1 (zifir
+## kenar kusagi — haritadan cikis yonu her zaman sisli).
+static func fog_at(img: Image, cell: Vector2i) -> float:
+	if img == null:
+		return -1.0
+	if cell.x < 0 or cell.y < 0 \
+			or cell.x >= img.get_width() or cell.y >= img.get_height():
+		return 1.0
+	return img.get_pixel(cell.x, cell.y).r
