@@ -7992,6 +7992,10 @@ func _run_night_test(save_path: String) -> void:
 	DayNight.is_night = true
 	DayNight.elapsed = 0.0
 	_update_daylight()
+	# ISIK OTURSUN: 5. tur dersi — kurulumdan hemen sonra cekilen kare
+	# hala gunduz gibi cikiyor (gecis ~1.5 sn'de oturuyor); dogma karesi
+	# de gece isiginda olsun diye beklenir.
+	await get_tree().create_timer(1.5).timeout
 	var night_no: int = DayNight.day
 	_on_night_started()
 	var spawned := _live_creature_count()
@@ -8050,7 +8054,12 @@ func _run_night_test(save_path: String) -> void:
 			# sonra 0.65 sn yukselme; 0.6'da yaklasik yari boyda)
 			camera.position = oncu.position + Vector3(-1.6, 1.5, 2.2)
 			camera.look_at(oncu.position + Vector3(0, 0.3, 0))
-			await get_tree().create_timer(0.6).timeout
+			await get_tree().create_timer(0.55).timeout
+			# Ilk dumanin omru (0.5 sn) snap'e yetismiyordu — kul bulutu
+			# tam kare aninda tazelenir (dogrulma dumani karede gorunsun).
+			_spawn_particles(oncu.position + Vector3(0, 0.3, 0),
+					CreatureBalance.BIRTH_ASH_COLOR, 10)
+			await get_tree().create_timer(0.15).timeout
 			_snap(save_path.replace(".png", "_gece_dogma.png"))
 			# KARE 2: SURU Ocak'a yururken — arkadan, yakin kadraj
 			await get_tree().create_timer(0.6).timeout  # dogrulma bitsin
