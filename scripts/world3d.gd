@@ -7955,7 +7955,7 @@ func _on_night_started() -> void:
 	else:
 		_spawn_night_wave(DayNight.day)
 
-## O gecenin yaratiklarini harita kenarindan dogurur.
+## O gecenin yaratiklarini dogus halkasindan dogurur (_pick_spawn_cell).
 func _spawn_night_wave(night: int) -> void:
 	var want: int = CreatureBalance.min_wave_count(night)
 	# KESIF 16.3 gece sertlesmesi: yakilan ana tas basina dalga buyur
@@ -7976,31 +7976,77 @@ func _spawn_night_wave(night: int) -> void:
 		if cell == Vector2i(-999, -999):
 			break
 		var tip: String = String(mix[i]) if i < mix.size() else "normal"
-		spawn_creature(cell, tip, hp_mult)
+		var cr = spawn_creature(cell, tip, hp_mult)
+		# TOPRAKTAN DOGRULMA: govde gomuk baslar, kul-duman + kabuk
+		# parcaciklariyla 1 sn'de dogrulur; bu surece AI islemez (daze).
+		cr.birth(CreatureBalance.BIRTH_SECONDS)
+		var dp: Vector3 = cr.position + Vector3(0, 0.15, 0)
+		_spawn_particles(dp, CreatureBalance.BIRTH_ASH_COLOR, 12)
+		_spawn_particles(dp, CreatureBalance.BIRTH_SHELL_COLOR, 7)
 		sayim[tip] = int(sayim.get(tip, 0)) + 1
 		made += 1
 	print("NIGHTWAVE: gece=%d istenen=%d dogan=%d aktif=%d karisim=%s" % [
 		night, want, made, _live_creature_count(), str(sayim)])
 
-## Kenar bandinda, oyuncuya ve Ocak'a uzak, yurunebilir bir hucre sec.
-## Bulamazsa (-999,-999) doner. Denemeler ilerledikce mesafe kurali gevser
-## (kucuk haritada hic dogmamasindansa biraz yakin dogsun).
+## DOGUS HALKASI (yaratik-gece): kenardan DEGIL — Ocak (yoksa oyuncu)
+## merkezli halkada, sisli/ormanlik yonler AGIRLIKLI rastgele nokta.
+## Oyuncunun gorus alaninda (frustum) dogmaz. Aday bulunamazsa halka
+## denemeler ilerledikce daralir; en son eski kenar banti son care.
 func _pick_spawn_cell() -> Vector2i:
 	var pc := _player_cell()
 	var hc := get_hearth()
-	var m: int = CreatureBalance.SPAWN_EDGE_MARGIN
+	var merkez := hc
+	if merkez == Vector2i(-999, -999):
+		merkez = _camp_at("ocak")
+	if merkez == Vector2i(-999, -999):
+		merkez = pc
+	var adaylar: Array = []      # {cell, puan}
+	var toplam_puan := 0.0
 	for attempt in CreatureBalance.SPAWN_TRIES:
 		var relax: float = float(attempt) / float(CreatureBalance.SPAWN_TRIES)
-		var min_p: float = float(CreatureBalance.SPAWN_MIN_DIST_PLAYER) * (1.0 - relax)
-		var min_h: float = float(CreatureBalance.SPAWN_MIN_DIST_HEARTH) * (1.0 - relax)
-		var cell := _random_edge_cell(m)
+		# Halka daralmasi: bulamadikca ic yaricap dusurulur (kucuk/kapali
+		# haritada hic dogmamasindansa biraz yakin dogsun).
+		var r_min: float = lerpf(float(CreatureBalance.SPAWN_RING_MIN), 8.0, relax)
+		var r_max: float = float(CreatureBalance.SPAWN_RING_MAX)
+		var aci: float = randf() * TAU
+		var r: float = randf_range(r_min, r_max)
+		var cell := Vector2i(merkez.x + int(round(cos(aci) * r)),
+				merkez.y + int(round(sin(aci) * r)))
+		if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
+			continue
 		if not is_walkable(cell):
 			continue
+		var min_p: float = float(CreatureBalance.SPAWN_MIN_DIST_PLAYER) * (1.0 - relax)
 		if Vector2(cell - pc).length() < min_p:
 			continue
-		if hc != Vector2i(-999, -999) and Vector2(cell - hc).length() < min_h:
+		# GOZ ONUNDE BELIRME YASAK: kamera bu noktayi goruyorsa atla.
+		if camera != null and camera.is_position_in_frustum(
+				_cell_center(cell) + Vector3(0, 0.6, 0)):
 			continue
-		return cell
+		# Agirlik: sisli yer cazip (karanliktan gelirler), agac dibi cazip.
+		var puan: float = 1.0 \
+				+ maxf(0.0, _sis_at_cell(cell)) * CreatureBalance.SPAWN_FOG_BONUS
+		for komsu in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if String(_objects.get(cell + komsu, "")) == "T":
+				puan += CreatureBalance.SPAWN_TREE_BONUS
+				break
+		adaylar.append({"cell": cell, "puan": puan})
+		toplam_puan += puan
+		if adaylar.size() >= CreatureBalance.SPAWN_CANDIDATES:
+			break
+	if not adaylar.is_empty():
+		var sec: float = randf() * toplam_puan
+		for a: Dictionary in adaylar:
+			sec -= float(a["puan"])
+			if sec <= 0.0:
+				return Vector2i(a["cell"])
+		return Vector2i(adaylar[-1]["cell"])
+	# SON CARE: eski kenar banti (halka tamamen kapaliysa gece bos gecmesin)
+	for attempt in CreatureBalance.SPAWN_TRIES:
+		var cell := _random_edge_cell(CreatureBalance.SPAWN_EDGE_MARGIN)
+		if is_walkable(cell) and Vector2(cell - pc).length() \
+				>= float(CreatureBalance.SPAWN_MIN_DIST_PLAYER) * 0.5:
+			return cell
 	return Vector2i(-999, -999)
 
 ## Haritanin dort kenarindan birinde, ic bantta rastgele hucre.

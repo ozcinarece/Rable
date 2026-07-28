@@ -195,12 +195,24 @@ const MIN_MAX_COUNT := 12
 ## Ayni anda sahnede durabilecek en fazla yaratik (mobil performans).
 const MIN_MAX_ACTIVE := 12
 
-## Dogus kurallari: harita kenarindan ic bantta, oyuncuya/Ocak'a en az
-## bu kadar hucre uzakta dogar (kucuk haritada kural gevsetilir).
-const SPAWN_EDGE_MARGIN := 2      # kenardan ic bant genisligi
+## Dogus kurallari (yaratik-gece): harita kenarindan DEGIL — Ocak/oyuncu
+## MERKEZLI HALKA: merkeze SPAWN_RING_MIN..MAX hucre mesafede, sisli/
+## ormanlik yonler agirlikli. Oyuncunun GORUS ALANINDA dogmaz (frustum).
+const SPAWN_RING_MIN := 25        # halka ic yaricapi (hucre)
+const SPAWN_RING_MAX := 40        # halka dis yaricapi
+const SPAWN_FOG_BONUS := 3.0      # aday puani: sis yogunlugu (0..1) * bu
+const SPAWN_TREE_BONUS := 1.5     # aday puani: bitisik agac varsa ek
+const SPAWN_CANDIDATES := 12      # agirlikli secim icin aday sayisi
+const SPAWN_EDGE_MARGIN := 2      # (eski kenar banti — son care fallback)
 const SPAWN_MIN_DIST_PLAYER := 10 # oyuncuya en az bu kadar hucre
 const SPAWN_MIN_DIST_HEARTH := 8  # Ocak'a en az bu kadar hucre
 const SPAWN_TRIES := 40           # uygun hucre arama denemesi
+
+## Topraktan dogrulma: kul-duman + kabuk parcaciklari, govde bu surede
+## yukselir; surece AI islemez (daze). Renkler dunya diliyle.
+const BIRTH_SECONDS := 1.0
+const BIRTH_ASH_COLOR := Color(0.45, 0.43, 0.40)   # kul-duman grisi
+const BIRTH_SHELL_COLOR := Color(0.30, 0.24, 0.18) # kabuk/toprak koyusu
 
 ## Hedefleme: oyuncu bu menzildeyse oyuncuyu, degilse Ocak'i kovalar.
 # --- YOL BULMA (Asama 2) ------------------------------------------------
