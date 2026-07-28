@@ -112,21 +112,30 @@ func _build_visual() -> void:
 	var glb := _resolve_glb(String(Balance.stat(type, "glb", "")))
 	if glb != "":
 		var inst: Node3D = load(glb).instantiate()
-		var ab := _aabb_of(inst)
-		# BOY OLC-GIR (yaratik-gece): tabloda target_h varsa olcek TAHMIN
-		# DEGIL, AABB'den hesap: modelin gercek boyu kac olursa olsun
-		# oyunda target_h metre durur (rig'li creature_2 icin sart —
-		# Armature 0.01 olcekli geliyor, sabit "scale" yaniltir).
-		var hedef_boy := float(Balance.stat(type, "target_h", 0.0))
-		if hedef_boy > 0.0 and ab.size.y > 0.001:
-			scl = hedef_boy / ab.size.y
-		inst.scale = Vector3.ONE * scl
-		# MERKEZLI MODEL TUZAGI: Meshy modelleri origin'i GOVDE
-		# MERKEZINDE veriyor (olculdu: creature_normal Y [-0.5 .. +0.5]).
-		# Oldugu gibi eklenirse yaratigin YARISI zeminin altinda kalir.
-		# AABB'nin alt kenari kadar yukari kaldiriliyor.
-		if ab.size.y > 0.001:
-			inst.position.y = -ab.position.y * scl
+		var iskeletli: bool = not inst.find_children(
+				"*", "Skeleton3D", true, false).is_empty()
+		if iskeletli:
+			# ISKELETLI MODELDE AABB YALAN SOYLER (olculdu, iki yonde):
+			# dugum-compose AABB 0.017 dedi -> hesaplanan olcek yaratigi
+			# 70 m'lik deve cevirdi; mesh-uzayi AABB 1.7 der; GERCEK
+			# render (1 m referans kuple xvfb'de cekildi) ~1.05 m.
+			# Iskelette olcek TABLODAN gelir, origin zaten ayakta.
+			inst.scale = Vector3.ONE * scl
+		else:
+			# Rig'siz modelde boy AABB'den OLCULUR: tabloda target_h
+			# varsa olcek hesaplanir (tahmin degil).
+			var ab := _aabb_of(inst)
+			var hedef_boy := float(Balance.stat(type, "target_h", 0.0))
+			if hedef_boy > 0.0 and ab.size.y > 0.001:
+				scl = hedef_boy / ab.size.y
+				inst.scale = Vector3.ONE * scl
+			else:
+				inst.scale = Vector3.ONE * scl
+			# MERKEZLI MODEL TUZAGI: Meshy modelleri origin'i GOVDE
+			# MERKEZINDE veriyor (olculdu: creature_normal Y [-0.5..0.5]).
+			# AABB'nin alt kenari kadar yukari kaldiriliyor.
+			if ab.size.y > 0.001:
+				inst.position.y = -ab.position.y * scl
 		_body.add_child(inst)
 		_setup_glb_anim(inst)
 		_setup_glb_emission(inst)

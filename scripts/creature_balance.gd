@@ -32,10 +32,11 @@ const ESSENCE_ITEM := "oz"
 const TYPES := {
 	"normal": {
 		"hp": 10, "speed": 2.0, "damage": 6, "essence": 1,
-		"first_night": 1, "eye": "turkuaz", "scale": 1.0,
-		# target_h: modelin OYUNDAKI boyu (metre) — scl bundan OLCULEREK
-		# hesaplanir (AABB), "scale" tahminine dusulmez. Karakter ~1 birim;
-		# yaratik hafif iri dursun diye 1.1.
+		# scale: creature_2 rig'li; iskeletli modelde AABB'den boy
+		# HESAPLANAMIYOR (creature.gd'de olculmus gerekce). Render boyu
+		# xvfb'de 1 m referans kuple OLCULDU: ham ~1.05 m -> hafif iri
+		# hedef icin 1.05. target_h yalnizca gomulme derinligi/goz isigi.
+		"first_night": 1, "eye": "turkuaz", "scale": 1.05,
 		"target_h": 1.1,
 		"glb": "res://assets/models/creatures/creature_2.glb",
 	},
@@ -268,8 +269,11 @@ const ANIM_WALK_REF_SPEED := 1.6
 # --- CATLAK ISIMASI (yaratik-gece) ---------------------------------------
 ## Model dokusunda emissive VAR (olculdu) — enerji katmani buradan.
 ## Gece kaynagi su/cim ailesiyle AYNI (_update_water_night cagirir).
-const EMISSION_DAY := 0.7          # gunduz soluk
-const EMISSION_NIGHT := 2.4        # gece parlar
+## Enerji OLCULDU (xvfb A/B): dokunun emissive katmani tum govdeyi
+## kapliyor; 2.4 verilince yaratik pembe fenere dondu. 1.15'te govde
+## mor-gri kalip catlaklar seciliyor.
+const EMISSION_DAY := 0.55         # gunduz soluk
+const EMISSION_NIGHT := 1.15       # gece belirginlesir (fener degil)
 const EMISSION_LIGHT_DIM := 0.45   # isik alaninda soner (Isik Kurami)
 
 # --- Çevre (15.5): KAZI_SU 11.1 tablosu ----------------------------------

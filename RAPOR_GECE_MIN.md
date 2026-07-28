@@ -194,3 +194,20 @@ Görev metnindeki "yalnız debug spawn" durumu bayattı: dalga, hedefleme,
 | Gruplu dalga (WAVE_*) | veri duruyor, minimal tek grup | ileri tur |
 | İdle/saldırı klibi + 4 tip GLB'si | ANIM_ATTACK + TYPES.glb yolları | dosya-bekler |
 | Çiğ et düşüren hayvan | — | yiyecek zinciri fazı |
+
+## KARE TURLARININ DERSLERİ (3 tur + yerel doğrulama)
+
+1. **Tur 1:** dalga bilerek sisli/ormanlık yerde doğuyor → kamera ağaç
+   tacına gömüldü. Çözüm: kareler kamp yakını açık hücrede sahnelenen
+   sürüyle (aynı doğum yolu), sayı kanıtı NIGHTTEST'te.
+2. **Tur 2:** `elapsed=120` verilen gece fazı `phase_progress 0.5`
+   üretti — ışıklar ŞAFAK renklerine harmanlandı (pembe/gündüz
+   kareler). `elapsed=0` = derin gece.
+3. **Tur 3 + yerel xvfb:** yaratık karede yoktu çünkü DEV boyutluydu —
+   iskeletli GLB'de AABB İKİ YÖNDE de yalan söylüyor (compose 0.017 /
+   mesh 1.7 / gerçek render ~1.05 m). Konteynerde xvfb+mesa ile oyun
+   dışı tek-yaratık sahnesi kurulup 1 m referans küple ÖLÇÜLDÜ; ölçek
+   artık tablodan (1.05). Emission de aynı yolla A/B'lendi: 2.4
+   yaratığı pembe fenere çeviriyordu → 1.15.
+   **Yerel görsel doğrulama hattı artık var** (xvfb-run + SceneTree
+   script) — kare iterasyonu CI beklemeden dakikalar içinde.

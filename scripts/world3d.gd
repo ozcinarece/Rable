@@ -1475,15 +1475,20 @@ func _run_creature_selftest() -> void:
 	# MODEL BAGLAMA KANITI (yaratik-gece): rig'li creature_2 gercekten mi
 	# yuklendi, yurume klibi bulundu mu, boy dogru mu? Model yoksa
 	# placeholder'a duser — o zaman anim bos gorunur (bilincli fallback).
-	var boy: float = 0.0
-	if cr._body != null:
+	# Iskeletli modelde AABB'den boy okunamiyor (creature.gd gerekce) —
+	# olcek tablodan basilir; rig'siz modelde AABB boyu olculur.
+	var iskelet: bool = cr._body != null and not cr._body.find_children(
+			"*", "Skeleton3D", true, false).is_empty()
+	var boy: float = -1.0
+	if not iskelet and cr._body != null:
 		for mi: MeshInstance3D in cr._body.find_children("*", "MeshInstance3D", true, false):
 			if mi.mesh != null:
 				boy = maxf(boy, mi.mesh.get_aabb().size.y \
 						* mi.global_transform.basis.get_scale().y)
-	print("CREATUREMODEL: anim='%s' klip_sayisi=%d boy=%.2f mat=%d" % [
+	print("CREATUREMODEL: anim='%s' klip_sayisi=%d iskelet=%s olcek=%.2f boy=%.2f mat=%d" % [
 			cr._walk_anim,
 			(cr._anim.get_animation_list().size() if cr._anim != null else 0),
+			str(iskelet), float(CreatureBalance.stat("normal", "scale", 1.0)),
 			boy, cr._glb_mats.size()])
 	if cr._walk_anim == "" and cr._anim != null:
 		push_error("CREATURE: rig var ama yurume klibi bulunamadi")
