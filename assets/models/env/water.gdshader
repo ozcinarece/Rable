@@ -62,9 +62,13 @@ uniform int quality : hint_range(0, 1) = 1;
 uniform float flow_speed_scale = 3.0; // akış hızı çarpanı
 
 varying vec3 v_world_pos;
+// 4.7 DUZELTMESI: CUSTOM0 yalniz vertex asamasinda okunabilir;
+// fragment'taki akis yonu icin varying ile tasinir.
+varying vec2 v_flow_dir;
 
 void vertex() {
     v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+    v_flow_dir = CUSTOM0.xy;
     if (quality > 0) {
         // hafif kabartı — iki sinüs, faz dünya konumundan (dikişsiz)
         float b = sin(v_world_pos.x * bob_frequency + TIME * 0.9)
@@ -78,7 +82,7 @@ void fragment() {
     float depth_f = COLOR.r;
     float shore_f = COLOR.g;
     float flow_f  = COLOR.b;
-    vec2 flow_dir = CUSTOM0.xy;
+    vec2 flow_dir = v_flow_dir;
 
     // ---------- 1. RENK BANTLARI ----------
     vec3 col = color_shallow;

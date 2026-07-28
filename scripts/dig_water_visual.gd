@@ -145,3 +145,65 @@ static func tier_of(name: String) -> Dictionary:
 static func hash01(x: int, y: int, salt: int) -> float:
 	var h := (x * 73856093) ^ (y * 19349663) ^ (salt * 83492791)
 	return float(absi(h) % 100003) / 100003.0
+
+
+# =======================================================================
+# C2. SU SHADER V1 (assets/models/env/water.gdshader) — VERI SOZLESMESI
+# =======================================================================
+## Bayrak: false -> eski yol birebir geri (CPU-pisirme _water_rgba +
+## world3d icindeki eski satir-ici shader). Gorev sarti: geri donulebilir.
+const SU_SHADER_V1 := true
+## COLOR.r = derinlik_m / V1_DEEP_M (0..1). Test derinlikleri bantlara
+## guvenli oturur: 0.14m->0.23 sig, 0.35m->0.58 orta, 0.90m->1.0 derin.
+const V1_DEEP_M := 0.60
+## COLOR.g = 1 - derinlik_m / V1_SHORE_M (eski kiyi rampasiyla ayni olcek).
+const V1_SHORE_M := 0.22
+## UV = dunya xz / bu deger (desen hucre yereli DEGIL, sozlesme geregi).
+const V1_UV_OLCEK := 8.0
+## Kopuk replikasi esigi: shore_f bunun ustundeyse kopuk bolgesi
+## (shader foam_width=0.35 varsayilaniyla uyumlu).
+const V1_FOAM_ESIK := 0.65
+const V1_FOAM_COLOR := Color(0.918, 0.969, 0.969)
+## Shader bant sabitlerinin BIREBIR kopyasi (water.gdshader varsayilanlari).
+## Ikisi TEK SOZLESME: shader degisirse burasi da degisir, WATERCOLORTEST
+## kirmizi yanar — kirmizi-su sinifinin v1 sigortasi.
+const V1_SHALLOW := Color(0.498, 0.831, 0.847)
+const V1_MID := Color(0.353, 0.663, 0.902)
+const V1_DEEP := Color(0.231, 0.490, 0.769)
+const V1_BAND1 := 0.33
+const V1_BAND2 := 0.66
+const V1_BAND_SOFT := 0.03
+const V1_ALPHA_SIG := 0.72
+const V1_ALPHA_DERIN := 0.94
+## Akis isareti tazeligi (ms): boru transferi bu suredir olduysa hucre
+## "akan" cizilir (mesh zaten seviye degisiminde yeniden kurulur).
+const V1_AKIS_TAZE_MS := 4000
+
+static func v1_encode(depth_m: float, flow: float = 0.0) -> Color:
+	return Color(clampf(depth_m / V1_DEEP_M, 0.0, 1.0),
+			clampf(1.0 - depth_m / V1_SHORE_M, 0.0, 1.0),
+			clampf(flow, 0.0, 1.0), 1.0)
+
+static func _sstep(e0: float, e1: float, x: float) -> float:
+	var t := clampf((x - e0) / (e1 - e0), 0.0, 1.0)
+	return t * t * (3.0 - 2.0 * t)
+
+## Shader renk bandinin CPU replikasi — WATERCOLORTEST bunu dogrular.
+static func v1_band_color(depth_f: float) -> Color:
+	var col := V1_SHALLOW
+	col = col.lerp(V1_MID,
+			_sstep(V1_BAND1 - V1_BAND_SOFT, V1_BAND1 + V1_BAND_SOFT, depth_f))
+	col = col.lerp(V1_DEEP,
+			_sstep(V1_BAND2 - V1_BAND_SOFT, V1_BAND2 + V1_BAND_SOFT, depth_f))
+	return col
+
+
+# =======================================================================
+# C3. CIM SHADER V1 (assets/models/env/grass.gdshader)
+# =======================================================================
+## Bayrak: false -> sus otu/cicek eski GLB materyalleriyle cizilir.
+const CIM_SHADER_V1 := true
+## Cicek kopyasi: baslar savrulmasin (sozlesme notu) — dusuk ruzgar.
+const CIM_CICEK_WIND := 0.03
+const CIM_CICEK_TIP := Color(0.85, 0.55, 0.70)      # yumusak pembe uc
+const CIM_CICEK_BASE := Color(0.373, 0.478, 0.322)  # sap yesili (ayni kok)
