@@ -248,8 +248,9 @@ const STUCK_SIDE_SPEED := 0.8     # yana kayma hizi carpani
 const STUCK_SIDE_SECONDS := 0.8   # ne kadar sure yana kayar
 const STEP_EPSILON := 0.02        # "ilerledi" sayilan en kucuk mesafe (m)
 
-## Safak temizligi: kalan yaratiklar bu surede erir.
-const DAWN_MELT_SECONDS := 0.5
+## Safak temizligi: kalanlar 2 sn'de KUL OLUP dagilir (gorev kurali) —
+## oz dusurmezler, oz yalniz oldurulunce.
+const DAWN_MELT_SECONDS := 2.0
 
 # --- ANIMASYON (yaratik-gece: creature_2.glb rig'i) ----------------------
 ## GLB'de UC klip var (olculdu): Running / Walk_with_Walker_Support /
@@ -278,6 +279,11 @@ const LADDER_CLIMB_FACTOR := 0.5   # merdiven varsa süre yarıya
 const RAISE_CLIMB_SECONDS := {1: 1.0, 2: 2.0}  # yükselti tırmanma
 const SWIM_SLOW := 0.30            # su: %70 yavaş (0.30 çarpan)
 const LIGHT_SLOW := 0.90           # ışık alanında %10 yavaş
+## Isik alani yaricaplari (yaratik-gece): mesale omni_range ile ayni;
+## Ocak atesi daha genis. "Isik onlari sagirlastirir" — Isik Kurami'nin
+## gorunur hali: yavaslama + catlak isimasi sonmesi bu menzilde.
+const LIGHT_RANGE_TORCH := 4.5
+const LIGHT_RANGE_HEARTH := 6.0
 
 # --- Tuzaklar (15.6) -----------------------------------------------------
 const SPIKE_SLOW := 0.60           # kazık: %40 yavaş (0.60 çarpan)

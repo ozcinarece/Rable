@@ -299,11 +299,16 @@ func lunge(dir: Vector3) -> void:
 	tw.tween_property(_body, "position:x", 0.0, 0.12)
 	tw.parallel().tween_property(_body, "position:z", 0.0, 0.12)
 
-## SAFAK: olmeden erir (oz DUSURMEZ — gunesten kacti, oldurulmedi).
+## SAFAK: olmeden KUL OLUP erir (oz DUSURMEZ — gunesten kacti,
+## oldurulmedi). Isima gunesle birlikte soner, govde kule cokup dagilir.
 func melt(seconds: float) -> void:
 	if not alive:
 		return
 	alive = false
+	for m: BaseMaterial3D in _glb_mats:
+		m.emission_energy_multiplier = 0.0  # catlaklar once soner
+	if _eye_light != null:
+		_eye_light.visible = false
 	var tw := create_tween()
 	tw.tween_property(self, "scale", Vector3(0.05, 0.05, 0.05), seconds) \
 			.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN)

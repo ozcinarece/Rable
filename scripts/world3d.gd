@@ -8096,15 +8096,14 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 		cr.daze -= delta
 		cr.set_moving(false)
 		return
-	# HEDEF: HER ZAMAN OCAK (kullanici karari). Once "yakinsa oyuncuyu
-	# kovala" vardi; yaratiklar oyuncunun pesine takilip kampi
-	# unutuyordu ve gecenin derdi "kac" oluyordu. Artik dert "OCAGI
-	# KORU": yaratiklar duz ocaga yuruyor, oyuncu araya girmek zorunda.
-	# OCAK YOKSA: eskiden oyuncuya yonelirlerdi ve oyunda tam da sikayet
-	# edilen sey oluyordu ("yaratiklar beni hedefliyordu") — cunku yeni
-	# oyunda ocak HENUZ KURULMAMIS oluyor. Artik kamp merkezine (terk
-	# edilmis ocak yeri) yuruyorlar: gecenin derdi ilk geceden itibaren
-	# BIR YERI korumak. Oyuncu ancak yollarina cikarsa vurulur.
+	# HEDEF (yaratik-gece kurali): OYUNCU MENZILDEYSE oyuncu, degilse
+	# Ocak. Gecmis: once "yakinsa kovala" vardi, oyuncu pesinde kampi
+	# unutuyorlardi; sonra "hep Ocak" yapildi. Yeni kural ikisinin
+	# ortasi — SINIRLI kovalamaca: AGGRO_RANGE icindeki oyuncu hedef
+	# olur ama menzilden cikinca yaratik BIRAKIP Ocak'a doner (bitmeyen
+	# takip geri gelmez; yoluna cikan oyuncu da gormezden gelinmez).
+	# OCAK YOKSA kamp merkezindeki ocak isaretine yurunur: gecenin derdi
+	# ilk geceden itibaren BIR YERI korumak.
 	var hedef_hucre := hearth
 	if hedef_hucre == Vector2i(-999, -999):
 		# Prefabtaki Ocak isareti: kamp merkezinden farkli bir yere
@@ -8112,6 +8111,8 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 		hedef_hucre = _camp_at("ocak")
 	var target := _cell_center(hedef_hucre) if hedef_hucre != Vector2i(-999, -999) \
 			else ppos
+	if dist_to_player <= CreatureBalance.AGGRO_RANGE:
+		target = ppos
 	# KESIF 16.6: ortam yaratiklari base'e YURUMEZ — dert oyuncudur.
 	# Damar catlagi yakindaysa isiga cekilir (dogal oz lambasi: akilli
 	# oyuncu tuzak olarak kullanir).
@@ -8166,6 +8167,12 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 		return
 	dir = dir.normalized()
 	var speed: float = cr.speed
+	# ISIK TEPKISI (Isik Kurami'nin gorunur hali): Ocak/mesale isiginda
+	# %10 yavaslar + catlak isimasi soner (emission kismasi creature'da).
+	var isikta := _pos_in_light(cr.position)
+	cr.set_in_light(isikta)
+	if isikta:
+		speed *= CreatureBalance.LIGHT_SLOW
 	if cr.side_time > 0.0:
 		cr.side_time -= delta
 		dir = Vector3(-dir.z, 0.0, dir.x) * cr.side_sign
@@ -8219,6 +8226,26 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 	cr.set_moving(adim >= CreatureBalance.STEP_EPSILON)
 	cr.face_direction(dir)
 
+## Nokta yanan Ocak ya da bir mesalenin isik alaninda mi? (yaratik-gece)
+## Mesale sayisi kucuk (sozluk), yaratik <= 12 — kare basi maliyet onemsiz.
+func _pos_in_light(pos: Vector3) -> bool:
+	var hc := get_hearth()
+	if hc != Vector2i(-999, -999) and _hearth_light != null \
+			and is_instance_valid(_hearth_light) and _hearth_light.visible:
+		var hp := _cell_center(hc)
+		if Vector2(pos.x - hp.x, pos.z - hp.z).length() \
+				<= CreatureBalance.LIGHT_RANGE_HEARTH:
+			return true
+	for c: Vector2i in _torch_lights:
+		var l = _torch_lights[c]
+		if l == null or not is_instance_valid(l) or not l.visible:
+			continue
+		var tp := _cell_center(c)
+		if Vector2(pos.x - tp.x, pos.z - tp.z).length() \
+				<= CreatureBalance.LIGHT_RANGE_TORCH:
+			return true
+	return false
+
 ## Ilerleyemedi: sayaci isle, esigi gecince bir sure YANA kay (A* yerine).
 func _bump_stuck(cr, delta: float) -> void:
 	cr.stuck_time += delta
@@ -8232,6 +8259,10 @@ func _on_dawn_clear_creatures() -> void:
 	var left := _live_creature_count()
 	for cr in _creatures:
 		if is_instance_valid(cr) and cr.is_alive():
+			# KUL OLUP DAGILMA: gri kul bulutu + govde 2 sn'de erir.
+			# OZ DUSMEZ (oz yalniz oldurulunce — melt bunu garantiler).
+			_spawn_particles(cr.position + Vector3(0, 0.5, 0),
+					CreatureBalance.BIRTH_ASH_COLOR, 10)
 			cr.melt(CreatureBalance.DAWN_MELT_SECONDS)
 	_creatures.clear()
 	if _night_wave_active:
