@@ -39,6 +39,15 @@ var _mat: StandardMaterial3D
 var _eye_light: OmniLight3D
 var _simplified: bool = false
 
+# --- MODEL/ANIMASYON durumu (yaratik-gece) -------------------------------
+var daze: float = 0.0            # dogma sersemligi: bu sure AI islemez
+var _anim: AnimationPlayer = null
+var _walk_anim: String = ""
+var _glb_mats: Array = []        # emission kontrolu icin kopya materyaller
+var _moving: bool = false
+var _night_on: bool = false
+var _in_light: bool = false
+
 func setup(creature_type: String, hp_mult: float = 1.0) -> void:
 	type = creature_type
 	max_hp = maxi(1, int(round(float(Balance.stat(type, "hp", 10)) * hp_mult)))
@@ -69,14 +78,23 @@ func _resolve_glb(yol: String) -> String:
 	var alt := "res://assets/models/test/" + yol.get_file()
 	return alt if ResourceLoader.exists(alt) else ""
 
-## Sahnedeki tum MeshInstance3D'lerin birlesik AABB'si (yerel uzayda).
+## Tum MeshInstance3D'lerin birlesik AABB'si — verilen kok dugumun
+## UZAYINDA. Mesh'in ham AABB'si YETMEZ: rig'li GLB'lerde Armature 0.01
+## olcekle geliyor (creature_2'de olculdu) ve ham AABB'yle hesaplanan
+## olcek yaratigi toz zerresine cevirdi. Ara dugum donusumlerini katarak
+## olculuyor.
 func _aabb_of(node: Node) -> AABB:
 	var out := AABB()
 	var ilk := true
 	for mi: MeshInstance3D in node.find_children("*", "MeshInstance3D", true, false):
 		if mi.mesh == null:
 			continue
-		var a := mi.mesh.get_aabb()
+		var xf := Transform3D.IDENTITY
+		var n: Node3D = mi
+		while n != null and n != node:
+			xf = n.transform * xf
+			n = n.get_parent() as Node3D
+		var a := xf * mi.mesh.get_aabb()
 		if ilk:
 			out = a
 			ilk = false
@@ -94,15 +112,24 @@ func _build_visual() -> void:
 	var glb := _resolve_glb(String(Balance.stat(type, "glb", "")))
 	if glb != "":
 		var inst: Node3D = load(glb).instantiate()
+		var ab := _aabb_of(inst)
+		# BOY OLC-GIR (yaratik-gece): tabloda target_h varsa olcek TAHMIN
+		# DEGIL, AABB'den hesap: modelin gercek boyu kac olursa olsun
+		# oyunda target_h metre durur (rig'li creature_2 icin sart —
+		# Armature 0.01 olcekli geliyor, sabit "scale" yaniltir).
+		var hedef_boy := float(Balance.stat(type, "target_h", 0.0))
+		if hedef_boy > 0.0 and ab.size.y > 0.001:
+			scl = hedef_boy / ab.size.y
 		inst.scale = Vector3.ONE * scl
 		# MERKEZLI MODEL TUZAGI: Meshy modelleri origin'i GOVDE
 		# MERKEZINDE veriyor (olculdu: creature_normal Y [-0.5 .. +0.5]).
 		# Oldugu gibi eklenirse yaratigin YARISI zeminin altinda kalir.
 		# AABB'nin alt kenari kadar yukari kaldiriliyor.
-		var ab := _aabb_of(inst)
 		if ab.size.y > 0.001:
 			inst.position.y = -ab.position.y * scl
 		_body.add_child(inst)
+		_setup_glb_anim(inst)
+		_setup_glb_emission(inst)
 		return
 	# Gövde: yuvarlak küre, soğuk mor-gri
 	var body := MeshInstance3D.new()
@@ -138,6 +165,99 @@ func _build_visual() -> void:
 	_body.add_child(glow)
 	_eye_light = glow
 
+# --- GLB ANIMASYON + ISIMA kurulumu (yaratik-gece) ------------------------
+
+## Rig'li modelin AnimationPlayer'ini bul, yurume klibini coz.
+## Klip adi tabloda (ANIM_WALK); import adi degisirse "walk" geceni ara.
+func _setup_glb_anim(inst: Node3D) -> void:
+	var players := inst.find_children("*", "AnimationPlayer", true, false)
+	if players.is_empty():
+		return
+	_anim = players[0]
+	var adlar := _anim.get_animation_list()
+	for a in adlar:
+		if String(a).contains(Balance.ANIM_WALK):
+			_walk_anim = String(a)
+			break
+	if _walk_anim == "" :
+		for a in adlar:
+			if String(a).to_lower().contains("walk"):
+				_walk_anim = String(a)
+				break
+	# Idle klibi yok: dururken klip DURUR (ilk karede bekler).
+	if _walk_anim != "":
+		var klip := _anim.get_animation(_walk_anim)
+		if klip != null:
+			klip.loop_mode = Animation.LOOP_LINEAR  # yurudukce donsun
+		_anim.play(_walk_anim)
+		_anim.pause()
+
+## Emission kontrolu: paylasilmis GLB materyallerini KOPYALAYIP surface
+## override'a koy — bir yaratigin isiga girmesi digerlerini sondurmesin.
+func _setup_glb_emission(inst: Node3D) -> void:
+	for mi: MeshInstance3D in inst.find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh == null:
+			continue
+		for s in mi.mesh.get_surface_count():
+			var m := mi.get_active_material(s)
+			if m is BaseMaterial3D:
+				var kopya: BaseMaterial3D = m.duplicate()
+				kopya.emission_enabled = true
+				mi.set_surface_override_material(s, kopya)
+				_glb_mats.append(kopya)
+	_update_emission()
+
+## Catlak isimasi: gece parlar, isik alaninda soner (Isik Kurami gorseli).
+## Gece kaynagi su/cim ailesiyle AYNI (_update_water_night cagirir).
+func _update_emission() -> void:
+	if _glb_mats.is_empty():
+		return
+	var enerji: float = Balance.EMISSION_NIGHT if _night_on else Balance.EMISSION_DAY
+	if _in_light:
+		enerji *= Balance.EMISSION_LIGHT_DIM
+	for m: BaseMaterial3D in _glb_mats:
+		m.emission_energy_multiplier = enerji
+
+func set_night(on: bool) -> void:
+	if on == _night_on:
+		return
+	_night_on = on
+	_update_emission()
+
+func set_in_light(on: bool) -> void:
+	if on == _in_light:
+		return
+	_in_light = on
+	_update_emission()
+
+## Hareket durumu: yuruyunce klip HIZLA SENKRON oynar (kayma yok),
+## durunca 0.15 sn yumusaklikla durur. Rig yoksa sessizce yok sayilir.
+func set_moving(on: bool) -> void:
+	if _anim == null or _walk_anim == "":
+		return
+	if on == _moving:
+		return
+	_moving = on
+	if on:
+		_anim.speed_scale = speed / maxf(Balance.ANIM_WALK_REF_SPEED, 0.01)
+		_anim.play(_walk_anim, Balance.ANIM_BLEND)
+	else:
+		_anim.pause()
+
+## DOGMA (yaratik-gece): topraktan dogrulma — govde gomuk baslar,
+## `seconds` icinde yukselir; bu surece AI islemez (daze).
+func birth(seconds: float) -> void:
+	if _body == null:
+		return
+	daze = seconds
+	var boy := 0.9 * float(Balance.stat(type, "target_h",
+			float(Balance.stat(type, "scale", 1.0)) * 0.6))
+	_body.position.y = -boy
+	var tw := create_tween()
+	tw.tween_interval(seconds * 0.35)  # once kul-duman gorunsun
+	tw.tween_property(_body, "position:y", 0.0, seconds * 0.65) \
+			.set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+
 func cell() -> Vector2i:
 	return Vector2i(floori(position.x), floori(position.z))
 
@@ -154,6 +274,13 @@ func set_simplified(on: bool) -> void:
 	_simplified = on
 	if _eye_light != null:
 		_eye_light.visible = not on
+	# MOBIL PERF (yaratik-gece): uzakta iskelet animasyonu da durur —
+	# rig'li modelde en pahali kalem bu.
+	if _anim != null and _walk_anim != "":
+		if on:
+			_anim.pause()
+		elif _moving:
+			_anim.play(_walk_anim, Balance.ANIM_BLEND)
 
 ## Gittigi yone donsun (govde yalpasi yok — ucuz).
 func face_direction(dir: Vector3) -> void:
@@ -193,6 +320,14 @@ func take_hit(dmg: int, knockback_dir: Vector3) -> void:
 		_die()
 
 func _flash() -> void:
+	# GLB modelde flaş EMISSION uzerinden (albedo dokudan geliyor).
+	if not _glb_mats.is_empty():
+		for m: BaseMaterial3D in _glb_mats:
+			m.emission_energy_multiplier = 5.0
+		var twg := create_tween()
+		twg.tween_interval(0.06)
+		twg.tween_callback(_update_emission)  # normal duzeye don
+		return
 	if _mat == null:
 		return
 	var base := _mat.albedo_color

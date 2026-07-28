@@ -33,7 +33,11 @@ const TYPES := {
 	"normal": {
 		"hp": 10, "speed": 2.0, "damage": 6, "essence": 1,
 		"first_night": 1, "eye": "turkuaz", "scale": 1.0,
-		"glb": "res://assets/models/creatures/creature_normal.glb",
+		# target_h: modelin OYUNDAKI boyu (metre) — scl bundan OLCULEREK
+		# hesaplanir (AABB), "scale" tahminine dusulmez. Karakter ~1 birim;
+		# yaratik hafif iri dursun diye 1.1.
+		"target_h": 1.1,
+		"glb": "res://assets/models/creatures/creature_2.glb",
 	},
 	"tirmanici": {
 		"hp": 6, "speed": 2.2, "damage": 4, "essence": 1,
@@ -234,6 +238,26 @@ const STEP_EPSILON := 0.02        # "ilerledi" sayilan en kucuk mesafe (m)
 
 ## Safak temizligi: kalan yaratiklar bu surede erir.
 const DAWN_MELT_SECONDS := 0.5
+
+# --- ANIMASYON (yaratik-gece: creature_2.glb rig'i) ----------------------
+## GLB'de UC klip var (olculdu): Running / Walk_with_Walker_Support /
+## Walking. Kullanici karari: yurume aksiyonu Walk_with_Walker_Support.
+## Idle ve saldiri klibi YOK — durunca klip durdurulur, saldiri lunge
+## tween'iyle kalir (ANIM_ATTACK dosya-bekler kanca: klip gelirse ismi
+## buraya yazilir, kod hazir).
+const ANIM_WALK := "Walk_with_Walker_Support"
+const ANIM_ATTACK := ""            # savurma klibi gelince adi buraya
+const ANIM_BLEND := 0.15           # gecis yumusatmasi (sn)
+## Yurume klibinin YAZILDIGI hiz (m/sn) — speed_scale = hiz / bu deger.
+## Kayma olursa elle ayarlanacak tek sayi budur.
+const ANIM_WALK_REF_SPEED := 1.6
+
+# --- CATLAK ISIMASI (yaratik-gece) ---------------------------------------
+## Model dokusunda emissive VAR (olculdu) — enerji katmani buradan.
+## Gece kaynagi su/cim ailesiyle AYNI (_update_water_night cagirir).
+const EMISSION_DAY := 0.7          # gunduz soluk
+const EMISSION_NIGHT := 2.4        # gece parlar
+const EMISSION_LIGHT_DIM := 0.45   # isik alaninda soner (Isik Kurami)
 
 # --- Çevre (15.5): KAZI_SU 11.1 tablosu ----------------------------------
 const CLIMB_SECONDS := {2: 3.0, 3: 6.0, 4: 999.0}  # depth -> tırmanma süresi

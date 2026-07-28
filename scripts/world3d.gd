@@ -1471,6 +1471,21 @@ func _run_creature_selftest() -> void:
 	_clear_creatures()
 	var cc := Vector2i(52, 52)
 	var cr = spawn_creature(cc, "normal")
+	# MODEL BAGLAMA KANITI (yaratik-gece): rig'li creature_2 gercekten mi
+	# yuklendi, yurume klibi bulundu mu, boy dogru mu? Model yoksa
+	# placeholder'a duser — o zaman anim bos gorunur (bilincli fallback).
+	var boy: float = 0.0
+	if cr._body != null:
+		for mi: MeshInstance3D in cr._body.find_children("*", "MeshInstance3D", true, false):
+			if mi.mesh != null:
+				boy = maxf(boy, mi.mesh.get_aabb().size.y \
+						* mi.global_transform.basis.get_scale().y)
+	print("CREATUREMODEL: anim='%s' klip_sayisi=%d boy=%.2f mat=%d" % [
+			cr._walk_anim,
+			(cr._anim.get_animation_list().size() if cr._anim != null else 0),
+			boy, cr._glb_mats.size()])
+	if cr._walk_anim == "" and cr._anim != null:
+		push_error("CREATURE: rig var ama yurume klibi bulunamadi")
 	var hp0: int = cr.hp
 	cr.take_hit(3, Vector3.FORWARD)
 	var dmg_ok: bool = cr.hp == hp0 - 3
@@ -3699,11 +3714,15 @@ func _apply_water_tier() -> void:
 ## Gece bandi: Ocak/mesale isiginin sicak yansimasi. Gunes supurmesiyle
 ## ayni yerden guncelleniyor (kare basina tek setter, ucuz).
 func _update_water_night() -> void:
-	if _lake_mat == null:
-		return
 	var night: bool = DayNight.phase in ["night", "dusk"]
-	_lake_mat.set_shader_parameter("night_mix",
-			DigWaterVisual.NIGHT_WARM_MIX if night else 0.0)
+	if _lake_mat != null:
+		_lake_mat.set_shader_parameter("night_mix",
+				DigWaterVisual.NIGHT_WARM_MIX if night else 0.0)
+	# YARATIK catlak isimasi da AYNI gece kaynagindan yanar/soner
+	# (su/cim ailesiyle tek kaynak sozlesmesi; faz degisince, her kare degil).
+	for cr in _creatures:
+		if is_instance_valid(cr) and cr.has_method("set_night"):
+			cr.set_night(night)
 
 # Bos cim hucrelerinin bir kismina sus otu serpistirir (toplanmaz).
 var _decor_nodes: Array = []
@@ -7832,6 +7851,7 @@ func spawn_creature(cell: Vector2i, ctype: String = "normal",
 	cr.died.connect(_on_creature_died)
 	add_child(cr)
 	_creatures.append(cr)
+	cr.set_night(DayNight.phase in ["night", "dusk"])  # isima gece kaynagi
 	_spawn_particles(cr.position + Vector3(0, 0.4, 0), CreatureBalance.EYE_COLOR, 6)
 	return cr
 
@@ -8024,6 +8044,12 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 	var dist_to_player: float = Vector2(cr.position.x - ppos.x,
 			cr.position.z - ppos.z).length()
 	cr.set_simplified(dist_to_player > CreatureBalance.FAR_SIMPLIFY_DIST)
+	# DOGMA SERSEMLIGI (yaratik-gece): topraktan dogrulurken AI islemez —
+	# efekt okunur, yaratik "yerden cikip" sonra yurumeye baslar.
+	if cr.daze > 0.0:
+		cr.daze -= delta
+		cr.set_moving(false)
+		return
 	# HEDEF: HER ZAMAN OCAK (kullanici karari). Once "yakinsa oyuncuyu
 	# kovala" vardi; yaratiklar oyuncunun pesine takilip kampi
 	# unutuyordu ve gecenin derdi "kac" oluyordu. Artik dert "OCAGI
@@ -8062,6 +8088,7 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 			Health.damage(dmg)
 			_night_damage_taken = true
 			cr.lunge(Vector3(ppos.x - cr.position.x, 0.0, ppos.z - cr.position.z))
+		cr.set_moving(false)
 		return
 	# --- YOL BULMA (Asama 2) --------------------------------------------
 	# Once duz cizgi vardi; engelde yana kayiyordu, yani duvar dolasamiyor
@@ -8089,6 +8116,7 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 		aim = Vector3(float(nc.x) + 0.5, cr.position.y, float(nc.y) + 0.5)
 	var dir := Vector3(aim.x - cr.position.x, 0.0, aim.z - cr.position.z)
 	if dir.length() < 0.01:
+		cr.set_moving(false)
 		return
 	dir = dir.normalized()
 	var speed: float = cr.speed
@@ -8130,15 +8158,19 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 							CreatureBalance.STRUCT_DAMAGE * sm, dir)
 					cr.lunge(dir)
 			_bump_stuck(cr, delta)
+			cr.set_moving(false)
 			return
 	var before: Vector3 = cr.position
 	cr.position = Vector3(next_pos.x,
 			ground_height(next_pos.x, next_pos.z), next_pos.z)
-	if Vector2(cr.position.x - before.x, cr.position.z - before.z).length() \
-			< CreatureBalance.STEP_EPSILON:
+	var adim: float = Vector2(cr.position.x - before.x,
+			cr.position.z - before.z).length()
+	if adim < CreatureBalance.STEP_EPSILON:
 		_bump_stuck(cr, delta)
 	else:
 		cr.stuck_time = 0.0
+	# ANIMASYON SENKRONU: klip yalniz GERCEKTEN ilerlerken oynar (kayma yok).
+	cr.set_moving(adim >= CreatureBalance.STEP_EPSILON)
 	cr.face_direction(dir)
 
 ## Ilerleyemedi: sayaci isle, esigi gecince bir sure YANA kay (A* yerine).
