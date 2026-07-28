@@ -61,6 +61,7 @@ Durum değerleri: ÇALIŞIYOR / BRANCH'TE / YARIM / SADECE-PLAN / BOZUK.
 | Alet/Silah | Meshy GLB aletler elde (balta/kazma/kürek) | ÇALIŞIYOR | main | player3d.gd (TOOL_HOLD/grip_pt) | karakter | — | veri-tabanlı kavrama |
 | Alet/Silah | Alet bağlama ofsetleri veri + çoğalma fix | BRANCH'TE | alet-gorsel-fix | tool_profiles.gd (ATTACH) | — | TOOL_HOLD ile MUHTEMELEN BAYAT (22 Tem tabanlı) | merge etme; kapatılabilir |
 | Yapı/Base | Yerleştirme modu (hayalet + döndür + onay) | ÇALIŞIYOR | main | world3d.gd, build_preview.gd | — | — | — |
+| Yapı/Base | Modüler çit (kenar-bazlı; direk paylaşımı, kapı boşluğu, tarla koruma bayrağı) | ÇALIŞIYOR | cit-sistemi | world3d.gd, fence_balance.gd | yapı sistemi | söküm/tamir yok; fence_gate + ikon dosya-bekler | FENCETEST hızlı CI'da |
 | Yapı/Base | Duvar/kapı/zemin/yatak/meşale/tuzak | ÇALIŞIYOR | main | world3d.gd (PLACE_MODELS) | — | tuzağın yaratık hedefi yok | — |
 | Yapı/Base | Yapı canı + çekiçle sökme (malzeme iade) | ÇALIŞIYOR | main | world3d.gd (_structure_take_hit) | — | — | — |
 | Yapı/Base | Tezgah (kullanıcı GLB'si) | ÇALIŞIYOR | main | world3d.gd | craft | — | h=0.6 oranlandı |

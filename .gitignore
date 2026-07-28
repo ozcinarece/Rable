@@ -8,3 +8,7 @@
 
 # Maske PNG'lerinin editor importlari: repoya girmez (pull cakismasi olmasin)
 data/*.import
+# TUM .import dosyalari repo disi (proje geleneği: 459 asset, 0 .import).
+# Yerel calisma turlari git add -A ile yuzlercesini dallara sokmustu;
+# merge'de temizlendi, bu kural tekrarini onler.
+*.import

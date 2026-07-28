@@ -118,4 +118,5 @@ Araçlar,"Harita Ressamı v2 (2 katman + zoom/pan + oto-3D)",ÇALIŞIYOR,main,sc
 Araçlar,"Test modu (sınırsız envanter + tüm eşyalar + kilitsiz araştırma)",ÇALIŞIYOR,main,test_mode.gd,—,KAPATMAK: TestMode.ENABLED=false,web'de de aktif
 Araçlar,"Grip Ayar Modu (aleti oyun içinde hizala)",ÇALIŞIYOR,main,"hud.gd, player3d.gd",—,yalnız debug build (web'de yok),user://grip_overrides.json
 Legacy,"2D oyun (world.gd, World.tscn)",ÇALIŞIYOR,main,"world.gd, player.gd",—,"3D ile İKİ AYRI OYUN; tarım+gece dalgası artık 3D'de de var",web kökünde yayında
-Yaratık,"creature_2.glb rig + doğuş halkası + ışık tepkisi + şafak külü",ÇALIŞIYOR,yaratik-gece,"creature.gd, world3d.gd, creature_balance.gd",gündüz/gece,idle/saldırı klibi ve 4 tip modeli dosya-bekler,NIGHTTEST+CREATUREMODEL hızlı CI'da
+Yaratık,"creature_2.glb rig + doğuş halkası + ışık tepkisi + şafak külü",ÇALIŞIYOR,main,"creature.gd, world3d.gd, creature_balance.gd",gündüz/gece,idle/saldırı klibi ve 4 tip modeli dosya-bekler,NIGHTTEST+CREATUREMODEL hızlı CI'da
+Yapı/Base,"Modüler çit (kenar-bazlı, direk paylaşımı, kapı boşluğu)",ÇALIŞIYOR,main,"world3d.gd, fence_balance.gd",yapı sistemi,"söküm/tamir yok; fence_gate dosya-bekler",FENCETEST hızlı CI'da; tarla koruma bayrağı hazır

@@ -63,6 +63,9 @@ static func find_path(world, start: Vector2i, goal: Vector2i,
 			var step := _enter_cost(world, nb, traits)
 			if step < 0:
 				continue
+			# CIT (kenar-bazli): gecis maliyetine kenar bedeli eklenir —
+			# hucre bos olsa da aradaki cit "kir ya da dolas" dedirtir.
+			step += int(world.creature_edge_cost(cur, nb, traits))
 			var ng: int = int(gscore[cur]) + step
 			if gscore.has(nb) and ng >= int(gscore[nb]):
 				continue
