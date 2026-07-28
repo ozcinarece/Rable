@@ -116,3 +116,81 @@ ve log'da. Ayrıca `_gece_yaratik.png` karesi üretilir.
   (`WAVE_GROUPS_*`) sonraki tur.
 - **Ocak yıkılırsa özel sonuç yok.** `HEARTH_BREAK_NEXT_WAVE_MULT` bağlanmadı.
 - **Ses yok.** Projede ses çalar henüz yok.
+
+---
+
+# CANLANDIRMA TURU (görev: GECE DALGASI + YARATIK CANLANDIRMA)
+
+Bu tur minimal döngünün ÜZERİNE görsel/davranış katmanı ekledi.
+Görev metnindeki "yalnız debug spawn" durumu bayattı: dalga, hedefleme,
+şafak temizliği ve A* zaten main'deydi — bu tur eksik olanları yaptı.
+
+## 1. MODEL: creature_2.glb (rig'li)
+
+- Normal tip artık `creature_2.glb` (placeholder prosedürel gövde
+  fallback olarak duruyor; diğer 4 tip dosya-bekler).
+- **Boy ölçümü dersi:** ham mesh AABB'siyle ölçek hesaplanınca yaratık
+  0.01 m çıktı — rig'li GLB'de Armature 0.01 ölçekle geliyor.
+  `_aabb_of` artık ara düğüm dönüşümlerini katıyor; `target_h: 1.1`
+  verisinden ölçek OTOMATİK (`CREATUREMODEL boy=1.10` CI kanıtı).
+- **Animasyon:** GLB'de 3 klip var (Running / Walk_with_Walker_Support /
+  Walking). Kullanıcı kararıyla yürüme = `Walk_with_Walker_Support`;
+  0.15 sn blend; `speed_scale = hız / ANIM_WALK_REF_SPEED` (kayma yok).
+  Idle ve saldırı klibi GLB'DE YOK — dururken klip durur, saldırı
+  lunge tween'i; `ANIM_ATTACK` sabiti dosya-bekler kanca (klip gelince
+  adı yazılır, kod hazır). Uzakta animasyon da durur (mobil).
+- **Çatlak ışıması:** dokudaki emissive'e enerji katmanı: gündüz 0.7,
+  gece 2.4 (kaynak su/çim ailesiyle AYNI: `_update_water_night`),
+  ışık alanında 0.45 çarpanla söner. Vuruş flaşı GLB'de emission'dan.
+
+## 2. DOĞUŞ HALKASI (kenar spawn kalktı)
+
+- Ocak (yoksa kamp işareti/oyuncu) merkezli **25-40 hücre** halkası;
+  sisli hücreler (keşif sis değeri × 3) ve ağaç dibi (+1.5) ağırlıklı.
+- **Göz önünde belirme yasak:** kamera frustum'undaki aday atlanır.
+- Aday çıkmazsa halka 8'e kadar daralır; en son eski kenar bandı.
+- Doğma: gövde gömük başlar, kül-duman + kabuk parçacıkları, 1 sn'de
+  doğrulur; bu sürece AI işlemez (`daze`).
+
+## 3. DAVRANIŞ
+
+- **Hedef kuralı görev metnine göre değişti:** oyuncu AGGRO_RANGE (7)
+  içindeyse hedef oyuncu; menzilden çıkınca BIRAKIP Ocak'a döner.
+  (Tarihçe: "hep Ocak" kuralı oyuncu şikâyeti üzerine konmuştu;
+  sınırlı kovalamaca iki ucun ortası — bitmeyen takip geri gelmedi.)
+- **A* korundu:** görev "A* YOK" derken minimal kurulumu tarif
+  ediyordu; A* Aşama 2'de yazılmış, test edilmiş ve main'de çalışır
+  durumda. Çalışan sistemi söküp düz yönelmeye dönmek gerileme olurdu
+  — muhafazakâr karar: dokunulmadı (takılma/yana kayma yedeği duruyor).
+- **Işık tepkisi:** yanan Ocak (6 hücre) / meşale (4.5 hücre) alanında
+  %10 yavaşlama + ışıma sönmesi ("ışık onları sağırlaştırır").
+
+## 4. ŞAFAK
+
+- Kalanlar 2 sn'de KÜL olup dağılır: kül bulutu + ışıma söner + gövde
+  erir. Öz DÜŞMEZ (öz yalnız öldürülünce). "Gece N atlatıldı" pill'i
+  ve gerçek dalgaya bağlı "Gece N — Geliyorlar" zaten vardı.
+
+## 5. DOĞRULAMA
+
+- **NIGHTTEST (hızlı CI, karesiz):** gece-3 eğrisi (beklenen=doğan=4),
+  halka bandı (ölçüldü 32.0-37.5), daze, çevrili Ocak'a giden yaratığın
+  DUVARI kırması (8 duvarlı kuşatma, toplam HP azalması), ışık alanı
+  sorgusu, şafak kalan=0. Başarısızlık push_error → CI kırmızı.
+- **CI ağı onarımı bu dala da taşındı:** Godot 4.7 push_error'u
+  "USER ERROR" değil "ERROR + at: push_error" basıyor; desen eklendi.
+- **Kareler (ağır CI):** doğma efekti / sürü Ocak'a yürürken /
+  meşale ışığında / şafak erimesi — hepsi GERÇEK gece ışığında
+  (faz elle geceye alınır, dalga çift tetiklenmez).
+
+## KALAN YARATIK KANCALARI (tarama)
+
+| Kanca | Yer | Durum |
+|---|---|---|
+| Yüzülür hücrede tırmanma yasağı + %70 yavaş | world3d.gd `TODO(yaratik-11.6)` | Aşama 4 (çevre) işi |
+| Çukur/merdiven/yükselti tırmanmaları | creature_balance CLIMB_* verisi hazır | Aşama 4 işi |
+| Tuzak tetiklenmeleri (kazık/kütük/alev/lamba/alarm) | veri hazır, kod yok | Aşama 5 işi |
+| Sabah bonusu morning_reward + Ocak bedeli | creature_balance MORNING_REWARD | Aşama 6 işi |
+| Gruplu dalga (WAVE_*) | veri duruyor, minimal tek grup | ileri tur |
+| İdle/saldırı klibi + 4 tip GLB'si | ANIM_ATTACK + TYPES.glb yolları | dosya-bekler |
+| Çiğ et düşüren hayvan | — | yiyecek zinciri fazı |

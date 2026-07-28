@@ -89,17 +89,23 @@ Durum değerleri: ÇALIŞIYOR / BRANCH'TE / YARIM / SADECE-PLAN / BOZUK.
 | Gündüz-Gece | Gün döngüsü + fazlar + gün sayacı pill | ÇALIŞIYOR | main | daynight.gd, hud.gd | — | — | — |
 | Gündüz-Gece | Gece görseli (vinyet, ışıklar) | ÇALIŞIYOR | main | hud.gd, world3d.gd | — | — | — |
 | Gündüz-Gece | Uyku (yatakta sabaha atla, +30 can) | ÇALIŞIYOR | main | world3d.gd, hud.gd | yatak | — | — |
-| Gündüz-Gece | "Geliyorlar..." gece uyarısı | ÇALIŞIYOR | main | hud.gd | — | uyarı var ama GELEN YOK (dalga plan) | yanıltıcı olabilir |
-| Gündüz-Gece | night_started → yaratık dalga tetiği | YARIM | main | daynight.gd:14 (sinyal) | yaratık AI | 3D'de KANCA BOŞ (yalnız 2D legacy bağlı) | daynight yorumunda "PLANLI" yazıyor |
-| Yaratık | Yaratık varlığı (can, take_hit, geri tepme) | ÇALIŞIYOR | main | creature.gd | — | yalnız DEBUG spawn (K tuşu / test) | Aşama 1 |
+| Gündüz-Gece | "Geliyorlar..." gece uyarısı | ÇALIŞIYOR | main | hud.gd | — | — | uyarı GERÇEK: dalga geliyor |
+| Gündüz-Gece | night_started → yaratık dalga tetiği | ÇALIŞIYOR | main | world3d.gd (_on_night_started) | — | — | sefer gecesi simülasyona sapar (keşif) |
+| Yaratık | Yaratık varlığı (can, take_hit, geri tepme) | ÇALIŞIYOR | main | creature.gd | — | — | gece dalgasıyla canlı |
 | Yaratık | Öz düşürme | ÇALIŞIYOR | main | creature.gd | — | özün harcama yeri yok | — |
-| Yaratık | AI çekirdeği (A* yol bulma + kır/dolaş kararı) | BRANCH'TE | yaratik-ai | creature_ai.gd, world3d.gd (creature_break_cost) | gece dalgası | — | kırılabilir engel kapalı değil PAHALI; AITEST hızlı CI'da |
-| Yaratık | Gece dalga sistemi (tek grup + tip karışımı) | BRANCH'TE | yaratik-ai | world3d.gd (_spawn_night_wave), creature_balance.gd (wave_mix) | gün döngüsü | gruplu dalga (WAVE_*) hâlâ kullanılmıyor | NIGHTTEST CI'da; karışım kuralları YARATIKLAR.md |
-| Yaratık | Yaratık tipleri (5 tip: normal/tırmanıcı/yüzücü/kırıcı/hızlı) | BRANCH'TE | yaratik-ai | creature_balance.gd (TYPES), YARATIKLAR.md, YARATIKLAR.csv | AI, dalga | modelleri yok (aşağıdaki satır) | climb/swim hem yol bulmada hem harekette; YARATIKTIP hızlı CI'da |
-| Yaratık | Yaratık GLB modelleri (5 tip) | SADECE-PLAN | — | assets/models/creatures/ (BOŞ) | yaratık tipleri | 5 dosyanın hiçbiri yok; prosedürel gövde çiziliyor | yol tabloda tanımlı, dosya gelince kendiliğinden devreye girer |
+| Yaratık | AI çekirdeği (A* yol bulma + kır/dolaş kararı) | ÇALIŞIYOR | main | creature_ai.gd, world3d.gd (creature_break_cost) | gece dalgası | — | kırılabilir engel kapalı değil PAHALI; AITEST hızlı CI'da |
+| Yaratık | Gece dalga sistemi (tek grup + tip karışımı) | ÇALIŞIYOR | main | world3d.gd (_spawn_night_wave), creature_balance.gd (wave_mix) | gün döngüsü | gruplu dalga (WAVE_*) hâlâ kullanılmıyor | NIGHTTEST CI'da; karışım kuralları YARATIKLAR.md |
+| Yaratık | Yaratık tipleri (5 tip: normal/tırmanıcı/yüzücü/kırıcı/hızlı) | ÇALIŞIYOR | main | creature_balance.gd (TYPES), YARATIKLAR.md, YARATIKLAR.csv | AI, dalga | modelleri yok (aşağıdaki satır) | climb/swim hem yol bulmada hem harekette; YARATIKTIP hızlı CI'da |
+| Yaratık | Yaratık GLB modelleri | YARIM | yaratik-gece | creature_2.glb (rig+yürüme animasyonu, normal tip) | — | diğer 4 tip dosya-bekler (prosedürel gövde) | boy AABB ölçümüyle 1.1 m; CREATUREMODEL CI'da |
 | Yaratık | Tuzak/kazık yaratık tetiklenmesi | YARIM | main | world3d.gd | yaratık AI | yapılar yerleşiyor, hedefleri yok | Aşama 5 |
 | Yaratık | Alev hendeği | SADECE-PLAN | — | creature_balance.gd:70 (FLAME_DPS), item_db kaydı | — | veri var, kod yok | — |
-| Yaratık | Ocak hedefi (HER ZAMAN ocak; oyuncu yalnız temasta) | ÇALIŞIYOR | main | world3d.gd (_tick_one_creature) | dalga | sabah ekonomisi/is_banked HÂLÂ YOK | oyuncu kovalama kaldırıldı: gecenin derdi "Ocağı koru" |
+| Yaratık | Hedef: AGGRO menzilinde oyuncu, yoksa Ocak | ÇALIŞIYOR | yaratik-gece | world3d.gd (_tick_one_creature) | dalga | sabah ekonomisi/is_banked HÂLÂ YOK | sınırlı kovalamaca: menzilden çıkınca Ocak'a döner |
+| Yaratık | Doğuş halkası (merkez 25-40, sis/orman ağırlıklı, görüş yasağı) | ÇALIŞIYOR | yaratik-gece | world3d.gd (_pick_spawn_cell), creature_balance.gd (SPAWN_RING_*) | keşif sisi | — | NIGHTTEST hızlı CI'da |
+| Yaratık | Topraktan doğrulma efekti (kül-duman + 1sn doğrulma) | ÇALIŞIYOR | yaratik-gece | creature.gd (birth), world3d.gd | — | — | doğrulurken AI işlemez (daze) |
+| Yaratık | Yürüme animasyonu (hız senkron, 0.15sn blend) | ÇALIŞIYOR | yaratik-gece | creature.gd (set_moving) | creature_2.glb | idle/saldırı klibi GLB'de yok (kanca hazır) | uzakta animasyon durur (mobil) |
+| Yaratık | Çatlak ışıması (gece parlar, ışıkta söner) | ÇALIŞIYOR | yaratik-gece | creature.gd (emission), world3d.gd (_pos_in_light) | gündüz/gece | — | su/çim ailesiyle aynı gece kaynağı |
+| Yaratık | Işıkta %10 yavaşlama (Işık Kuramı) | ÇALIŞIYOR | yaratik-gece | world3d.gd (_pos_in_light), creature_balance.gd (LIGHT_*) | Ocak/meşale | — | — |
+| Yaratık | Şafak kül erimesi (2sn, öz düşmez) | ÇALIŞIYOR | yaratik-gece | creature.gd (melt), world3d.gd | — | — | "Gece N atlatıldı" pill |
 | Yaratık | Çiğ et düşüren hayvan | SADECE-PLAN | — | — | — | — | yiyecek zinciri kapısı |
 | UI | HUD (barlar, dock, ana/saldırı butonu, bağlam) | ÇALIŞIYOR | main | hud.gd | — | — | — |
 | UI | Ayarlar (kalite/FPS/Yeni Oyun/Kapat) | ÇALIŞIYOR | main | hud.gd | — | Kapat taşması 01:19 APK'da düzeltildi | CLICKTEST ✓ |
