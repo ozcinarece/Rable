@@ -80,13 +80,15 @@ jobs:
           # hatalari (ornegin WATERCOLORTEST) Godot'da "USER ERROR"
           # olarak basiliyor. Ilk halinde yalniz parse/script hatasi
           # araniyordu, yani su rengi bozulsa CI yine yesil yanardi.
-          if grep -qE "Parse Error|SCRIPT ERROR|USER ERROR" /tmp/fast.log; then
+          # 4.7 GERCEGI (yerelde olculdu): push_error "USER ERROR:" degil
+          # "ERROR: <mesaj>" + "at: push_error (...)" basiyor; desen eklendi.
+          if grep -qE "Parse Error|SCRIPT ERROR|USER ERROR|at: push_error" /tmp/fast.log; then
             echo "::error::GDScript hatasi var (yukariya bak)"
             exit 1
           fi
           # tail-60 uyari seliyle dolunca sayisal test satirlari
           # gorunmez kaliyordu; onemli olcum satirlarini ayrica bas.
-          grep -E "WATERCOLORTEST|TREETEST|KESIFTEST|KORTEST|SEFERTEST|UYUTEST|UZAKTEST|KESIFPERF" /tmp/fast.log || true
+          grep -E "WATERCOLORTEST|TREETEST|KESIFTEST|KORTEST|SEFERTEST|UYUTEST|UZAKTEST|KESIFPERF|FENCETEST" /tmp/fast.log || true
           if ! grep -q "FASTTESTS: bitti" /tmp/fast.log; then
             echo "::error::Hizli testler tamamlanmadi"
             exit 1

@@ -29,6 +29,7 @@ const HudScript = preload("res://scripts/hud.gd")
 const CreatureScript = preload("res://scripts/creature.gd")
 const CreatureBalance = preload("res://scripts/creature_balance.gd")
 const CreatureAI = preload("res://scripts/creature_ai.gd")
+const FenceBalance = preload("res://scripts/fence_balance.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const ChestStore = preload("res://scripts/inventory.gd")  # 14.1 sandik deposu
@@ -124,6 +125,12 @@ const PLACE_MODELS := {
 	"zemin": {"model": "res://assets/models/tools/floor.glb",
 			"h": 0.08, "solid": false, "long": 1.0,
 			"behavior": "floor", "max_hp": 40},
+	# CIT (cit-sistemi): KENAR-bazli tek istisna — hucreyi degil iki
+	# hucre arasindaki kenari kaplar. behavior "fence" tum akislari
+	# (gecerlilik/hayalet/yerlestirme) kenar koduna saptirir; max_hp
+	# ve olcekler fence_balance.gd'de.
+	"cit": {"model": "res://assets/models/test/fence_rail.glb",
+			"h": 0.3, "solid": false, "behavior": "fence", "max_hp": 40},
 	"mesale": {"model": "res://assets/models/tools/campfire-stand.glb",
 			"h": 0.7, "solid": false,
 			"behavior": "torch", "max_hp": 30},
@@ -631,6 +638,7 @@ func _setup_screenshot(save_path: String) -> void:
 	_snap(save_path.replace(".png", "_tarim.png"))
 	await _run_road_test(save_path)
 	await _run_camp_test(save_path)
+	await _run_fence_frames(save_path)
 	await _run_env_showcase(save_path)
 	await _run_perf_probe(save_path)
 	await _run_night_test(save_path)
@@ -1460,6 +1468,7 @@ func _run_fast_tests() -> void:
 	_run_sefer_test()
 	_run_uyuyan_test()
 	_run_uzak_test()
+	_run_fence_test()
 	_run_kesif_perf()
 	_run_save_load_selftest()
 	print("FASTTESTS: bitti")
@@ -1718,6 +1727,7 @@ func _run_save_load_selftest() -> void:
 	var json1 := FileAccess.get_file_as_string(SaveManager.SAVE3D_PATH)
 	# 3) Bellegi boz (yukleme gercekten dosyadan mi?)
 	_depth.clear(); _water_level.clear(); _placed.clear()
+	_clear_fences()
 	for n in _placed_nodes.values():
 		n.queue_free()
 	_placed_nodes.clear(); _clear_chests(); _objects.clear()
@@ -2080,7 +2090,340 @@ func creature_break_cost(cell: Vector2i, traits: Dictionary = {}) -> int:
 ## 11.5 MERDIVEN KURALI: from->to adimina izin var mi? Derin cukurdan
 ## (depth >= LADDER_DEEP_MIN) daha sig bir hucreye CIKMAK ancak merdiven
 ## erisimi varsa mumkun (1-2 serbest). player3d._try_move buraya danisir.
+# --- CIT SISTEMI (kenar-bazli yapi katmani) -------------------------------
+## Cit HUCRE degil KENAR kaplar. Anahtar Vector3i(x, y, eksen):
+##   eksen 0 = (x,y) hucresinin KUZEY kenari (üstteki komsuyla arasi)
+##   eksen 1 = (x,y) hucresinin BATI kenari (soldaki komsuyla arasi)
+## Guney/dogu kenarlari komsu hucrenin kuzey/bati kenari olarak yazilir —
+## boylece her fiziksel kenarin TEK anahtari olur (cift kayit imkansiz).
+var _fences: Dictionary = {}      # kenar -> {"hp": int}
+var _fence_nodes: Dictionary = {} # kenar -> ray holder (Node3D)
+var _fence_posts: Dictionary = {} # kose Vector2i -> {"node", "n"} (paylasimli)
+
+## Iki 4-komsu hucre arasindaki kenarin kanonik anahtari.
+## Komsu degillerse gecersiz anahtar doner.
+func _edge_between(a: Vector2i, b: Vector2i) -> Vector3i:
+	var d := b - a
+	if d == Vector2i(0, -1):
+		return Vector3i(a.x, a.y, 0)
+	if d == Vector2i(0, 1):
+		return Vector3i(b.x, b.y, 0)
+	if d == Vector2i(-1, 0):
+		return Vector3i(a.x, a.y, 1)
+	if d == Vector2i(1, 0):
+		return Vector3i(b.x, b.y, 1)
+	return Vector3i(-999, -999, -999)
+
+## a'dan b'ye gecis citle kapali mi? (iki yon de ayni kenari bulur)
+func fence_blocked(a: Vector2i, b: Vector2i) -> bool:
+	var e := _edge_between(a, b)
+	return e.z != -999 and _fences.has(e)
+
+## Kenarin iki KOSE noktasi (izgara koseleri; dunya x-z duzleminde).
+func _edge_corners(e: Vector3i) -> Array:
+	if e.z == 0:  # kuzey kenari: X boyunca, z = e.y
+		return [Vector2i(e.x, e.y), Vector2i(e.x + 1, e.y)]
+	return [Vector2i(e.x, e.y), Vector2i(e.x, e.y + 1)]  # bati: Z boyunca
+
+func _edge_mid(e: Vector3i) -> Vector3:
+	var m := Vector2(float(e.x) + (0.5 if e.z == 0 else 0.0),
+			float(e.y) + (0.0 if e.z == 0 else 0.5))
+	return Vector3(m.x, ground_height(m.x, m.y), m.y)
+
+## Kenara cit kur (kayittan gelirken hp korunur).
+func _set_fence(e: Vector3i, hp: int = -1) -> void:
+	if _fences.has(e):
+		return
+	_fences[e] = {"hp": (hp if hp > 0 else FenceBalance.MAX_HP)}
+	# RAY: X'i kenara esnetilir (TEK istisna — gerekce fence_balance),
+	# kesit ayri olceklenir ki uzarken kalinlasmasin.
+	var holder := Node3D.new()
+	var ray: Node3D = load(FenceBalance.RAIL_GLB).instantiate()
+	ray.scale = Vector3(FenceBalance.RAIL_LEN_X, FenceBalance.RAIL_SECTION,
+			FenceBalance.RAIL_SECTION)
+	ray.position.y = FenceBalance.RAIL_Y
+	_tame_meshy_materials(ray, FenceBalance.TINT)
+	holder.add_child(ray)
+	holder.position = _edge_mid(e)
+	if e.z == 1:
+		holder.rotation_degrees.y = 90.0  # ray modeli X-uzun; bati kenari Z-uzun
+	add_child(holder)
+	_fence_nodes[e] = holder
+	# DIREKLER kenar UCLARINA — komsu cit kenarlari direği PAYLASIR
+	# (refcount): ayni koseye ikinci cit gelirse direk tekrar dikilmez.
+	for c: Vector2i in _edge_corners(e):
+		if _fence_posts.has(c):
+			_fence_posts[c]["n"] = int(_fence_posts[c]["n"]) + 1
+			continue
+		var post: Node3D = load(FenceBalance.POST_GLB).instantiate()
+		var ps := FenceBalance.POST_H / 1.9  # model boyu OLCULDU: 1.9
+		post.scale = Vector3.ONE * ps
+		post.position = Vector3(float(c.x),
+				ground_height(float(c.x), float(c.y)) + FenceBalance.POST_H * 0.5,
+				float(c.y))
+		_tame_meshy_materials(post, FenceBalance.TINT)
+		add_child(post)
+		_fence_posts[c] = {"node": post, "n": 1}
+	_update_fence_protection(e)
+
+## Kenardan citi kaldir; paylasilan direkler sayac sifirlaninca gider.
+func _remove_fence(e: Vector3i) -> void:
+	if not _fences.has(e):
+		return
+	_fences.erase(e)
+	var node: Node3D = _fence_nodes.get(e, null)
+	if node != null and is_instance_valid(node):
+		node.queue_free()
+	_fence_nodes.erase(e)
+	for c: Vector2i in _edge_corners(e):
+		if not _fence_posts.has(c):
+			continue
+		_fence_posts[c]["n"] = int(_fence_posts[c]["n"]) - 1
+		if int(_fence_posts[c]["n"]) <= 0:
+			var pn: Node3D = _fence_posts[c]["node"]
+			if pn != null and is_instance_valid(pn):
+				pn.queue_free()
+			_fence_posts.erase(c)
+	_update_fence_protection(e)
+
+func _clear_fences() -> void:
+	for e: Vector3i in _fence_nodes:
+		var n: Node3D = _fence_nodes[e]
+		if n != null and is_instance_valid(n):
+			n.queue_free()
+	for c: Vector2i in _fence_posts:
+		var pn: Node3D = _fence_posts[c]["node"]
+		if pn != null and is_instance_valid(pn):
+			pn.queue_free()
+	_fences.clear()
+	_fence_nodes.clear()
+	_fence_posts.clear()
+
+## Cite hasar (yaratik vurusu). Kirilinca kenar acilir — dogal gedik.
+func _fence_take_hit(e: Vector3i, damage: int, dir: Vector3) -> void:
+	if not _fences.has(e):
+		return
+	_fences[e]["hp"] = int(_fences[e]["hp"]) - damage
+	var node: Node3D = _fence_nodes.get(e, null)
+	if node != null and is_instance_valid(node):
+		var base: Vector3 = node.position
+		var tw := create_tween()
+		tw.tween_property(node, "position", base + dir.normalized() * 0.05, 0.05)
+		tw.tween_property(node, "position", base, 0.14)
+	_spawn_particles(_edge_mid(e) + Vector3(0, 0.5, 0),
+			Color(0.62, 0.48, 0.32), 5)
+	if int(_fences[e]["hp"]) <= 0:
+		_spawn_particles(_edge_mid(e) + Vector3(0, 0.4, 0),
+				Color(0.55, 0.42, 0.30), 10)
+		_remove_fence(e)
+	_dirty = true
+
+## Yaratik yol maliyeti (kenar): citsiz 0; citli kenar PAHALI ama acik
+## (kir-ya-da-dolas karari hucre engelleriyle ayni dilde). Tirmanici
+## alcak citi kolay asar.
+func creature_edge_cost(a: Vector2i, b: Vector2i, traits: Dictionary = {}) -> int:
+	if not fence_blocked(a, b):
+		return 0
+	return FenceBalance.EDGE_COST_CLIMB if bool(traits.get("climb", false)) 			else FenceBalance.EDGE_COST
+
+# --- Tarla korumasi (gorev 5: FIKIR -> uygulandi) -------------------------
+## 4 kenari da citli hucre "korunakli". Simdilik VERI BAYRAGI: tarla
+## sistemine yazilir; ileride kus/zararli sistemi gelirse hazir.
+func fence_protected(cell: Vector2i) -> bool:
+	for n: Vector2i in [Vector2i(0, -1), Vector2i(0, 1),
+			Vector2i(-1, 0), Vector2i(1, 0)]:
+		if not fence_blocked(cell, cell + n):
+			return false
+	return true
+
+## Degisen kenarin IKI komsu hucresi icin koruma bayragini tazele.
+func _update_fence_protection(e: Vector3i) -> void:
+	var cells: Array = []
+	if e.z == 0:
+		cells = [Vector2i(e.x, e.y), Vector2i(e.x, e.y - 1)]
+	else:
+		cells = [Vector2i(e.x, e.y), Vector2i(e.x - 1, e.y)]
+	for c: Vector2i in cells:
+		if Farming.plots.has(c):
+			Farming.plots[c]["korunakli"] = fence_protected(c)
+
+## Oyuncunun bakisina gore hedef kenar: oyuncu hucresi ile hedef hucre
+## 4-komsuysa aradaki kenar; degilse hedefin oyuncuya donuk kenari.
+func _fence_edge_for(cell: Vector2i) -> Vector3i:
+	var pc := _player_cell()
+	var e := _edge_between(pc, cell)
+	if e.z != -999:
+		return e
+	var d := cell - pc
+	var yon := Vector2i(0, signi(d.y)) if absi(d.y) >= absi(d.x) 			else Vector2i(signi(d.x), 0)
+	if yon == Vector2i.ZERO:
+		yon = Vector2i(0, 1)
+	return _edge_between(cell, cell - yon)
+
+## Cit yerlestirme (hem place-mode onayi hem dokunma akisi buraya gelir).
+func _place_fence_at(cell: Vector2i) -> bool:
+	var e := _fence_edge_for(cell)
+	if e.z == -999 or _fences.has(e):
+		_spawn_floating_text(cell, "Orada çit var", Color(1, 0.6, 0.6))
+		return false
+	if e.x < 1 or e.y < 1 or e.x >= _map_w - 1 or e.y >= _map_h - 1:
+		return false
+	if not (_ground_char.get(cell, "") in [".", "d", "s"]):
+		return false
+	if not Inventory.remove_item("cit", 1):
+		return false
+	_set_fence(e)
+	_spawn_particles(_edge_mid(e) + Vector3(0, 0.2, 0),
+			Color(0.72, 0.66, 0.52), 6)
+	_play_sfx("place")
+	_spawn_floating_text(cell, "Çit kuruldu", Color(0.8, 1.0, 0.8))
+	_dirty = true
+	return true
+
+## Oyuncu yakininda, 3x3 cevresi nesnesiz/yapisiz acik hucre bul
+## (testler ve kare sahneleri icin ortak arac).
+func _find_open_cell(clearance: int = 1, r_min: int = 5, r_max: int = 18) -> Vector2i:
+	var pc := _player_cell()
+	for r in range(r_min, r_max):
+		for aci in range(0, 360, 20):
+			var c := pc + Vector2i(int(round(cos(deg_to_rad(aci)) * r)),
+					int(round(sin(deg_to_rad(aci)) * r)))
+			if c.x < 3 or c.y < 3 or c.x >= _map_w - 3 or c.y >= _map_h - 3:
+				continue
+			if not (_ground_char.get(c, "") in [".", "d", "s"]):
+				continue
+			var acik := true
+			for oy in range(-clearance, clearance + 1):
+				for ox in range(-clearance, clearance + 1):
+					var cc := c + Vector2i(ox, oy)
+					if _objects.has(cc) or _placed.has(cc) 							or not (_ground_char.get(cc, "") in [".", "d", "s"]):
+						acik = false
+						break
+				if not acik:
+					break
+			if acik:
+				return c
+	return Vector2i(-999, -999)
+
+## Agir CI karesi (cit-sistemi): 3x3 tarla cevresi cit + KAPI BOSLUGU
+## (guney ortasi bos — iki ucta direk kalir, dogal gecit) + korkuluk
+## kompozisyonu. [TODO kanca: fence_gate.glb gelirse bosluga kapi.]
+func _run_fence_frames(save_path: String) -> void:
+	var m := _find_open_cell(2, 6, 20)
+	if m == Vector2i(-999, -999):
+		return
+	_cam_locked = true
+	# 3x3 tarla (surulebilenler surulur; ortasina bitki)
+	for oy in range(-1, 2):
+		for ox in range(-1, 2):
+			var c := m + Vector2i(ox, oy)
+			if _till_valid(c):
+				Farming.till_cell(c)
+				_on_plot_changed(c)
+	if Farming.plots.has(m):
+		Farming.plant(m, "berry_bush")
+		Farming.plots[m].stage = 2
+		_on_plot_changed(m)
+	# Cevre citi: 3x3'un 12 kenari — guney ORTA kenar bos (kapi boslugu)
+	for i in range(-1, 2):
+		_set_fence(Vector3i(m.x + i, m.y - 1, 0))          # kuzey siti
+		if i != 0:
+			_set_fence(Vector3i(m.x + i, m.y + 2, 0))      # guney (orta bos)
+		_set_fence(Vector3i(m.x - 1, m.y + i, 1))          # bati
+		_set_fence(Vector3i(m.x + 2, m.y + i, 1))          # dogu
+	var mp := _cell_center(m)
+	camera.position = mp + Vector3(-3.2, 3.4, 4.6)
+	camera.look_at(mp + Vector3(0, 0.2, 0))
+	await get_tree().create_timer(0.6).timeout
+	_snap(save_path.replace(".png", "_cit_tarla.png"))
+	camera.position = player.position + _camera_offset()
+	_cam_locked = false
+
+## FENCETEST (hizli CI, cit-sistemi): kenar kanoniklestirme + gecis
+## engeli + direk paylasimi + yaratigin citi kirmasi + tarla korumasi.
+## Basarisizlik push_error -> CI kirmizi.
+func _run_fence_test() -> void:
+	_clear_creatures()
+	var k := _find_open_cell(1)
+	if k == Vector2i(-999, -999):
+		push_error("FENCE: test icin acik hucre bulunamadi")
+		return
+	# 1) KANONIK KENAR: guney kenari = alt komsunun kuzey kenari (tek anahtar)
+	var alt := k + Vector2i(0, 1)
+	var norm_ok: bool = _edge_between(k, alt) == _edge_between(alt, k)
+	# 2) ENGEL: kenara cit -> iki yonden de gecis kapali
+	var e1 := _edge_between(k, alt)
+	_set_fence(e1)
+	var engel_ok: bool = fence_blocked(k, alt) and fence_blocked(alt, k) 			and not can_step(k, alt)
+	# 3) DIREK PAYLASIMI: ayni hizada ikinci kenar -> 4 degil 3 direk
+	var e2 := _edge_between(k + Vector2i(1, 0), alt + Vector2i(1, 0))
+	_set_fence(e2)
+	var direk_ok: bool = _fence_posts.size() == 3
+	# 4) KIRILMA: yaratigi 4 kenari citli hucreye kapat — her cikis
+	# citten gecer, mecburen vurur (davranis testi, boru degil).
+	var eski_poz: Vector3 = player.position
+	player.position = _cell_center(k + Vector2i(20, 0))
+	spawn_creature(k, "normal")
+	var kafes: Array = []
+	for n: Vector2i in [Vector2i(0, -1), Vector2i(0, 1),
+			Vector2i(-1, 0), Vector2i(1, 0)]:
+		var e := _edge_between(k, k + n)
+		if not _fences.has(e):
+			_set_fence(e)
+		kafes.append(e)
+	var hp0 := 0
+	for e: Vector3i in kafes:
+		if _fences.has(e):
+			hp0 += int(_fences[e]["hp"])
+	for i in 120:
+		_tick_creatures(0.05)
+	var hp1 := 0
+	for e: Vector3i in kafes:
+		if _fences.has(e):
+			hp1 += int(_fences[e]["hp"])
+	var kirilma_ok: bool = hp1 < hp0
+	player.position = eski_poz
+	_clear_creatures()
+	# 5) TARLA KORUMASI: 4 kenari citli tarla hucresi bayrak alir
+	var koruma_ok := false
+	var t := _find_open_cell(1, 5, 22)
+	if t != Vector2i(-999, -999) and _till_valid(t):
+		Farming.till_cell(t)
+		for n: Vector2i in [Vector2i(0, -1), Vector2i(0, 1),
+				Vector2i(-1, 0), Vector2i(1, 0)]:
+			_set_fence(_edge_between(t, t + n))
+		var tam: bool = fence_protected(t) 				and bool(Farming.plots[t].get("korunakli", false))
+		_remove_fence(_edge_between(t, t + Vector2i(0, 1)))
+		koruma_ok = tam and not fence_protected(t) 				and not bool(Farming.plots[t].get("korunakli", true))
+		Farming.plots.erase(t)
+		_on_plot_changed(t)
+	if not norm_ok:
+		push_error("FENCE: kenar kanoniklestirme bozuk")
+	if not engel_ok:
+		push_error("FENCE: citli kenardan gecilebiliyor")
+	if not direk_ok:
+		push_error("FENCE: direk paylasimi bozuk (%d direk)" % _fence_posts.size())
+	if not kirilma_ok:
+		push_error("FENCE: kapali yaratik citi kirmiyor")
+	if not koruma_ok:
+		push_error("FENCE: tarla koruma bayragi yanlis")
+	print("FENCETEST: norm=%s engel=%s direk3=%s kirilma=%s koruma=%s" % [
+			str(norm_ok), str(engel_ok), str(direk_ok), str(kirilma_ok),
+			str(koruma_ok)])
+	# Temizlik: SAVELOAD dunyayi oldugu gibi olcer
+	_clear_fences()
+
+func _fences_to_save() -> Array:
+	var out: Array = []
+	for e: Vector3i in _fences:
+		out.append([e.x, e.y, e.z, int(_fences[e]["hp"])])
+	return out
+
 func can_step(from: Vector2i, to: Vector2i) -> bool:
+	# CIT: kenari citli gecis kapali (oyuncu icin de — dogal gecit
+	# birakilan kenardan dolasilir).
+	if fence_blocked(from, to):
+		return false
 	var df := int(_depth.get(from, 0))
 	var dt := int(_depth.get(to, 0))
 	if df >= EngBalance.LADDER_DEEP_MIN and dt < df:
@@ -2213,6 +2556,7 @@ func to_save_data() -> Dictionary:
 		"regrow": _cells_to_json(_regrow),
 		"regrow_type": _cells_to_json(_regrow_type),
 		"placed": _cells_to_json(_placed),
+		"fences": _fences_to_save(),  # cit-sistemi: kenar + hp
 		"structures": _structures.to_save_data(),  # 13.6: yon/hp/durum
 		"chests": chest_json,
 		"ground_items": ground_json,
@@ -2309,6 +2653,9 @@ func from_save_data(data: Dictionary) -> bool:
 	# 13.6: yapi metasini (yon/hp) once yukle ki _set_placed korusun; eski
 	# kayitlarda "structures" yoksa _set_placed tam-can yeni ornek uretir
 	_structures.from_save_data(data.get("structures", []))
+	_clear_fences()
+	for fj in data.get("fences", []):
+		_set_fence(Vector3i(int(fj[0]), int(fj[1]), int(fj[2])), int(fj[3]))
 	for key in data.get("placed", {}):
 		var item_id := String(data["placed"][key])
 		if PLACE_MODELS.has(item_id):
@@ -6264,6 +6611,9 @@ func _try_pour(cell: Vector2i) -> bool:
 # --- Yapi yerlestirme (B3) ------------------------------------------------
 
 func _try_place(cell: Vector2i) -> bool:
+	# CIT: hucre degil KENAR yerlesimi — kendi akisi.
+	if _held_item == "cit":
+		return _place_fence_at(cell)
 	if _placed.has(cell) or _objects.has(cell) or cell == _player_cell():
 		return false
 	# KESIF 16.1/16.4: yetersiz isikla siste KAMP KURULAMAZ (kapi kurali).
@@ -6649,6 +6999,13 @@ func _update_ghost() -> void:
 	_place_cell = cell
 	_ghost.position = _cell_center(cell)
 	_ghost.rotation_degrees.y = float(_place_rot)
+	# CIT: hayalet hucre merkezine degil KENARA oturur (oyuncuya donuk
+	# kenar — yerlestirme de ayni kenari secer, ne gorursen onu alirsin).
+	if _place_item == "cit":
+		var fe := _fence_edge_for(cell)
+		if fe.z != -999:
+			_ghost.position = _edge_mid(fe) + Vector3(0, FenceBalance.RAIL_Y, 0)
+			_ghost.rotation_degrees.y = 90.0 if fe.z == 1 else 0.0
 	var v := _place_valid(cell)
 	var nv := bool(v["valid"])
 	# Boyamayi yalnizca gecerlilik degisince yenile (kare basi materyal
@@ -6666,6 +7023,15 @@ func _place_valid(cell: Vector2i) -> Dictionary:
 	var def: Dictionary = PLACE_MODELS[_place_item]
 	if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
 		return {"valid": false, "reason": "sınır"}
+	# CIT: kural kenara bakar — hucre dolulugu onemsiz (kenar bos +
+	# zemin turu yeter; tarlanin kenarina cit tam da boyle cekilir).
+	if String(def.get("behavior", "")) == "fence":
+		var fe := _fence_edge_for(cell)
+		if fe.z == -999 or _fences.has(fe):
+			return {"valid": false, "reason": "çit var"}
+		if not (_ground_char.get(cell, "") in [".", "d", "s"]):
+			return {"valid": false, "reason": "zemin"}
+		return {"valid": true, "reason": ""}
 	if _placed.has(cell) or _objects.has(cell) or _dummies.has(cell):
 		return {"valid": false, "reason": "dolu"}
 	if cell == _player_cell():
@@ -6699,6 +7065,11 @@ func _place_confirm() -> void:
 	if not _ghost_valid:
 		hud.shake_action_button()
 		_spawn_floating_text(cell, "Buraya olmaz", Color(1, 0.6, 0.6))
+		return
+	# CIT: kenar akisi (envanteri _place_fence_at duser)
+	if _place_item == "cit":
+		if _place_fence_at(cell) and Inventory.get_count("cit") <= 0:
+			_exit_place_mode()
 		return
 	if not Inventory.remove_item(_place_item, 1):
 		_exit_place_mode()
@@ -8109,6 +8480,25 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 	# ONUNE ENGEL CIKTI MI? Yol zaten kirilabilir engelleri PAHALI sayip
 	# gecerli buluyor; yani buraya gelmek "yol beni bilerek duvarin
 	# ustunden gecirdi" demek. Dur ve vur.
+	# CIT KENARI (cit-sistemi): gecis kenardan kapaliysa once cite bak.
+	# Tirmanici alcak citi ASAR (yavaslayarak); digerleri durup KIRAR —
+	# citin cani az, birkac vurusta gedik acilir.
+	if next_cell != cr.cell() and fence_blocked(cr.cell(), next_cell):
+		if tirmanici:
+			speed *= CreatureBalance.CLIMB_SLOW
+			next_pos = cr.position + dir * speed * delta
+			next_cell = Vector2i(floori(next_pos.x), floori(next_pos.z))
+		else:
+			cr.struct_cd = maxf(0.0, cr.struct_cd - delta)
+			if cr.struct_cd <= 0.0:
+				cr.struct_cd = CreatureBalance.STRUCT_ATTACK_COOLDOWN
+				var smc: int = int(CreatureBalance.stat(
+						String(cr.type), "struct_mult", 1))
+				_fence_take_hit(_edge_between(cr.cell(), next_cell),
+						CreatureBalance.STRUCT_DAMAGE * smc, dir)
+				cr.lunge(dir)
+			_bump_stuck(cr, delta)
+			return
 	if next_cell != cr.cell() and not is_walkable(next_cell):
 		var yapi: bool = _placed.has(next_cell) or _objects.has(next_cell)
 		# GECEBILEN TIP: kirmaz, gecer — ama yavaslayarak (bedava degil).
