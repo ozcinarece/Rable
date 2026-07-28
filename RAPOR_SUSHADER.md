@@ -146,3 +146,16 @@ kanal kareleri önceki kadrajda.
 - Yerel hızlı paket TÜM testler yeşil; WATERCOLORTEST v2 ile tutuyor
   (bant renkleri/eşikleri v2'de DEĞİŞMEDİ — CPU replikası geçerli).
 - Mesh sözleşmesi (COLOR/UV/CUSTOM0 + v1_encode) aynen korundu.
+
+## CI KARE İNCELEMESİ (v2 turu, run 230)
+
+- `3d_su_golet.png`: yeni alçak açı kadraj — yüzeyde v2'nin parıltı
+  kıvrımları ve dalga hacmi belirgin; karşı kıyı su çizgisi düzgün
+  değil, dalgalı (siluet şartı). Eski yüksek açı karede su neredeyse
+  hareketsiz görünüyordu.
+- `3d_su_golet_gece.png`: alçak açıda gece; meşale solda, suda sıcak
+  leke kamera dibinde (alçak açının bedeli — yansıma lekesi kadrajın
+  alt kenarına düşüyor). Kabul edildi; istenirse kadraj meşaleye
+  döndürülebilir.
+- `3d_su_kanal.png` / `3d_su_hendek.png`: kompozisyon öncekiyle aynı
+  (kadraj değişmedi) — gerileme yok, iç su v2 ile çiziliyor.
