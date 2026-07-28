@@ -8028,7 +8028,7 @@ func _run_night_test(save_path: String) -> void:
 				break
 	if sahne != Vector2i(-999, -999):
 		var suru: Array = []
-		for off in [Vector2i(0, 0), Vector2i(1, 1), Vector2i(-1, 1)]:
+		for off: Vector2i in [Vector2i(0, 0), Vector2i(1, 1), Vector2i(-1, 1)]:
 			var c2 := sahne + off
 			if is_walkable(c2):
 				var sc = spawn_creature(c2, "normal")
