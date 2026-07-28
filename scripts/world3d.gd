@@ -30,6 +30,7 @@ const CreatureScript = preload("res://scripts/creature.gd")
 const CreatureBalance = preload("res://scripts/creature_balance.gd")
 const CreatureAI = preload("res://scripts/creature_ai.gd")
 const FenceBalance = preload("res://scripts/fence_balance.gd")
+const FellBalance = preload("res://scripts/fell_balance.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const ChestStore = preload("res://scripts/inventory.gd")  # 14.1 sandik deposu
@@ -641,6 +642,7 @@ func _setup_screenshot(save_path: String) -> void:
 	await _run_road_test(save_path)
 	await _run_camp_test(save_path)
 	await _run_fence_frames(save_path)
+	await _run_fell_frames(save_path)
 	await _run_env_showcase(save_path)
 	await _run_perf_probe(save_path)
 	await _run_night_test(save_path)
@@ -1413,13 +1415,21 @@ func _run_tree_test() -> void:
 		push_error("AGAC: havuz bos — fallback da yuklenemedi")
 	if toplam_ornek == 0:
 		push_error("AGAC: haritada hic agac cizilmedi")
-	# Karisim yalniz yeni set TAM oldugunda olculur (60/40 sarti)
-	if _tree_yol_coz(String(TREE_SET[0]["path"])) != "" \
-			and _tree_yol_coz(String(TREE_SET[1]["path"])) != "":
-		var buyuk: float = float(_tree_group_counts.get(0, 0)) \
-				/ maxf(1.0, float(toplam_ornek))
-		if buyuk < 0.5 or buyuk > 0.7:
-			push_error("AGAC: 60/40 karisimi tutmadi (buyuk %%%.0f)" % (buyuk * 100.0))
+	# Karisim kontrolu artik VERIDEN: her varyantin payi TREE_SET
+	# agirligindan +-10 puan bandinda olmali (eski 60/40 sabitti;
+	# agac-kesim turunde set 45/35/20'ye genisledi).
+	if pool.size() == TREE_SET.size():
+		var toplam_agirlik := 0
+		for e: Dictionary in TREE_SET:
+			toplam_agirlik += int(e["agirlik"])
+		for i in TREE_SET.size():
+			var pay: float = float(_tree_group_counts.get(i, 0)) \
+					/ maxf(1.0, float(toplam_ornek))
+			var hedef: float = float(TREE_SET[i]["agirlik"]) \
+					/ maxf(1.0, float(toplam_agirlik))
+			if absf(pay - hedef) > 0.10:
+				push_error("AGAC: karisim veriden sapti (varyant %d %%%.0f, hedef %%%.0f)" % [
+						i, pay * 100.0, hedef * 100.0])
 
 ## AGAC KARELERI: orman geneli + tek agac yakin, gunduz + gece.
 func _run_tree_frames(save_path: String) -> void:
@@ -1489,6 +1499,7 @@ func _run_fast_tests() -> void:
 	_run_cim_test()
 	_run_night_logic_test()
 	_run_fence_test()
+	_run_fell_test()
 	_run_kesif_perf()
 	_run_save_load_selftest()
 	print("FASTTESTS: bitti")
@@ -2458,6 +2469,125 @@ func _run_fence_test() -> void:
 			str(koruma_ok)])
 	# Temizlik: SAVELOAD dunyayi oldugu gibi olcer
 	_clear_fences()
+
+## Agir CI kare dizisi (agac-kesim): sallanma -> devrilme -> toz ->
+## odun sacilmasi. Zamanlama fell_balance suralerinden.
+func _run_fell_frames(save_path: String) -> void:
+	var k := _find_open_cell(2, 6, 22)
+	if k == Vector2i(-999, -999):
+		return
+	_cam_locked = true
+	var eski_item := _held_item
+	var eski_poz: Vector3 = player.position
+	_objects[k] = "T"
+	_solid_cells[k] = true
+	_rebuild_objects()
+	player.position = _cell_center(k + Vector2i(0, 2))
+	_held_item = "balta"
+	var kp := _cell_center(k)
+	# Kamera yandan: devrilme yayi (kuzeye dusecek) karede kalsin
+	camera.position = kp + Vector3(-4.2, 2.6, -1.2)
+	camera.look_at(kp + Vector3(0, 1.2, -1.0))
+	_try_harvest(k)
+	await get_tree().create_timer(0.12).timeout
+	_snap(save_path.replace(".png", "_kesim_sallanma.png"))
+	await get_tree().create_timer(0.85).timeout   # devrilmenin ortasi
+	_snap(save_path.replace(".png", "_kesim_devrilme.png"))
+	await get_tree().create_timer(0.5).timeout    # carpma + toz ani
+	_snap(save_path.replace(".png", "_kesim_toz.png"))
+	await get_tree().create_timer(1.1).timeout    # erime bitti, odunlar yerde
+	camera.position = kp + Vector3(-2.6, 3.0, 2.2)
+	camera.look_at(kp + Vector3(0, 0.2, -1.2))
+	await get_tree().create_timer(0.3).timeout
+	_snap(save_path.replace(".png", "_kesim_odun.png"))
+	player.position = eski_poz
+	_held_item = eski_item
+	camera.position = player.position + _camera_offset()
+	_cam_locked = false
+
+## FELLTEST (hizli CI, agac-kesim): son baltada agac devrilir (hucre
+## ANINDA acilir — carpisma kapali), es zamanli 5 devrilme (kuyruk yok),
+## odunlar govde hattina dagilir ve mevcut sistemle toplanir.
+## Zaman tabanli gorseller agir CI karelerinde; burada mantik olculur.
+func _run_fell_test() -> void:
+	var k := _find_open_cell(2, 5, 22)
+	if k == Vector2i(-999, -999):
+		push_error("FELL: test icin acik hucre yok")
+		return
+	var eski_item := _held_item
+	var eski_poz: Vector3 = player.position
+	player.position = _cell_center(k + Vector2i(0, 2))
+	_held_item = "balta"
+	_objects[k] = "T"
+	_solid_cells[k] = true
+	_rebuild_objects()
+	var f0 := _fells.size()
+	_try_harvest(k)  # balta: tek vurus (tool hits 1)
+	var devrildi: bool = _fells.size() == f0 + 1
+	var acik: bool = not _objects.has(k) and is_walkable(k)
+	# ODUN HATTI: erimeyi bekletmeden dogrudan bitir (zaman agir CI'da)
+	var oncesi := Inventory.get_count("odun")
+	var toplam_odun := 0
+	var hat_ok := false
+	if devrildi:
+		var kayit: Dictionary = _fells[-1]
+		_fell_finish(kayit)
+		var hucreler: Array = kayit.get("hucreler", [])
+		hat_ok = hucreler.size() >= FellBalance.LOG_MIN 				and hucreler.size() <= FellBalance.LOG_MAX
+		for h: Vector2i in hucreler:
+			var gi := _ground_item_at(h)
+			if gi != -1 and String(_ground_items[gi]["id"]) == "odun":
+				toplam_odun += int(_ground_items[gi]["count"])
+				_try_pickup_ground(h)  # mevcut toplama sistemi
+	var odun_ok: bool = toplam_odun == 3  # T dususu: odun 3 (OBJECT_DEFS)
+	var toplandi: bool = Inventory.get_count("odun") == oncesi + toplam_odun
+	# ES ZAMANLILIK: 5 agac ayni anda devrilebilmeli (kuyruk yok)
+	var stres0 := _fells.size()
+	var stres_hucreler: Array = []
+	for i in 5:
+		var c := _find_open_cell(1, 5 + i, 24)
+		if c == Vector2i(-999, -999) or _objects.has(c):
+			continue
+		_objects[c] = "T"
+		_solid_cells[c] = true
+		stres_hucreler.append(c)
+	_rebuild_objects()
+	for c: Vector2i in stres_hucreler:
+		player.position = _cell_center(c + Vector2i(0, 2))
+		_try_harvest(c)
+	var eszamanli: int = _fells.size() - stres0
+	var stres_ok: bool = eszamanli == stres_hucreler.size() and eszamanli >= 3
+	if not devrildi:
+		push_error("FELL: son baltada devrilme baslamadi")
+	if not acik:
+		push_error("FELL: devrilen agacin hucresi acilmadi (takilma riski)")
+	if not hat_ok:
+		push_error("FELL: odun hatti yigin sayisi bantta degil")
+	if not odun_ok:
+		push_error("FELL: odun sayisi yanlis (%d, beklenen 3)" % toplam_odun)
+	if not toplandi:
+		push_error("FELL: odunlar mevcut sistemle toplanamadi")
+	if not stres_ok:
+		push_error("FELL: es zamanli devrilme kuyruklandi (%d/%d)" % [
+				eszamanli, stres_hucreler.size()])
+	print("FELLTEST: devrildi=%s acik=%s hat=%s odun=%d toplandi=%s eszamanli=%d" % [
+			str(devrildi), str(acik), str(hat_ok), toplam_odun,
+			str(toplandi), eszamanli])
+	# Temizlik: kalan devrilme kopyalarini ve odunlari kaldir
+	for kayit2: Dictionary in _fells.duplicate():
+		_fell_finish(kayit2)
+		var pv: Node3D = kayit2["pivot"]
+		if pv != null and is_instance_valid(pv):
+			pv.queue_free()
+	_fells.clear()
+	for i in range(_ground_items.size() - 1, -1, -1):
+		if String(_ground_items[i]["id"]) in ["odun", "yaprak"]:
+			var gn: Variant = _ground_items[i].get("node", null)
+			if gn != null and is_instance_valid(gn):
+				(gn as Node).queue_free()
+			_ground_items.remove_at(i)
+	player.position = eski_poz
+	_held_item = eski_item
 
 func _fences_to_save() -> Array:
 	var out: Array = []
@@ -5694,10 +5824,14 @@ const TREE_MODEL_OVERRIDES: Array[String] = [
 ## Kullanici dosya adini netlestirdi: pinetree.glb (buyuk agac).
 ## Kucuk boy dosyasi gelirse 60/40 karisim; gelmezse %100 buyuk.
 const TREE_SET := [
+	# agac-kesim turu: kullanicinin yukledigi _new modeller esas set.
+	# Eski pinetree.glb dusuk agirlikla cesni olarak kaldi.
+	{"path": "res://assets/models/test/pinetree_new.glb",
+			"agirlik": 45, "boy": 3.1},
+	{"path": "res://assets/models/test/polytree_new.glb",
+			"agirlik": 35, "boy": 2.7},
 	{"path": "res://assets/models/env/pinetree.glb",
-			"agirlik": 60, "boy": 3.1},
-	{"path": "res://assets/models/env/pine_tree_small.glb",
-			"agirlik": 40, "boy": 2.3},
+			"agirlik": 20, "boy": 3.1},
 ]
 ## Ornek basina olcek bandi (gorev: %70-130). DIKKAT: _cell_variance'a
 ## DOKUNULMADI — o tas/cali/cicekle ortak; bandi orada genisletmek
@@ -5785,6 +5919,170 @@ func _tree_neighbor_count(cell: Vector2i) -> int:
 			if _objects.get(cell + Vector2i(dx, dy), "") == "T":
 				c += 1
 	return c
+
+# --- AGAC KESIM SAHNESI (agac-kesim) --------------------------------------
+## Aktif devrilmeler. Kayit: {pivot, mi, cell, yon, drops, boy, bitti}
+## KUYRUK YOK: her devrilme bagimsiz tween zinciri — ayni anda 5 agac
+## devrilebilir (FELLTEST stres olcumu).
+var _fells: Array = []
+
+## Hucredeki agacin MultiMesh'te kullanilan mesh+duruusunu AYNI hash
+## mantigiyla yeniden hesaplar (tekil animasyonlu kopya icin).
+func _tree_instance_for(cell: Vector2i) -> Dictionary:
+	var pool := _tree_set_pool()
+	var toplam := 0
+	for e: Dictionary in pool:
+		toplam += int(e["agirlik"])
+	var r := int(EnvModels.hash01(cell.x, cell.y, 991) * float(toplam))
+	var idx := 0
+	for i in pool.size():
+		r -= int(pool[i]["agirlik"])
+		if r < 0:
+			idx = i
+			break
+	return {"mesh": pool[idx]["mesh"], "basis": _tree_variance(cell)}
+
+## Son baltada: agac oyuncudan UZAGA devrilir (ustune dusmesin).
+## Zincir: kararsizlik sallanmasi -> ease-in devrilme -> carpma
+## (toz+yaprak+sarsinti+thud) -> bekleme -> erime (odunlar sacilir).
+func _fell_tree(cell: Vector2i, drops: Dictionary) -> void:
+	var inst := _tree_instance_for(cell)
+	var merkez := _cell_center(cell)
+	var yon3: Vector3 = merkez - player.position
+	yon3.y = 0.0
+	var yon := yon3.normalized() if yon3.length() > 0.01 else Vector3.FORWARD
+	var pivot := Node3D.new()  # govde DIBINDEN donsun: pivot zeminde
+	pivot.position = merkez
+	var mi := MeshInstance3D.new()
+	mi.mesh = inst["mesh"]
+	mi.transform = Transform3D(inst["basis"], Vector3.ZERO)
+	pivot.add_child(mi)
+	add_child(pivot)
+	var boy: float = (inst["mesh"] as Mesh).get_aabb().size.y 			* (inst["basis"] as Basis).get_scale().y
+	var kayit := {"pivot": pivot, "mi": mi, "cell": cell, "yon": yon,
+			"drops": drops, "boy": boy, "bitti": false}
+	_fells.append(kayit)
+	var eksen := Vector3.UP.cross(yon).normalized()
+	var setang := func(a: float) -> void:
+		if is_instance_valid(pivot):
+			pivot.basis = Basis(eksen, deg_to_rad(a))
+	var w := FellBalance.WOBBLE_DEG
+	var tw := create_tween()
+	# 1) kararsizlik: once hafif GERI, sonra one salinim
+	tw.tween_method(setang, 0.0, -w, FellBalance.WOBBLE_SECONDS * 0.5)
+	tw.tween_method(setang, -w, w * 0.5, FellBalance.WOBBLE_SECONDS * 0.5)
+	# 2) hizlanan devrilme (ease-in: yavas baslar, carparken hizli)
+	tw.tween_method(setang, w * 0.5, FellBalance.FALL_END_DEG,
+			FellBalance.FALL_SECONDS) 			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	tw.tween_callback(_fell_impact.bind(kayit))
+	tw.tween_interval(FellBalance.LINGER_SECONDS)
+	tw.tween_callback(_fell_melt.bind(kayit))
+
+## Carpma ani: govde hatti boyunca toz + tacta yaprak + sarsinti + ses.
+func _fell_impact(kayit: Dictionary) -> void:
+	var merkez := _cell_center(kayit["cell"])
+	var yon: Vector3 = kayit["yon"]
+	var boy: float = kayit["boy"]
+	# Parcacik butcesi kalite kademesinden (gorev: FPS kurali)
+	var t := PerfBalance.tier(_quality_tier)
+	var yuksek: bool = bool(t.get("shadow", true))
+	var adet: int = FellBalance.DUST_COUNT_HIGH if yuksek 			else FellBalance.DUST_COUNT_LOW
+	for f in [0.35, 0.7, 1.0]:
+		_spawn_particles(merkez + yon * boy * f + Vector3(0, 0.15, 0),
+				FellBalance.DUST_COLOR, adet)
+	_spawn_particles(merkez + yon * boy * 0.85 + Vector3(0, 0.4, 0),
+			FellBalance.LEAF_COLOR, adet)
+	_play_sfx("thud")  # gumleme kancasi (ses dosyasi gelince calar)
+	# COK KISA ekran sarsintisi — Dusuk kademede KAPALI (mobil kurali).
+	# v_offset kamera konum kontrolunden bagimsiz: takip kodunu bozmaz.
+	if yuksek and camera != null:
+		var ctw := create_tween()
+		ctw.tween_property(camera, "v_offset", -FellBalance.SHAKE_V,
+				FellBalance.SHAKE_SECONDS * 0.3)
+		ctw.tween_property(camera, "v_offset", FellBalance.SHAKE_V * 0.5,
+				FellBalance.SHAKE_SECONDS * 0.35)
+		ctw.tween_property(camera, "v_offset", 0.0,
+				FellBalance.SHAKE_SECONDS * 0.35)
+
+## Erime: odunlar SACILIR + govde alpha-fade ile kuculup gomulur.
+func _fell_melt(kayit: Dictionary) -> void:
+	_fell_finish(kayit)
+	var mi: MeshInstance3D = kayit["mi"]
+	var pivot: Node3D = kayit["pivot"]
+	if mi == null or not is_instance_valid(mi):
+		return
+	# Alpha fade: mesh materyalleri PAYLASIMLI (MultiMesh ile ortak) —
+	# yalniz bu kopya icin yuzey override kopyalari acilir.
+	var mats: Array = []
+	for sf in mi.mesh.get_surface_count():
+		var m := mi.mesh.surface_get_material(sf)
+		if m is BaseMaterial3D:
+			var k: BaseMaterial3D = m.duplicate()
+			k.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+			mi.set_surface_override_material(sf, k)
+			mats.append(k)
+	var seta := func(a: float) -> void:
+		for m2: BaseMaterial3D in mats:
+			m2.albedo_color.a = a
+	var tw := create_tween()
+	tw.tween_method(seta, 1.0, 0.0, FellBalance.MELT_SECONDS)
+	tw.parallel().tween_property(pivot, "scale",
+			Vector3(0.88, 0.88, 0.88), FellBalance.MELT_SECONDS)
+	tw.parallel().tween_property(pivot, "position:y",
+			pivot.position.y - 0.12, FellBalance.MELT_SECONDS)
+	tw.tween_callback(func():
+		if is_instance_valid(pivot):
+			pivot.queue_free()
+		_fells.erase(kayit))
+
+## Odun dususu: govde HATTINA dizilir (tek noktaya yigilmaz) + tacta
+## yaprak. Toplama mevcut ground_item sistemiyle.
+func _fell_finish(kayit: Dictionary) -> void:
+	if bool(kayit.get("bitti", false)):
+		return
+	kayit["bitti"] = true
+	var cell: Vector2i = kayit["cell"]
+	var merkez := _cell_center(cell)
+	var yon: Vector3 = kayit["yon"]
+	var boy: float = kayit["boy"]
+	var drops: Dictionary = kayit["drops"]
+	var odun: int = int(drops.get("odun", 0))
+	var yigin: int = clampi(odun, FellBalance.LOG_MIN, FellBalance.LOG_MAX)
+	yigin = mini(yigin, maxi(1, odun))
+	var kalan := odun
+	var hucreler: Array = []
+	for i in yigin:
+		var f := float(i + 1) / float(yigin)
+		var pos := merkez + yon * boy * f
+		var hucre := Vector2i(floori(pos.x), floori(pos.z))
+		hucre.x = clampi(hucre.x, 1, _map_w - 2)
+		hucre.y = clampi(hucre.y, 1, _map_h - 2)
+		var adet := int(ceil(float(kalan) / float(yigin - i)))
+		kalan -= adet
+		if adet > 0:
+			_add_ground_item(hucre, "odun", adet)
+			hucreler.append(hucre)
+			# zipla-yayil: yeni dusen odun kisa pop yapar
+			if not _ground_items.is_empty():
+				var gn: Variant = _ground_items[-1].get("node", null)
+				if gn != null and is_instance_valid(gn):
+					(gn as Node3D).scale = Vector3(0.4, 0.4, 0.4)
+					var ptw := create_tween()
+					ptw.tween_property(gn, "scale", Vector3.ONE, 0.25) 							.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	# yaprak vb. diger dususler tacin dustugu hucreye
+	for item_id in drops:
+		if String(item_id) == "odun":
+			continue
+		var tac := merkez + yon * boy
+		_add_ground_item(Vector2i(clampi(floori(tac.x), 1, _map_w - 2),
+				clampi(floori(tac.z), 1, _map_h - 2)),
+				String(item_id), int(drops[item_id]))
+	var gained: PackedStringArray = []
+	for item_id in drops:
+		gained.append("+%d %s" % [int(drops[item_id]),
+				Items.display_name(String(item_id))])
+	_spawn_floating_text(cell, " ".join(gained), Color(0.7, 1.0, 0.7))
+	kayit["hucreler"] = hucreler
 
 var _tree_group_counts: Dictionary = {}   # TREETEST: varyant -> ornek sayisi
 
@@ -7441,7 +7739,7 @@ func _add_ground_item(cell: Vector2i, item_id: String, count: int) -> void:
 		if on != null and is_instance_valid(on):
 			(on as Node).queue_free()
 		_ground_items.remove_at(0)
-	var node := _ground_item_visual(item_id)
+	var node := _ground_item_visual(item_id, count)
 	var base_y := 0.35
 	node.position = _cell_center(cell) + Vector3(0, base_y, 0)
 	add_child(node)
@@ -7450,8 +7748,19 @@ func _add_ground_item(cell: Vector2i, item_id: String, count: int) -> void:
 
 ## Kategori rengine gore basit low-poly govde (kutu; yenilebilir/yuvarlaklar
 ## kure). Ikon dokusu YOK — uzaktan net, ucuz, "dunya objesi" hissi.
-func _ground_item_visual(item_id: String) -> Node3D:
+func _ground_item_visual(item_id: String, count: int = 1) -> Node3D:
 	var root := Node3D.new()
+	# ODUN: gercek wood_log modeli (agac-kesim). 2+ odunlu yiginda %30
+	# cift-log varyanti — wood_log_pair.glb DOSYA-BEKLER (yoksa tek).
+	if item_id == "odun" and ResourceLoader.exists(FellBalance.LOG_GLB):
+		var yol := FellBalance.LOG_GLB
+		if count >= 2 and randf() < FellBalance.LOG_PAIR_CHANCE 				and ResourceLoader.exists(FellBalance.LOG_PAIR_GLB):
+			yol = FellBalance.LOG_PAIR_GLB
+		var log_inst: Node3D = load(yol).instantiate()
+		log_inst.scale = Vector3.ONE * FellBalance.LOG_LEN
+		log_inst.rotation.y = randf() * TAU  # hafif rastgele durus
+		root.add_child(log_inst)
+		return root
 	var mi := MeshInstance3D.new()
 	if _item_is_round(item_id):
 		var sm := SphereMesh.new()
@@ -9402,6 +9711,17 @@ func _try_harvest(cell: Vector2i) -> bool:
 	for item_id in def["drops"]:
 		drops[item_id] = int(def["drops"][item_id]) * mult
 	_object_hits.erase(cell)
+	# AGAC KESIM SAHNESI (agac-kesim): son vurusta agac ANINDA yok olmaz —
+	# oyuncudan uzaga DEVRILIR, odunlar govde hattina sacilir. Carpismasi
+	# hemen ACILIR (MultiMesh orneği silinir, animasyonlu kopya carpissiz).
+	if ch == "T":
+		_objects.erase(cell)
+		_solid_cells.erase(cell)
+		_rebuild_objects()
+		_hit_stop(0.55, 0.05)
+		_fell_tree(cell, drops)
+		_dirty = true
+		return true
 	# #1: agac/kaya dususleri artik ENVANTERE ucmaz — yere sacilir (yikimla
 	# ayni sistem). Oyuncu "al" ile toplar. Envanter dolu olsa da hasat olur;
 	# esyalar yerde bekler. Klasik survival dongusu (kes -> topla).
