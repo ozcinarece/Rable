@@ -22,14 +22,14 @@ const RAIL_GLB := "res://assets/models/test/fence_rail.glb"
 ## Direk: model 1.9 birim boyunda (ölçüldü) → hedef boy KARAKTERİN
 ## BELİ (~1.35 m karakterde 0.75). cit-fix turu: 0.85'ten indirildi;
 ## mesh bake hattıyla (node scale yok — ağaçlarla aynı normalize yolu).
-const POST_H := 0.75
+const POST_H := 0.62  # kullanici istegi: bel'den biraz daha kucuk
 ## Ray: model X'te TAM 1.0 birim (ölçüldü: -0.5..0.5) = 1 hücre kenarı.
 ## TEK İSTİSNA (görev izni): uzunluk X ölçeğiyle esnetilir — kenar hep
 ## 1 m olduğundan bu sabittir, kesit (Y/Z) ayrı ölçeklenir ki ray
 ## uzarken kalınlaşmasın. Gerekçe RAPOR_CIT.md'de.
 const RAIL_LEN_X := 1.0
 const RAIL_SECTION := 0.55    # kesit ölçeği — direkle orantılı inceltildi
-const RAIL_Y := 0.42          # rayın yerden yüksekliği (bel boyu direğe göre)
+const RAIL_Y := 0.34          # rayın yerden yüksekliği (bel boyu direğe göre)
 
 # --- CIT-FIX kuralları (kullanıcı geri bildirimi) -------------------------
 ## Eski "kenara direk+ray çifti" yerleştirme yolu: KAPALI bayrak
