@@ -132,6 +132,10 @@ const PLACE_MODELS := {
 	# ve olcekler fence_balance.gd'de.
 	"cit": {"model": "res://assets/models/test/fence_rail.glb",
 			"h": 0.3, "solid": false, "behavior": "fence", "max_hp": 40},
+	# CIT-FIX: yerlestirme artik TEK DIREK diker (yonsuz, KOSEYE).
+	# Ray ayri: iki diregi dokunarak bagla (fence_balance.RAY_COST).
+	"cit_diregi": {"model": "res://assets/models/test/fence_post.glb",
+			"h": 0.75, "solid": false, "behavior": "fence_post", "max_hp": 40},
 	"mesale": {"model": "res://assets/models/tools/campfire-stand.glb",
 			"h": 0.7, "solid": false,
 			"behavior": "torch", "max_hp": 30},
@@ -2209,21 +2213,12 @@ func _set_fence(e: Vector3i, hp: int = -1) -> void:
 		holder.rotation_degrees.y = 90.0  # ray modeli X-uzun; bati kenari Z-uzun
 	add_child(holder)
 	_fence_nodes[e] = holder
-	# DIREKLER kenar UCLARINA — komsu cit kenarlari direği PAYLASIR
-	# (refcount): ayni koseye ikinci cit gelirse direk tekrar dikilmez.
+	# CIT-FIX: direkler artik BAGIMSIZ varliklar (kullanici diker).
+	# Ray kurulurken eksik uc tamamlanir — eski kayitlar/testler icin
+	# gecis uyumu (mesh-bake yolu; node scale yok).
 	for c: Vector2i in _edge_corners(e):
-		if _fence_posts.has(c):
-			_fence_posts[c]["n"] = int(_fence_posts[c]["n"]) + 1
-			continue
-		var post: Node3D = load(FenceBalance.POST_GLB).instantiate()
-		var ps := FenceBalance.POST_H / 1.9  # model boyu OLCULDU: 1.9
-		post.scale = Vector3.ONE * ps
-		post.position = Vector3(float(c.x),
-				ground_height(float(c.x), float(c.y)) + FenceBalance.POST_H * 0.5,
-				float(c.y))
-		_tame_meshy_materials(post, FenceBalance.TINT)
-		add_child(post)
-		_fence_posts[c] = {"node": post, "n": 1}
+		if not _fence_posts.has(c):
+			_place_post(c)
 	_update_fence_protection(e)
 
 ## Kenardan citi kaldir; paylasilan direkler sayac sifirlaninca gider.
@@ -2235,15 +2230,7 @@ func _remove_fence(e: Vector3i) -> void:
 	if node != null and is_instance_valid(node):
 		node.queue_free()
 	_fence_nodes.erase(e)
-	for c: Vector2i in _edge_corners(e):
-		if not _fence_posts.has(c):
-			continue
-		_fence_posts[c]["n"] = int(_fence_posts[c]["n"]) - 1
-		if int(_fence_posts[c]["n"]) <= 0:
-			var pn: Node3D = _fence_posts[c]["node"]
-			if pn != null and is_instance_valid(pn):
-				pn.queue_free()
-			_fence_posts.erase(c)
+	# CIT-FIX: ray sokulunce DIREKLER KALIR (yeniden baglanabilir).
 	_update_fence_protection(e)
 
 func _clear_fences() -> void:
@@ -2322,6 +2309,12 @@ func _fence_edge_for(cell: Vector2i) -> Vector3i:
 
 ## Cit yerlestirme (hem place-mode onayi hem dokunma akisi buraya gelir).
 func _place_fence_at(cell: Vector2i) -> bool:
+	# CIT-FIX: eski "kenara direk+ray cifti" yolu BAYRAKLA KAPALI
+	# (gorev: kod silinmez). Eski "cit" esyasi olan yonlendirilir.
+	if not FenceBalance.EDGE_PLACEMENT:
+		_spawn_floating_text(cell, "Artık direk dikiliyor — Çit Direği yap",
+				Color(1, 0.85, 0.5))
+		return false
 	var e := _fence_edge_for(cell)
 	if e.z == -999 or _fences.has(e):
 		_spawn_floating_text(cell, "Orada çit var", Color(1, 0.6, 0.6))
@@ -2365,113 +2358,189 @@ func _find_open_cell(clearance: int = 1, r_min: int = 5, r_max: int = 18) -> Vec
 				return c
 	return Vector2i(-999, -999)
 
-## Agir CI karesi (cit-sistemi): 3x3 tarla cevresi cit + KAPI BOSLUGU
-## (guney ortasi bos — iki ucta direk kalir, dogal gecit) + korkuluk
-## kompozisyonu. [TODO kanca: fence_gate.glb gelirse bosluga kapi.]
+## Agir CI kareleri (cit-fix): tek direk / iki-dokunus baglama vurgusu /
+## 4-yonlu birlesim / tarla cevrili final (kapi boslugu — iki ucta direk).
 func _run_fence_frames(save_path: String) -> void:
 	var m := _find_open_cell(2, 6, 20)
 	if m == Vector2i(-999, -999):
 		return
 	_cam_locked = true
-	# 3x3 tarla (surulebilenler surulur; ortasina bitki)
-	for oy in range(-1, 2):
-		for ox in range(-1, 2):
-			var c := m + Vector2i(ox, oy)
-			if _till_valid(c):
-				Farming.till_cell(c)
-				_on_plot_changed(c)
-	if Farming.plots.has(m):
-		Farming.plant(m, "berry_bush")
-		Farming.plots[m].stage = 2
-		_on_plot_changed(m)
-	# Cevre citi: 3x3'un 12 kenari — guney ORTA kenar bos (kapi boslugu)
-	for i in range(-1, 2):
-		_set_fence(Vector3i(m.x + i, m.y - 1, 0))          # kuzey siti
-		if i != 0:
-			_set_fence(Vector3i(m.x + i, m.y + 2, 0))      # guney (orta bos)
-		_set_fence(Vector3i(m.x - 1, m.y + i, 1))          # bati
-		_set_fence(Vector3i(m.x + 2, m.y + i, 1))          # dogu
-	var mp := _cell_center(m)
-	camera.position = mp + Vector3(-3.2, 3.4, 4.6)
-	camera.look_at(mp + Vector3(0, 0.2, 0))
-	await get_tree().create_timer(0.6).timeout
-	_snap(save_path.replace(".png", "_cit_tarla.png"))
+	var eski_poz: Vector3 = player.position
+	var mc := _cell_center(m)
+	# KARE A: TEK DIREK — karakter yaninda boy kontrolu (bel hedefi)
+	player.position = mc + Vector3(1.0, 0, 0.4)
+	var c0 := Vector2i(m.x, m.y)
+	_place_post(c0)
+	camera.position = Vector3(float(c0.x), 0, float(c0.y)) \
+			+ Vector3(-1.8, 1.4, 2.4)
+	camera.look_at(Vector3(float(c0.x), 0.5, float(c0.y)))
+	await get_tree().create_timer(0.4).timeout
+	_snap(save_path.replace(".png", "_cit_direk.png"))
+	# KARE B: IKI-DOKUNUS — secili direk buyur + komsu aday isareti
+	_place_post(c0 + Vector2i(1, 0))
+	_cit_post_tapped(c0)
+	await get_tree().create_timer(0.3).timeout
+	_snap(save_path.replace(".png", "_cit_baglama.png"))
+	Inventory.add_item("cubuk", 24)
+	_cit_post_tapped(c0 + Vector2i(1, 0))  # ikinci dokunus: baglar
+	# KARE C: 4-YONLU BIRLESIM (+ sekli)
+	var jc := c0 + Vector2i(3, 0)
+	_place_post(jc)
+	for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0),
+			Vector2i(0, 1), Vector2i(0, -1)]:
+		_place_post(jc + d)
+		_cit_bagla(jc, jc + d, false)
+	camera.position = Vector3(float(jc.x), 0, float(jc.y)) \
+			+ Vector3(-2.2, 2.4, 3.0)
+	camera.look_at(Vector3(float(jc.x), 0.3, float(jc.y)))
+	await get_tree().create_timer(0.4).timeout
+	_snap(save_path.replace(".png", "_cit_birlesim.png"))
+	# KARE D: 3x3 tarla + cevre citi + KAPI BOSLUGU (guney orta bos)
+	var t := _find_open_cell(2, 10, 26)
+	if t != Vector2i(-999, -999):
+		for oy in range(-1, 2):
+			for ox in range(-1, 2):
+				var c := t + Vector2i(ox, oy)
+				if _till_valid(c):
+					Farming.till_cell(c)
+					_on_plot_changed(c)
+		if Farming.plots.has(t):
+			Farming.plant(t, "berry_bush")
+			Farming.plots[t].stage = 2
+			_on_plot_changed(t)
+		for i in range(-1, 2):
+			_set_fence(Vector3i(t.x + i, t.y - 1, 0))
+			if i != 0:
+				_set_fence(Vector3i(t.x + i, t.y + 2, 0))
+			_set_fence(Vector3i(t.x - 1, t.y + i, 1))
+			_set_fence(Vector3i(t.x + 2, t.y + i, 1))
+		var tp := _cell_center(t)
+		camera.position = tp + Vector3(-3.2, 3.4, 4.6)
+		camera.look_at(tp + Vector3(0, 0.2, 0))
+		await get_tree().create_timer(0.5).timeout
+		_snap(save_path.replace(".png", "_cit_tarla.png"))
+	player.position = eski_poz
 	camera.position = player.position + _camera_offset()
 	_cam_locked = false
 
-## FENCETEST (hizli CI, cit-sistemi): kenar kanoniklestirme + gecis
-## engeli + direk paylasimi + yaratigin citi kirmasi + tarla korumasi.
-## Basarisizlik push_error -> CI kirmizi.
+## FENCETEST (hizli CI, cit-fix): tek direk + OTOMATIK RAY YOK +
+## dokunarak baglama (bedel/malzemesiz-ipucu) + sokme iadesi (%50) +
+## 4-yon birlesim + yaratik kirilabilirligi + direk boyu (bel).
 func _run_fence_test() -> void:
 	_clear_creatures()
-	var k := _find_open_cell(1)
+	var k := _find_open_cell(2, 5, 22)
 	if k == Vector2i(-999, -999):
-		push_error("FENCE: test icin acik hucre bulunamadi")
+		push_error("FENCE: test icin acik hucre yok")
 		return
-	# 1) KANONIK KENAR: guney kenari = alt komsunun kuzey kenari (tek anahtar)
-	var alt := k + Vector2i(0, 1)
-	var norm_ok: bool = _edge_between(k, alt) == _edge_between(alt, k)
-	# 2) ENGEL: kenara cit -> iki yonden de gecis kapali
-	var e1 := _edge_between(k, alt)
-	_set_fence(e1)
-	var engel_ok: bool = fence_blocked(k, alt) and fence_blocked(alt, k) 			and not can_step(k, alt)
-	# 3) DIREK PAYLASIMI: ayni hizada ikinci kenar -> 4 degil 3 direk
-	var e2 := _edge_between(k + Vector2i(1, 0), alt + Vector2i(1, 0))
-	_set_fence(e2)
-	var direk_ok: bool = _fence_posts.size() == 3
-	# 4) KIRILMA: yaratigi 4 kenari citli hucreye kapat — her cikis
-	# citten gecer, mecburen vurur (davranis testi, boru degil).
 	var eski_poz: Vector3 = player.position
-	player.position = _cell_center(k + Vector2i(20, 0))
-	spawn_creature(k, "normal")
-	var kafes: Array = []
-	for n: Vector2i in [Vector2i(0, -1), Vector2i(0, 1),
-			Vector2i(-1, 0), Vector2i(1, 0)]:
-		var e := _edge_between(k, k + n)
-		if not _fences.has(e):
-			_set_fence(e)
-		kafes.append(e)
-	var hp0 := 0
-	for e: Vector3i in kafes:
-		if _fences.has(e):
-			hp0 += int(_fences[e]["hp"])
-	for i in 120:
-		_tick_creatures(0.05)
-	var hp1 := 0
-	for e: Vector3i in kafes:
-		if _fences.has(e):
-			hp1 += int(_fences[e]["hp"])
-	var kirilma_ok: bool = hp1 < hp0
-	player.position = eski_poz
-	_clear_creatures()
-	# 5) TARLA KORUMASI: 4 kenari citli tarla hucresi bayrak alir
-	var koruma_ok := false
-	var t := _find_open_cell(1, 5, 22)
-	if t != Vector2i(-999, -999) and _till_valid(t):
-		Farming.till_cell(t)
+	player.position = _cell_center(k)
+	# 1) TEK DIREK: esya akisiyla (envanter duser, ray GELMEZ).
+	# CI envanteri onceki testlerden DOLU olabilir — eklenebildiyse tam
+	# akis, eklenemediyse cekirdek yol olculur (add sessiz basarisiz).
+	Inventory.add_item("cit_diregi", 1)
+	var stok := Inventory.get_count("cit_diregi")
+	var f0 := _fences.size()
+	var eski_item := _held_item
+	_held_item = "cit_diregi"
+	var direk_ok: bool
+	if stok >= 1:
+		direk_ok = _place_direk_at(k) \
+				and Inventory.get_count("cit_diregi") == stok - 1
+	else:
+		direk_ok = _place_post(_nearest_corner(k))
+	_held_item = eski_item
+	var c0 := _nearest_corner(k)
+	var koseler: Array = [c0, c0 + Vector2i(1, 0),
+			c0 + Vector2i(0, 1), c0 + Vector2i(1, 1)]
+	for c: Vector2i in koseler:
+		_place_post(c)
+	# 2) OTOMATIK RAY YOK: 4 komsu direk dikildi, ray gelmedi
+	var oto_yok: bool = _fences.size() == f0
+	# 3) MALZEMESIZ baglanamaz
+	var eldeki := Inventory.get_count("cubuk")
+	if eldeki > 0:
+		Inventory.remove_item("cubuk", eldeki)
+	var malzeme_ok: bool = not _cit_bagla(c0, c0 + Vector2i(1, 0))
+	# 4) 3 kenari elle bagla, 1 acik (kapi); bedel duser
+	Inventory.add_item("cubuk", 12)
+	var oncesi := Inventory.get_count("cubuk")
+	var b1 := _cit_bagla(koseler[0], koseler[1])
+	var b2 := _cit_bagla(koseler[1], koseler[3])
+	var b3 := _cit_bagla(koseler[3], koseler[2])
+	var bedel: int = 3 * int(FenceBalance.RAY_COST["cubuk"])
+	var bagla_ok: bool = b1 and b2 and b3 \
+			and Inventory.get_count("cubuk") == oncesi - bedel \
+			and _fences.size() == f0 + 3
+	# 5) SOKME: %50 iade, direkler kalir
+	var sok_oncesi := Inventory.get_count("cubuk")
+	_cit_ray_sok(_edge_of_corners(koseler[0], koseler[1]))
+	var iade_ok: bool = Inventory.get_count("cubuk") \
+			== sok_oncesi + int(FenceBalance.RAY_IADE["cubuk"]) \
+			and _fences.size() == f0 + 2 and _fence_posts.has(koseler[0])
+	# 6) 4-YON BIRLESIM serbest
+	var m := _find_open_cell(2, 8, 26)
+	var birlesim := 0
+	Inventory.add_item("cubuk", 8)  # 4 bag x RAY_COST butcesi
+	if m != Vector2i(-999, -999):
+		var mcn := Vector2i(m.x, m.y)
+		_place_post(mcn)
+		for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0),
+				Vector2i(0, 1), Vector2i(0, -1)]:
+			_place_post(mcn + d)
+			_cit_bagla(mcn, mcn + d)
+		birlesim = _post_bond_count(mcn)
+	# 7) KIRILMA korunur: kapali yaratik rayi kirar
+	player.position = _cell_center(k + Vector2i(24, 0))
+	var kafes_h := _find_open_cell(1, 12, 30)
+	var kirilma_ok := false
+	if kafes_h != Vector2i(-999, -999):
+		spawn_creature(kafes_h, "normal")
+		var kafes: Array = []
 		for n: Vector2i in [Vector2i(0, -1), Vector2i(0, 1),
 				Vector2i(-1, 0), Vector2i(1, 0)]:
-			_set_fence(_edge_between(t, t + n))
-		var tam: bool = fence_protected(t) 				and bool(Farming.plots[t].get("korunakli", false))
-		_remove_fence(_edge_between(t, t + Vector2i(0, 1)))
-		koruma_ok = tam and not fence_protected(t) 				and not bool(Farming.plots[t].get("korunakli", true))
-		Farming.plots.erase(t)
-		_on_plot_changed(t)
-	if not norm_ok:
-		push_error("FENCE: kenar kanoniklestirme bozuk")
-	if not engel_ok:
-		push_error("FENCE: citli kenardan gecilebiliyor")
+			var e := _edge_between(kafes_h, kafes_h + n)
+			if not _fences.has(e):
+				_set_fence(e)
+			kafes.append(e)
+		var hp0 := 0
+		for e: Vector3i in kafes:
+			if _fences.has(e):
+				hp0 += int(_fences[e]["hp"])
+		for i in 120:
+			_tick_creatures(0.05)
+		var hp1 := 0
+		for e: Vector3i in kafes:
+			if _fences.has(e):
+				hp1 += int(_fences[e]["hp"])
+		kirilma_ok = hp1 < hp0
+	_clear_creatures()
+	# 8) OLCEK: bake edilen direk mesh'inden boy OLCUMU (bel hedefi)
+	var boy := 0.0
+	var meshler := _tree_model_yukle(FenceBalance.POST_GLB, FenceBalance.POST_H)
+	if not meshler.is_empty():
+		boy = (meshler[0] as Mesh).get_aabb().size.y
+	var olcek_ok: bool = absf(boy - FenceBalance.POST_H) < 0.03
 	if not direk_ok:
-		push_error("FENCE: direk paylasimi bozuk (%d direk)" % _fence_posts.size())
+		push_error("FENCE: tek direk yerlestirme akisi bozuk")
+	if not oto_yok:
+		push_error("FENCE: ray KENDILIGINDEN geldi (otomatik baglama acik!)")
+	if not malzeme_ok:
+		push_error("FENCE: malzemesiz baglama engellenmedi")
+	if not bagla_ok:
+		push_error("FENCE: dokunarak baglama/bedel bozuk")
+	if not iade_ok:
+		push_error("FENCE: sokme iadesi bozuk")
+	if birlesim != 4:
+		push_error("FENCE: 4-yon birlesim serbest degil (%d)" % birlesim)
 	if not kirilma_ok:
-		push_error("FENCE: kapali yaratik citi kirmiyor")
-	if not koruma_ok:
-		push_error("FENCE: tarla koruma bayragi yanlis")
-	print("FENCETEST: norm=%s engel=%s direk3=%s kirilma=%s koruma=%s" % [
-			str(norm_ok), str(engel_ok), str(direk_ok), str(kirilma_ok),
-			str(koruma_ok)])
-	# Temizlik: SAVELOAD dunyayi oldugu gibi olcer
+		push_error("FENCE: yaratik citi kirmiyor")
+	if not olcek_ok:
+		push_error("FENCE: direk boyu hedefte degil (%.2f)" % boy)
+	print("FENCETEST: direk=%s oto_yok=%s malzeme=%s bagla=%s iade=%s birlesim=%d kirilma=%s boy=%.2f" % [
+			str(direk_ok), str(oto_yok), str(malzeme_ok), str(bagla_ok),
+			str(iade_ok), birlesim, str(kirilma_ok), boy])
 	_clear_fences()
+	player.position = eski_poz
 
 ## Agir CI kare dizisi (agac-kesim): sallanma -> devrilme -> toz ->
 ## odun sacilmasi. Zamanlama fell_balance suralerinden.
@@ -2592,10 +2661,230 @@ func _run_fell_test() -> void:
 	player.position = eski_poz
 	_held_item = eski_item
 
+# --- CIT-FIX: tek direk yerlestirme + dokunarak ray baglama ---------------
+## Secili direk (iki-dokunus akisi). (-999,-999) = secim yok.
+var _bind_sel := Vector2i(-999, -999)
+
+## Hucrenin oyuncuya en yakin kosesi (direk yerlesim hedefi).
+func _nearest_corner(cell: Vector2i) -> Vector2i:
+	var pp := player.position
+	var en := Vector2i(cell.x, cell.y)
+	var mes := 9e9
+	for oy in [0, 1]:
+		for ox in [0, 1]:
+			var c := Vector2i(cell.x + ox, cell.y + oy)
+			var dd := Vector2(pp.x - float(c.x), pp.z - float(c.y)).length()
+			if dd < mes:
+				mes = dd
+				en = c
+	return en
+
+## Iki KOMSU kose arasindaki kenar (komsu degilse gecersiz).
+func _edge_of_corners(a: Vector2i, b: Vector2i) -> Vector3i:
+	var d := b - a
+	if d == Vector2i(1, 0):
+		return Vector3i(a.x, a.y, 0)
+	if d == Vector2i(-1, 0):
+		return Vector3i(b.x, b.y, 0)
+	if d == Vector2i(0, 1):
+		return Vector3i(a.x, a.y, 1)
+	if d == Vector2i(0, -1):
+		return Vector3i(b.x, b.y, 1)
+	return Vector3i(-999, -999, -999)
+
+## Bir diregin kac yonu bagli (0..4). T ve + birlesimler serbest.
+func _post_bond_count(c: Vector2i) -> int:
+	var n := 0
+	for e: Vector3i in [Vector3i(c.x, c.y, 0), Vector3i(c.x - 1, c.y, 0),
+			Vector3i(c.x, c.y, 1), Vector3i(c.x, c.y - 1, 1)]:
+		if _fences.has(e):
+			n += 1
+	return n
+
+## Kose noktasina TEK DIREK diker. Gorsel mesh-bake hattindan (node
+## scale YOK — agaclarla ayni normalize; gorev sarti).
+func _place_post(c: Vector2i) -> bool:
+	if _fence_posts.has(c):
+		return false
+	if c.x < 1 or c.y < 1 or c.x >= _map_w - 1 or c.y >= _map_h - 1:
+		return false
+	var meshler := _tree_model_yukle(FenceBalance.POST_GLB, FenceBalance.POST_H)
+	if meshler.is_empty():
+		return false
+	var mi := MeshInstance3D.new()
+	mi.mesh = meshler[0]
+	mi.position = Vector3(float(c.x),
+			ground_height(float(c.x), float(c.y)), float(c.y))
+	add_child(mi)
+	_fence_posts[c] = {"node": mi, "n": 0}
+	# OTOMATIK BAGLAMA KAPALI (gorev: ray yalniz kullanici istegiyle).
+	# Kod korunuyor — bayrak acilirsa <2 bagli komsulara kendisi baglar.
+	if FenceBalance.AUTO_BAGLAMA:
+		_auto_baglama_dene(c)
+	return true
+
+## [BAYRAKLA KAPALI] Yeni direk dikilince <2 bagli komsulara ray dener.
+func _auto_baglama_dene(c: Vector2i) -> void:
+	for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0),
+			Vector2i(0, 1), Vector2i(0, -1)]:
+		var k := c + d
+		if _fence_posts.has(k) and _post_bond_count(k) < 2:
+			_cit_bagla(c, k, false)
+
+## "Cit Diregi" esyasi: TEK DIREK diker (yonsuz, koseye).
+func _place_direk_at(cell: Vector2i) -> bool:
+	var c := _nearest_corner(cell)
+	if _fence_posts.has(c):
+		_spawn_floating_text(cell, "Orada direk var", Color(1, 0.6, 0.6))
+		return false
+	if not (_ground_char.get(cell, "") in [".", "d", "s"]):
+		return false
+	if not Inventory.remove_item("cit_diregi", 1):
+		return false
+	if not _place_post(c):
+		Inventory.add_item("cit_diregi", 1)
+		return false
+	_play_sfx("place")
+	_spawn_floating_text(cell, "Direk dikildi", Color(0.8, 1.0, 0.8))
+	_dirty = true
+	return true
+
+## Iki komsu diregi rayla baglar. Bedel RAY_COST (yoksa ipucu).
+func _cit_bagla(a: Vector2i, b: Vector2i, sesli: bool = true) -> bool:
+	var e := _edge_of_corners(a, b)
+	if e.z == -999 or _fences.has(e):
+		return false
+	if not _fence_posts.has(a) or not _fence_posts.has(b):
+		return false
+	if not _cit_bedel_dus():
+		if sesli:
+			_spawn_floating_text(Vector2i(a.x, a.y),
+					_cit_bedel_metni() + " gerek", Color(1, 0.6, 0.6))
+		return false
+	_set_fence(e)
+	if sesli:
+		_play_sfx("place")
+		_spawn_particles(_edge_mid(e) + Vector3(0, 0.3, 0),
+				Color(0.72, 0.66, 0.52), 5)
+	_dirty = true
+	return true
+
+func _cit_bedel_dus() -> bool:
+	for id in FenceBalance.RAY_COST:
+		if Inventory.get_count(String(id)) < int(FenceBalance.RAY_COST[id]):
+			return false
+	for id in FenceBalance.RAY_COST:
+		Inventory.remove_item(String(id), int(FenceBalance.RAY_COST[id]))
+	return true
+
+func _cit_bedel_metni() -> String:
+	var parca: PackedStringArray = []
+	for id in FenceBalance.RAY_COST:
+		parca.append("%d %s" % [int(FenceBalance.RAY_COST[id]),
+				Items.display_name(String(id))])
+	return " + ".join(parca)
+
+## Ray sokme: %50 iade (veride) — kenar acilir, DIREKLER KALIR.
+func _cit_ray_sok(e: Vector3i) -> void:
+	if not _fences.has(e):
+		return
+	_remove_fence(e)
+	for id in FenceBalance.RAY_IADE:
+		Inventory.add_item(String(id), int(FenceBalance.RAY_IADE[id]))
+	_spawn_floating_text(Vector2i(e.x, e.y), "Ray söküldü (iade)",
+			Color(0.9, 0.9, 0.7))
+	_dirty = true
+
+## Bakilan hucreye gore cit hedefi: secim aktifken direk oncelikli
+## (ikinci dokunus), degilse once ray (Sok), sonra direk (Bagla).
+func _cit_target() -> Dictionary:
+	var fc := _facing_cell()
+	var pp := player.position
+	var kose := Vector2i(-999, -999)
+	var kmes := 9e9
+	for oy in [0, 1]:
+		for ox in [0, 1]:
+			var c := Vector2i(fc.x + ox, fc.y + oy)
+			if not _fence_posts.has(c):
+				continue
+			var dd := Vector2(pp.x - float(c.x), pp.z - float(c.y)).length()
+			if dd < kmes:
+				kmes = dd
+				kose = c
+	var ekenar := Vector3i(-999, -999, -999)
+	for n: Vector2i in [Vector2i(0, -1), Vector2i(0, 1),
+			Vector2i(-1, 0), Vector2i(1, 0)]:
+		var e := _edge_between(fc, fc + n)
+		if e.z != -999 and _fences.has(e):
+			ekenar = e
+			break
+	if _bind_sel != Vector2i(-999, -999) and kose != Vector2i(-999, -999):
+		return {"type": "citdirek", "cell": fc, "corner": kose,
+				"icon": "hammer", "valid": true, "kind": "none"}
+	if ekenar.z != -999:
+		return {"type": "citray", "cell": fc, "edge": ekenar,
+				"icon": "grab", "valid": true, "kind": "none"}
+	if kose != Vector2i(-999, -999):
+		return {"type": "citdirek", "cell": fc, "corner": kose,
+				"icon": "hammer", "valid": true, "kind": "none"}
+	return {"type": "none", "cell": fc, "icon": "fist",
+			"valid": false, "kind": "none"}
+
+## Direge dokunuldu: sec ya da (secim varken komsuya) BAGLA.
+func _cit_post_tapped(c: Vector2i) -> void:
+	if _bind_sel == Vector2i(-999, -999):
+		_bind_sel = c
+		_cit_sel_vurgula(c, true)
+		_spawn_floating_text(Vector2i(c.x, c.y),
+				"Bağla: komşu direğe dokun", Color(0.8, 0.95, 1.0))
+		return
+	if _bind_sel == c:
+		_cit_sel_vurgula(_bind_sel, false)
+		_bind_sel = Vector2i(-999, -999)
+		return
+	if (c - _bind_sel).length() == 1.0:
+		if _cit_bagla(_bind_sel, c):
+			_spawn_floating_text(Vector2i(c.x, c.y), "Bağlandı",
+					Color(0.7, 1.0, 0.7))
+		_cit_sel_vurgula(_bind_sel, false)
+		_bind_sel = Vector2i(-999, -999)
+		return
+	_cit_sel_vurgula(_bind_sel, false)
+	_bind_sel = c
+	_cit_sel_vurgula(c, true)
+	_spawn_floating_text(Vector2i(c.x, c.y),
+			"Bağla: komşu direğe dokun", Color(0.8, 0.95, 1.0))
+
+## Secili direk vurgusu: hafif buyume + bos komsu yonlere aday isareti.
+func _cit_sel_vurgula(c: Vector2i, on: bool) -> void:
+	if not _fence_posts.has(c):
+		return
+	var node: Node3D = _fence_posts[c]["node"]
+	if node == null or not is_instance_valid(node):
+		return
+	var tw := create_tween()
+	tw.tween_property(node, "scale",
+			Vector3(1.18, 1.18, 1.18) if on else Vector3.ONE, 0.12)
+	if on:
+		for d: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0),
+				Vector2i(0, 1), Vector2i(0, -1)]:
+			var k := c + d
+			if _fence_posts.has(k) \
+					and not _fences.has(_edge_of_corners(c, k)):
+				_spawn_particles(Vector3(float(k.x), ground_height(
+						float(k.x), float(k.y)) + 0.5, float(k.y)),
+						Color(0.5, 0.9, 1.0), 5)
+
 func _fences_to_save() -> Array:
 	var out: Array = []
 	for e: Vector3i in _fences:
 		out.append([e.x, e.y, e.z, int(_fences[e]["hp"])])
+	return out
+
+func _posts_to_save() -> Array:
+	var out: Array = []
+	for c: Vector2i in _fence_posts:
+		out.append([c.x, c.y])
 	return out
 
 func can_step(from: Vector2i, to: Vector2i) -> bool:
@@ -2736,6 +3025,7 @@ func to_save_data() -> Dictionary:
 		"regrow_type": _cells_to_json(_regrow_type),
 		"placed": _cells_to_json(_placed),
 		"fences": _fences_to_save(),  # cit-sistemi: kenar + hp
+		"fence_posts": _posts_to_save(),  # cit-fix: bagimsiz direkler
 		"structures": _structures.to_save_data(),  # 13.6: yon/hp/durum
 		"chests": chest_json,
 		"ground_items": ground_json,
@@ -2833,6 +3123,8 @@ func from_save_data(data: Dictionary) -> bool:
 	# kayitlarda "structures" yoksa _set_placed tam-can yeni ornek uretir
 	_structures.from_save_data(data.get("structures", []))
 	_clear_fences()
+	for pj in data.get("fence_posts", []):
+		_place_post(Vector2i(int(pj[0]), int(pj[1])))
 	for fj in data.get("fences", []):
 		_set_fence(Vector3i(int(fj[0]), int(fj[1]), int(fj[2])), int(fj[3]))
 	for key in data.get("placed", {}):
@@ -7029,6 +7321,8 @@ func _try_place(cell: Vector2i) -> bool:
 	# CIT: hucre degil KENAR yerlesimi — kendi akisi.
 	if _held_item == "cit":
 		return _place_fence_at(cell)
+	if _held_item == "cit_diregi":
+		return _place_direk_at(cell)
 	if _placed.has(cell) or _objects.has(cell) or cell == _player_cell():
 		return false
 	# KESIF 16.1/16.4: yetersiz isikla siste KAMP KURULAMAZ (kapi kurali).
@@ -7422,6 +7716,11 @@ func _update_ghost() -> void:
 		if fe.z != -999:
 			_ghost.position = _edge_mid(fe) + Vector3(0, FenceBalance.RAIL_Y, 0)
 			_ghost.rotation_degrees.y = 90.0 if fe.z == 1 else 0.0
+	# CIT-FIX: direk hayaleti oyuncuya en yakin KOSEYE oturur.
+	if _place_item == "cit_diregi":
+		var kc := _nearest_corner(cell)
+		_ghost.position = Vector3(float(kc.x),
+				ground_height(float(kc.x), float(kc.y)), float(kc.y))
 	var v := _place_valid(cell)
 	var nv := bool(v["valid"])
 	# Boyamayi yalnizca gecerlilik degisince yenile (kare basi materyal
@@ -7441,6 +7740,13 @@ func _place_valid(cell: Vector2i) -> Dictionary:
 		return {"valid": false, "reason": "sınır"}
 	# CIT: kural kenara bakar — hucre dolulugu onemsiz (kenar bos +
 	# zemin turu yeter; tarlanin kenarina cit tam da boyle cekilir).
+	if String(def.get("behavior", "")) == "fence_post":
+		var kc := _nearest_corner(cell)
+		if _fence_posts.has(kc):
+			return {"valid": false, "reason": "direk var"}
+		if not (_ground_char.get(cell, "") in [".", "d", "s"]):
+			return {"valid": false, "reason": "zemin"}
+		return {"valid": true, "reason": ""}
 	if String(def.get("behavior", "")) == "fence":
 		var fe := _fence_edge_for(cell)
 		if fe.z == -999 or _fences.has(fe):
@@ -7485,6 +7791,10 @@ func _place_confirm() -> void:
 	# CIT: kenar akisi (envanteri _place_fence_at duser)
 	if _place_item == "cit":
 		if _place_fence_at(cell) and Inventory.get_count("cit") <= 0:
+			_exit_place_mode()
+		return
+	if _place_item == "cit_diregi":
+		if _place_direk_at(cell) and Inventory.get_count("cit_diregi") <= 0:
 			_exit_place_mode()
 		return
 	if not Inventory.remove_item(_place_item, 1):
@@ -8284,6 +8594,10 @@ func _acquire_target() -> Dictionary:
 		var d := _describe_target(cell)
 		if d["type"] != "none":
 			return d
+	# CIT-FIX: direk/ray hedefleri (dusuk oncelik; silahtan once).
+	var ct := _cit_target()
+	if String(ct["type"]) != "none":
+		return ct
 	var fc := _facing_cell()
 	if ToolProfiles.is_weapon(_held_item):
 		return {"type": "attack", "cell": fc, "icon": "attack",
@@ -8320,6 +8634,12 @@ func _perform_tool_action(t: Dictionary) -> void:
 			return
 		"door":
 			_toggle_door(cell)
+			return
+		"citdirek":
+			_cit_post_tapped(Vector2i(t["corner"]))
+			return
+		"citray":
+			_cit_ray_sok(Vector3i(t["edge"]))
 			return
 	if player.is_swinging():
 		return

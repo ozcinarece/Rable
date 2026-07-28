@@ -74,9 +74,10 @@ const CRAFT_RECIPES: Dictionary = {
 	# --- Yapilar (uret -> eline al -> yere koy) ---
 	"ahsap_duvar": {"output": {"ahsap_duvar": 1}, "cost": {"kalas": 2},
 			"station": "", "category": "yapi", "time": 2.0},
-	# CIT (kenar-bazli): gorev verisi "2 dal + 1 ip / kenar" — dal = cubuk.
-	"cit": {"output": {"cit": 1}, "cost": {"cubuk": 2, "ip": 1},
-			"station": "", "category": "yapi", "time": 1.5},
+	# CIT-FIX: tarif bolundu — DIREK ayri craft kalemi; ray bedeli
+	# BAGLAMA aninda ayrica duser (fence_balance.RAY_COST).
+	"cit_diregi": {"output": {"cit_diregi": 1}, "cost": {"cubuk": 1, "ip": 1},
+			"station": "", "category": "yapi", "time": 1.0},
 	"tas_duvar": {"output": {"tas_duvar": 1}, "cost": {"tas": 2},
 			"station": "", "category": "yapi", "time": 2.0},
 	"zemin": {"output": {"zemin": 1}, "cost": {"kalas": 1},

@@ -81,3 +81,47 @@ temizlenir.
   kenar sökme ayrı iş).
 - yaratik-gece dalıyla birleşince: çite vuran yaratıkta yeni vuruş
   animasyonu kancası otomatik çalışır (aynı struct yolunu kullanıyor).
+
+---
+
+# ÇİT DÜZELTME TURU (cit-fix — kullanıcı geri bildirimi)
+
+## 1. TEK DİREK YERLEŞTİRME
+- "Çit Direği" ayrı craft kalemi (1 çubuk + 1 ip, veride). Yerleştirme
+  artık YÖNSÜZ TEK DİREK diker — hücrenin oyuncuya en yakın KÖŞESİNE
+  (hayalet de o köşeye oturur; ne görürsen onu dikersin).
+- Eski "kenara direk+ray çifti" yolu `EDGE_PLACEMENT=false` bayrağıyla
+  KAPALI (kod silinmedi); elinde eski "cit" eşyası olan yönlendirilir.
+- Direk boyu BEL hedefi: 0.75 m (0.85'ten indirildi) — mesh-bake
+  hattıyla, node scale YOK (ağaçlarla aynı normalize; .import dosyaları
+  repoda yaşamadığı için Import Root Scale ayarı CI'da tutunamazdı —
+  eşdeğer sonucu bake veriyor, gerekçe bu). Ray kesiti orantılı
+  inceltildi (0.85→0.55), ray yüksekliği 0.42.
+
+## 2. RAY BAĞLAMA — YALNIZ KULLANICI İSTEĞİYLE
+- OTOMATİK BAĞLAMA TAMAMEN KAPALI (`AUTO_BAGLAMA=false`): direk
+  dikmek asla kendiliğinden ray çekmez. (<2 bağlı komşuya otomatik
+  bağlayan kod `_auto_baglama_dene`'de bayrağın arkasında duruyor —
+  istenirse tek satırla açılır.)
+- **İki-dokunuş akışı seçildi**: direğe dokun → seçilir (direk hafifçe
+  büyür + boş komşu yönlerde mavi aday işareti + "Bağla: komşu direğe
+  dokun") → komşu direğe dokun → ray kurulur. Aynı direğe ikinci
+  dokunuş seçimi iptal eder; uzak direğe dokunuş seçimi taşır.
+  Gerekçe: mevcut UI dilinde bağlam MENÜSÜ yok (tek ana buton +
+  hedefleme); menü eklemek yerine dokunuş dili korundu.
+- Bedel bağlama ANINDA düşer: 2 çubuk/ray (görev "1 dal gibi" dedi;
+  %50 iade 1 dalda tanımsız kalırdı — 2 çubuk + 1 çubuk iade tam yarı).
+  Malzeme yoksa bağlanamaz, "2 Çubuk gerek" ipucu.
+- Ray SÖKME: raya dokun → sök (%50 iade). DİREKLER KALIR.
+- 4 yön serbest: T ve + birleşimler (FENCETEST birlesim=4).
+
+## 3. DOĞRULAMA (FENCETEST yeni)
+`direk=true oto_yok=true malzeme=true bagla=true iade=true
+birlesim=4 kirilma=true boy=0.75` — görevin senaryosu birebir:
+4 direk karede, 3 kenar elle bağlı, 1 açık; hiçbir ray kendiliğinden
+gelmedi; sök-iade çalışıyor; yaratık rayı kırıyor.
+
+## GEÇİŞ UYUMU
+Eski kayıtlardaki raylar yüklenirken eksik uçlara direk otomatik
+tamamlanır (_set_fence geçiş köprüsü); direkler artık kayıtta ayrı
+liste ("fence_posts").

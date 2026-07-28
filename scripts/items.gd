@@ -47,6 +47,7 @@ const ITEMS: Dictionary = {
 	"ahsap_duvar": {"name": "Ahşap Duvar", "icon": "res://assets/tiles/wood_wall.png"},
 	# CIT: kendi ikonu yok (borc) — ahsap gorunumlu duvar ikonu emanet.
 	"cit": {"name": "Çit", "icon": "res://assets/tiles/wood_wall.png"},
+	"cit_diregi": {"name": "Çit Direği", "icon": "res://assets/tiles/wood_wall.png"},
 	"tas_duvar": {"name": "Taş Duvar", "icon": "res://assets/tiles/stone_wall.png"},
 	"tezgah": {"name": "Tezgah", "icon": "res://assets/items/tezgah_render.png"},
 	"arastirma_masasi": {"name": "Araştırma Masası", "icon": "res://assets/items/arastirma_masasi.png"},
@@ -149,6 +150,7 @@ const DESCRIPTIONS: Dictionary = {
 	"tohum": "Eline al: toprak zemine dokununca ekilir.",
 	"ahsap_duvar": "Eline al ve yere koy: engel/savunma.",
 	"cit": "Hücre kenarına dizilir: tarla çevirir, yaratığı yavaşlatır.",
+	"cit_diregi": "Köşeye dik; iki direği dokunarak rayla bağla.",
 	"tas_duvar": "Eline al ve yere koy: saglam engel.",
 	"tezgah": "Yaninda karmasik tarifler acilir.",
 	"arastirma_masasi": "Yaninda arastirma agaci acilir; dugumler burada satin alinir.",
