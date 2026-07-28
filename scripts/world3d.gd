@@ -1507,6 +1507,7 @@ func _run_fast_tests() -> void:
 	_run_night_logic_test()
 	_run_fence_test()
 	_run_fell_test()
+	_run_yol_test()
 	_run_kesif_perf()
 	_run_save_load_selftest()
 	print("FASTTESTS: bitti")
@@ -2874,6 +2875,46 @@ func _cit_sel_vurgula(c: Vector2i, on: bool) -> void:
 				_spawn_particles(Vector3(float(k.x), ground_height(
 						float(k.x), float(k.y)) + 0.5, float(k.y)),
 						Color(0.5, 0.9, 1.0), 5)
+## YOLTEST (hizli CI, tas-yol): hucre doseme (MultiMesh ornek sayisi) +
+## donus cesitliligi + uc kurali (kucuk olcek) + firca entegrasyonu
+## (lay_road -> _build_road ayni gorsel yol).
+func _run_yol_test() -> void:
+	var eski_yol := _path_cells.duplicate()
+	_path_cells.clear()
+	var k := _find_open_cell(2, 6, 24)
+	if k == Vector2i(-999, -999):
+		push_error("YOL: acik hucre yok")
+		_path_cells = eski_yol
+		return
+	for i in 6:  # kisa serit + tek uc
+		lay_road(k + Vector2i(i, 0), "yeni")
+	_build_road()
+	var mesh_ok := _path_mesh() != null
+	# Ornek sayisi: yol MultiMesh'i doseli hucre kadar ornek icermeli
+	var ornek := 0
+	for n in _road_nodes:
+		if n is MultiMeshInstance3D and (n as MultiMeshInstance3D).multimesh.mesh == _path_mesh():
+			ornek = (n as MultiMeshInstance3D).multimesh.instance_count
+	var dosendi: bool = ornek == _path_cells.size()
+	# Donus cesitliligi: hash yaw'lari arasinda en az 2 farkli deger
+	var yawlar: Dictionary = {}
+	for cell: Vector2i in _path_cells:
+		yawlar[int(RoadScatter.hash01(cell.x, cell.y, 601) * 4.0) % 4] = true
+	var donus_ok: bool = yawlar.size() >= 2
+	# Uc kurali: uc hucrenin olcegi ic hucreden kucuk (hash bagimsiz kural)
+	var uc_ok := RoadScatter.PATH_UC_SCALE < 1.0
+	if not mesh_ok:
+		push_error("YOL: stone_path mesh yuklenemedi")
+	if not dosendi:
+		push_error("YOL: doseme eksik (%d ornek / %d hucre)" % [
+				ornek, _path_cells.size()])
+	if not donus_ok:
+		push_error("YOL: donus cesitliligi yok")
+	print("YOLTEST: mesh=%s ornek=%d hucre=%d donus=%d uc_olcek=%.2f" % [
+			str(mesh_ok), ornek, _path_cells.size(), yawlar.size(),
+			RoadScatter.PATH_UC_SCALE])
+	_path_cells = eski_yol
+	_build_road()
 
 func _fences_to_save() -> Array:
 	var out: Array = []
@@ -4706,11 +4747,116 @@ func _build_road() -> void:
 	_road_spill.clear()
 	if _path_cells.is_empty():
 		return
+	# TAS YOL FINAL: stone_path scatter (tek hucre, zemin CIM kalir).
+	# Onceki iki yaklasim bayrakla kapali (geri donus sigortasi).
+	if RoadScatter.PATH_ON:
+		_build_road_path()
+		return
 	if RoadScatter.SCATTER_ON:
 		_build_road_scatter()
 		return
 	if RoadTiles.TILE_MODE_ON:
 		_build_road_tiles()
+
+## TAS YOL FINAL: her yol hucresine stone_path (rastgele 0/90/180/270 +
+## %90-110 olcek + ±%5 ofset). Zemin boyanmaz — cim aralardan gorunur.
+## Yol UCU / tekil kenar (yol komsusu <= 1): %70 olcek — "yol dagilarak
+## biter". Taslarin %30'unu gizleme MUMKUN DEGIL: model TEK mesh geldi
+## (olculdu, alt-node yok) — gorev izniyle yalniz olcek kucultme (RAPOR).
+## Ust serpinti: moss %20 (miras %40); 1 dis hucreye %15 kacak tas.
+## Dusuk kalitede moss + kacak kapali. TEK MultiMesh (golge ACIK).
+var _path_mesh_cache: Mesh = null
+
+func _path_mesh() -> Mesh:
+	if _path_mesh_cache != null:
+		return _path_mesh_cache
+	if not ResourceLoader.exists(RoadScatter.PATH_GLB):
+		return null
+	var inst: Node3D = load(RoadScatter.PATH_GLB).instantiate()
+	var mesh := _find_mesh(inst)
+	inst.queue_free()
+	if mesh == null:
+		return null
+	# Sicak gri carpan: Meshy taslari cok beyaz (kanit karesi) —
+	# yuzey materyalleri BIR KEZ kopyalanip tonlanir.
+	mesh = mesh.duplicate()
+	for sf in mesh.get_surface_count():
+		var m := mesh.surface_get_material(sf)
+		if m is BaseMaterial3D:
+			var k: BaseMaterial3D = m.duplicate()
+			k.albedo_color = k.albedo_color * RoadScatter.PATH_TINT
+			mesh.surface_set_material(sf, k)
+	_path_mesh_cache = mesh
+	return mesh
+
+func _build_road_path() -> void:
+	var mesh := _path_mesh()
+	if mesh == null:
+		return
+	var t := PerfBalance.tier(_quality_tier)
+	var yuksek: bool = bool(t.get("shadow", true))
+	var xforms: Array = []
+	var moss: Array = []
+	var stray: Array = []
+	for cell: Vector2i in _path_cells:
+		var age := String(_path_cells[cell])
+		# yol komsusu sayisi: uc/tekil hucre tespiti
+		var komsu := 0
+		for n: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0),
+				Vector2i(0, 1), Vector2i(0, -1)]:
+			if _path_cells.has(cell + n):
+				komsu += 1
+		var h1 := RoadScatter.hash01(cell.x, cell.y, 601)
+		var h2 := RoadScatter.hash01(cell.x, cell.y, 607)
+		var sc: float = RoadScatter.PATH_SCALE_MIN + h2 \
+				* (RoadScatter.PATH_SCALE_MAX - RoadScatter.PATH_SCALE_MIN)
+		if komsu <= 1:
+			sc *= RoadScatter.PATH_UC_SCALE  # uc kurali: dagilarak biter
+		var yaw := float(int(h1 * 4.0) % 4) * 90.0
+		var ox: float = (RoadScatter.hash01(cell.x, cell.y, 613) - 0.5) \
+				* 2.0 * RoadScatter.PATH_OFS
+		var oz: float = (RoadScatter.hash01(cell.x, cell.y, 617) - 0.5) \
+				* 2.0 * RoadScatter.PATH_OFS
+		var pos := _cell_center(cell) + Vector3(ox,
+				RoadScatter.PATH_TOP - RoadScatter.PATH_MESH_TOP * sc, oz)
+		var b := Basis().rotated(Vector3.UP, deg_to_rad(yaw)) \
+				.scaled(Vector3(sc, sc, sc))
+		xforms.append(Transform3D(b, pos))
+		if not yuksek:
+			continue  # Dusuk kademe: moss + kacak yok (mobil)
+		var moss_pct: int = RoadScatter.PATH_MOSS_PCT_MIRAS \
+				if age == "miras" else RoadScatter.PATH_MOSS_PCT
+		if RoadScatter.hash01(cell.x, cell.y, 619) * 100.0 < float(moss_pct):
+			moss.append(Transform3D(Basis().rotated(Vector3.UP,
+					RoadScatter.hash01(cell.x, cell.y, 621) * TAU),
+					_cell_center(cell) + Vector3(0, 0.02, 0)))
+		for n: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0),
+				Vector2i(0, 1), Vector2i(0, -1)]:
+			var g := cell + n
+			if _path_cells.has(g) or not is_walkable(g):
+				continue
+			if RoadScatter.hash01(g.x, g.y, 631) * 100.0 \
+					< float(RoadScatter.PATH_STRAY_PCT) * 0.25:
+				stray.append(Transform3D(Basis().rotated(Vector3.UP,
+						RoadScatter.hash01(g.x, g.y, 633) * TAU) \
+						.scaled(Vector3(0.6, 0.6, 0.6)),
+						_cell_center(g)))
+	if xforms.is_empty():
+		return
+	# Golge ACIK (gorev kurali: cast/receive) — tek MultiMesh.
+	var node := _make_mesh_multimesh(mesh, xforms, true)
+	add_child(node)
+	_road_nodes.append(node)
+	if not moss.is_empty():
+		var mn := _road_moss_node(moss)
+		if mn != null:
+			add_child(mn)
+			_road_nodes.append(mn)
+	if not stray.is_empty():
+		var sn := _env_scatter_node("path_stone", stray)
+		if sn != null:
+			add_child(sn)
+			_road_nodes.append(sn)
 
 func _build_road_tiles() -> void:
 	var mult: float = float(EnvModels.SCATTER_TIER_MULT.get(_quality_tier, 1.0))
