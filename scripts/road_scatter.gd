@@ -21,7 +21,24 @@ extends RefCounted
 ##      (model zaten tam hucre boyunda gelmis).
 
 ## Ana anahtar. false yapilirsa eski karo sistemi geri doner.
-const SCATTER_ON := true
+# TAS YOL FINAL (stone_path): tek hucrelik serbest tas dagilimi.
+## Onceki serpinti/karo yaklasimlari BAYRAKLA kapali (kod durur).
+const PATH_ON := true
+const PATH_GLB := "res://assets/models/env/stone_path.glb"
+## OLCULDU: mesh ust y=0.054, taban 0.996 (tam hucre), Y-up.
+## Kural (pazarliksiz): tas ustleri cim +2.8 cm.
+const PATH_TOP := 0.028
+const PATH_MESH_TOP := 0.054
+const PATH_SCALE_MIN := 0.9
+const PATH_SCALE_MAX := 1.1
+const PATH_OFS := 0.05          # +-%5 konum ofseti (1 m hucrede)
+const PATH_UC_SCALE := 0.7      # yol ucu / tekil kenar hucresi kuculur
+const PATH_MOSS_PCT := 20       # ust serpinti: moss (miras yolda 40)
+const PATH_MOSS_PCT_MIRAS := 40
+const PATH_STRAY_PCT := 15      # 1 hucre disari kacak tas (path_stone)
+## Meshy taslari cok beyaz geldi (kanit karesinde olculdu): sicak gri.
+const PATH_TINT := Color(0.710, 0.675, 0.627)  # ~#B5ACA0
+const SCATTER_ON := false  # stone_path finaliyle kapatildi
 
 const MODEL_ID := "stone_scatter_a"
 const MODEL_PATH := "res://assets/models/env/stone_scatter_a.glb"

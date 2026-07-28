@@ -154,3 +154,34 @@ bir MultiMesh (karo a/b/c + kenar + yosun + iki tutam + üç saçılma türü)
 | `docs/screens/3d_yol_genis.png` | (d) kamp geneli, gündüz |
 | `docs/screens/3d_yol_genis_gece.png` | (d) kamp geneli, gece |
 | `docs/screens/3d_yol_gece.png` | yakın kare, gece (taş parlıyor mu) |
+
+---
+
+# TAŞ YOL FİNAL — stone_path SCATTER (branch: tas-yol)
+
+Önceki karo (RoadTiles) ve serpinti (RoadScatter SCATTER_ON) denemeleri
+BAYRAKLA kapalı — kod duruyor. Yeni final: `stone_path.glb` tek
+hücrelik serbest taş dağılımı.
+
+- **Model:** env/'e taşındı; ÖLÇÜLDÜ: taban 0.996 (tam hücre), üst
+  y=0.054, Y-up (döndürme gerekmedi), 511 üçgen. Root Scale gerekmedi
+  (taban zaten 1 hücre); .import repoda yaşamadığı için import ayarı
+  yerine ölçüler koda veri olarak yazıldı.
+- **Yükseklik (pazarlıksız):** taş üstleri çim +2.8 cm — tek hücre
+  yandan kanıt karesi İLK COMMIT'te (3d_yol_yandan_kanit.png).
+  Gölge cast/receive AÇIK (tek MultiMesh).
+- **Zemin ÇİM KALIR** — boyama yok; hücre başına 0/90/180/270 dönüş +
+  %90-110 ölçek + ±%5 ofset (hash — deterministik).
+- **Uç kuralı:** yol komşusu ≤1 hücre %70 ölçek. Taşların %30'unu
+  gizleme MÜMKÜN DEĞİL: model TEK mesh geldi (alt-node yok, ölçüldü) —
+  görev izniyle yalnız ölçek küçültme.
+- **Serpinti:** moss %20 (miras %40), 1 dış hücreye kaçak path_stone
+  (%15 bandı); Düşük kalitede ikisi de kapalı.
+- **Renk:** Meshy taşları çok beyaz geldi (kanıt karesinde görüldü) —
+  ~#B5ACA0 sıcak gri çarpan, yüzey başına tek kopya.
+- **Entegrasyon:** lay_road/_build_road aynı giriş — kamp miras
+  yolları ve geliştirici yol fırçası OTOMATİK bu görsele geçti.
+- **YOLTEST (hızlı CI):** mesh + örnek==hücre + dönüş çeşitliliği
+  (≥2) + uç ölçeği. Kamp yolu kareleri (gündüz/gece/kıvrım) ağır
+  CI'da aynı adlarla yeni görselle çekiliyor; konsept HTML
+  karşılaştırması kullanıcıda (html'i oyun karesiyle yan yana aç).
