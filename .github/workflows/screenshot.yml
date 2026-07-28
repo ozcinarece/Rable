@@ -74,7 +74,7 @@ jobs:
       - name: Oyunu calistir ve goruntu al
         run: |
           mkdir -p "$GITHUB_WORKSPACE/docs/screens"
-          RABLE_SCREENSHOT="$GITHUB_WORKSPACE/docs/screens/3d.png" timeout 480 \
+          RABLE_SCREENSHOT="$GITHUB_WORKSPACE/docs/screens/3d.png" timeout 560 \
             xvfb-run -a -s "-screen 0 960x540x24" \
             /opt/godot/godot --path "$GITHUB_WORKSPACE" --rendering-driver opengl3 \
             --resolution 960x540 \

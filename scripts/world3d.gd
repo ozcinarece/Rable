@@ -639,10 +639,13 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(Vector3(float(fbase.x) + 1.5, 0.15, float(fbase.y) + 0.5))
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_tarim.png"))
+	# YENI OZELLIK KARELERI ONE ALINDI: tur CI zaman butcesini asinca
+	# sondaki kareler hic cekilmiyordu (agac-kesim turunda olculdu —
+	# kesim kareleri bos kaldi). Yeni is her zaman butcenin basinda.
+	await _run_fell_frames(save_path)
+	await _run_fence_frames(save_path)
 	await _run_road_test(save_path)
 	await _run_camp_test(save_path)
-	await _run_fence_frames(save_path)
-	await _run_fell_frames(save_path)
 	await _run_env_showcase(save_path)
 	await _run_perf_probe(save_path)
 	await _run_night_test(save_path)
