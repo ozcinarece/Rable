@@ -77,3 +77,72 @@ kullanan meşale konuldu.
   açılışta ~yarım saniye düz su görülebilir.
 - bob_amplitude vertex kabartısı kıyıda COLOR.g ile söndürülüyor
   (shader'ın kendi tasarımı) — köpük bandı titremez.
+
+---
+
+# V2 GÜNCELLEMESİ (su-shader-v2)
+
+Kullanıcı `water.gdshader`'ı v2 ile güncelledi (commit "Add files via
+upload"); bu tur shader'ı oyuna bağladı ve doğruladı.
+
+## V2'DE NE DEĞİŞTİ (shader tarafı)
+
+- **Gerçek dalga**: vertex'te 3 yönlü sinüs üst üste
+  (`wave_amplitude=0.09`, `wave_frequency=1.9`, `wave_time_scale=1.45`
+  — prototip değerleri, sayılar SHADER varsayılanlarında). Eski
+  `bob_amplitude/bob_frequency` kabartısı kaldırıldı.
+- **Dalga eğimi normale katılıyor**: `v_wave_h` varying'i fragment'ta
+  normal haritasına ekleniyor — dalga tepeleri ışığı farklı kırıyor.
+- **Parıltı sıklaştı**: sparkle_threshold 0.965→0.950,
+  intensity 0.55→0.85; normal_strength 0.25→0.38, kayma hızları arttı.
+
+## 4.7 DERLEME DÜZELTMESİ (v1 dersinin geri işlenmesi)
+
+Yüklenen v2, akış yönünü fragment'ta `CUSTOM0.xy`'den okuyordu.
+Godot 4.7'de CUSTOM0 yalnız vertex aşamasında okunabilir (v1 turunda
+yaşanan aynı tuzak). `v_flow_dir` varying düzeltmesi v2'ye geri
+işlendi; başka değişiklik yapılmadı. xvfb+opengl3 ile derleme temiz
+(SHADER ERROR yok).
+
+## MESH YOĞUNLUĞU KONTROLÜ (görev madde 2)
+
+Vertex dalgası mesh bölünmesine muhtaç. İki su yüzeyi de ZATEN hücre
+başına **4x4 bölünmeli** (0.25 m karolar; `res := 4`):
+- `_build_lake_surface` — v1 turunda köpük bandı pürüzsüzlüğü için
+  seçilmişti, v2 dalga şartını karşılıyor.
+- `_build_pool_mesh` — aynı çözünürlük.
+
+Yeterlilik hesabı: en kısa dalga bileşeni λ≈1.27 m (freq×2.6) →
+0.25 m ızgarada ~5 vertex/dalga boyu. **Yandan alçak açı xvfb
+karesiyle doğrulandı**: v2'de su silueti gözle görülür kabarıyor,
+v1 aynı kadrajda dümdüz çizgi. Ek bölünme GEREKMEDİ.
+
+Düşük kademe notu: shader'da dalga zaten `quality=0`'da kapalı.
+Mesh kalite değişiminde yeniden kurulmadığından bölünme sabit kalır;
+Düşük'te tek quad'a inmek köpük bandını da bozacağı için yapılmadı
+(bölünmenin asıl sahibi köpük — gerekçe kodda).
+
+## FPS ÖNCE/SONRA
+
+Telefon yok; ölçüm iki kanaldan:
+- **xvfb yazılımsal GL A/B** (vertex shader CPU'da koşar, vertex
+  maliyeti birebir görünür): 56x56 quad'lık yüzeyde v1=12.32 ms,
+  v2=12.20 ms/kare — fark gürültü payında.
+- **Analiz**: vertex sayısı DEĞİŞMEDİ (mesh aynı); v2'nin ek yükü
+  quality=1'de vertex başına 3 sinüs + fragment'ta 2 çarpma.
+  Düşük kademede ek yük SIFIR (dalga bloğu quality=0'da atlanır).
+  Telefonda hissedilir fark beklenmez.
+
+## KARELER (v2 kadraj değişikliği)
+
+`3d_su_golet.png` artık **YANDAN ALÇAK AÇI**: kamera su çizgisinin
+~0.5 m üstünde, kıyıdan göl merkezine bakar — dalgalar karşı kıyı
+fonunda SİLUETTE görünür (görev şartı). Kamera zemin altına düşmesin
+diye `ground_height+0.35` tabanı var. Gece Ocak yansıması ve akan
+kanal kareleri önceki kadrajda.
+
+## DOĞRULAMA
+
+- Yerel hızlı paket TÜM testler yeşil; WATERCOLORTEST v2 ile tutuyor
+  (bant renkleri/eşikleri v2'de DEĞİŞMEDİ — CPU replikası geçerli).
+- Mesh sözleşmesi (COLOR/UV/CUSTOM0 + v1_encode) aynen korundu.

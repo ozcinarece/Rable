@@ -150,6 +150,13 @@ static func hash01(x: int, y: int, salt: int) -> float:
 # =======================================================================
 # C2. SU SHADER V1 (assets/models/env/water.gdshader) — VERI SOZLESMESI
 # =======================================================================
+## V2 NOTU (su-shader-v2): shader dosyasi v2'ye guncellendi — vertex'te
+## 3 yonlu gercek dalga (wave_amplitude/frequency/time_scale uniform'lari,
+## sayilar SHADER varsayilanlarinda: prototipten 0.09/1.9/1.45) ve dalga
+## egiminin fragment normaline katilmasi eklendi. MESH SOZLESMESI
+## (COLOR/UV/CUSTOM0 + asagidaki sabitler) DEGISMEDI; bant renkleri de
+## ayni, WATERCOLORTEST replikasi gecerli. CUSTOM0 fragment'ta okunamaz
+## (4.7) — v_flow_dir varying duzeltmesi v2'ye de tasindi.
 ## Bayrak: false -> eski yol birebir geri (CPU-pisirme _water_rgba +
 ## world3d icindeki eski satir-ici shader). Gorev sarti: geri donulebilir.
 const SU_SHADER_V1 := true

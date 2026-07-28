@@ -4418,7 +4418,14 @@ func _build_lake_surface() -> void:
 	if DigWaterVisual.SU_SHADER_V1:
 		# CUSTOM0 = akis yonu (sozlesme); golde durgun (0,0)
 		st.set_custom_format(0, SurfaceTool.CUSTOM_RGBA_FLOAT)
-	var res := 4  # 0.25 m karolar: kiyi kopugu bandi puruzsuz olsun
+	# 0.25 m karolar: kiyi kopugu bandi puruzsuz olsun. SU SHADER V2
+	# SARTI da bu: vertex dalgasi mesh yogunluguna muhtac — hucre basina
+	# 4x4 bolunme dalga icin yeterli (en kisa dalga boyu ~1.3 m, ~5
+	# vertex/dalga; xvfb siluet karesiyle dogrulandi). Dusuk kademede
+	# dalga shader'da zaten kapali (quality=0); mesh kalite degisiminde
+	# yeniden kurulmadigi icin bolunme sabit kalir — kopuk bandi Dusuk'te
+	# de bu cozunurluge muhtac.
+	var res := 4
 	var step := 1.0 / float(res)
 	var quads := 0
 	for j in _map_h * res:
@@ -12123,9 +12130,22 @@ func _run_su_frames(save_path: String) -> void:
 		_cam_locked = false
 		return
 	var kp := _cell_center(kiyi)
-	# 1) GOLET GUNDUZ
-	camera.position = kp + Vector3(-4.0, 4.5, 6.0)
-	camera.look_at(kp)
+	# 1) GOLET GUNDUZ — YANDAN ALCAK ACI (v2 gorev sarti: dalgalar
+	# SILUETTE gorunmeli). Kamera su cizgisinin hemen ustunde, kiyidan
+	# gol merkezine dogru bakar; karsi kiyi koyu fon olur.
+	var toplam := Vector2.ZERO
+	for w3: Vector2i in _lake_cells_list:
+		toplam += Vector2(w3) + Vector2(0.5, 0.5)
+	var gm := toplam / float(_lake_cells_list.size())
+	var bakis := Vector3(gm.x, LAKE_Y, gm.y)
+	var yon := bakis - Vector3(kp.x, LAKE_Y, kp.z)
+	yon.y = 0.0
+	yon = yon.normalized() if yon.length() > 0.5 else Vector3(1, 0, 0)
+	var cpos := Vector3(kp.x, 0.0, kp.z) - yon * 2.0
+	# Kamera karada kalir; zeminin altina dusmesin (siyah kare tuzagi)
+	cpos.y = maxf(LAKE_Y + 0.6, ground_height(cpos.x, cpos.z) + 0.35)
+	camera.position = cpos
+	camera.look_at(bakis)
 	await get_tree().create_timer(0.9).timeout
 	_snap(save_path.replace(".png", "_su_golet.png"))
 	# 2) GECE + KIYIDA SICAK ISIK: kiyiya mesale (gorevdeki "Ocak kiyisinda"
