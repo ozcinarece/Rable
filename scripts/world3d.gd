@@ -7989,14 +7989,8 @@ func _run_night_test(save_path: String) -> void:
 	_on_night_started()
 	var spawned := _live_creature_count()
 	var beklenen: int = CreatureBalance.min_wave_count(night_no)
-	# KARE 1: DOGMA — dogrulma surerken (kul-duman + yari gomuk govde)
-	if spawned > 0:
-		var crb: Node3D = _creatures[0]
-		camera.position = crb.position + Vector3(-2.0, 1.8, 2.8)
-		camera.look_at(crb.position + Vector3(0, 0.4, 0))
-		await get_tree().create_timer(0.35).timeout
-		_snap(save_path.replace(".png", "_gece_dogma.png"))
-	# Ocak'a olan TOPLAM uzaklik azaliyor mu? (hedefe ilerleme kaniti)
+	# Ocak'a olan TOPLAM uzaklik azaliyor mu? (hedefe ilerleme kaniti —
+	# yalniz dalga yaratiklari, sahneleme henuz yok)
 	var target_pos := _cell_center(hc) if hc != Vector2i(-999, -999) \
 			else player.position
 	var d0 := _creatures_total_dist(target_pos)
@@ -8004,29 +7998,76 @@ func _run_night_test(save_path: String) -> void:
 		_tick_creatures(0.05)
 	var d1 := _creatures_total_dist(target_pos)
 	var yaklasti: bool = d1 < d0 - 0.01
-	# KARE 2: SURU Ocak'a yururken — kamera yaratigin arkasindan hedefe
-	if spawned > 0 and is_instance_valid(_creatures[0]):
-		var cr0: Node3D = _creatures[0]
-		var yon: Vector3 = (target_pos - cr0.position)
-		yon.y = 0.0
-		yon = yon.normalized() if yon.length() > 0.01 else Vector3.FORWARD
-		camera.position = cr0.position - yon * 4.0 + Vector3(0, 3.2, 0)
-		camera.look_at(cr0.position + yon * 2.0 + Vector3(0, 0.3, 0))
-		await get_tree().create_timer(0.4).timeout
-		_snap(save_path.replace(".png", "_gece_yaratik.png"))
-	# KARE 3: MESALE ISIGINDA — yanina mesale kur; yavaslar + isima soner
-	if spawned > 0 and is_instance_valid(_creatures[0]):
-		var crm: Node3D = _creatures[0]
-		var mcell: Vector2i = crm.cell() + Vector2i(1, 0)
-		if _ground_char.get(mcell, "") in [".", "d", "s"] \
-				and not _objects.has(mcell) and not _placed.has(mcell):
-			_set_placed(mcell, "mesale")
-		for i in 10:
-			_tick_creatures(0.05)  # isik algisi ve sonme otursun
-		camera.position = crm.position + Vector3(-1.7, 1.6, 2.5)
-		camera.look_at(crm.position + Vector3(0, 0.5, 0))
-		await get_tree().create_timer(0.35).timeout
-		_snap(save_path.replace(".png", "_gece_mesale.png"))
+	# --- KARE SAHNESI (2. tur dersi): dalga BILEREK sisli/agacli yerde
+	# doguyor, kamera agac tacina gomuldu (4 kare de yesil duvar cikti).
+	# Kareler icin AYNI dogum yolundan (spawn_creature + birth + ayni
+	# parcaciklar) kamp yakininda 2-hucre cevresi NESNESIZ bir acik
+	# hucrede kucuk bir suru sahnelenir; dalga sayilari NIGHTTEST'te.
+	var sahne := Vector2i(-999, -999)
+	var pcell := _player_cell()
+	for r in range(6, 16):
+		if sahne != Vector2i(-999, -999):
+			break
+		for aci in range(0, 360, 20):
+			var c := pcell + Vector2i(int(round(cos(deg_to_rad(aci)) * r)),
+					int(round(sin(deg_to_rad(aci)) * r)))
+			if c.x < 3 or c.y < 3 or c.x >= _map_w - 3 or c.y >= _map_h - 3:
+				continue
+			if not is_walkable(c):
+				continue
+			var acik := true
+			for oy in range(-2, 3):
+				for ox in range(-2, 3):
+					if _objects.has(c + Vector2i(ox, oy)):
+						acik = false
+						break
+				if not acik:
+					break
+			if acik:
+				sahne = c
+				break
+	if sahne != Vector2i(-999, -999):
+		var suru: Array = []
+		for off in [Vector2i(0, 0), Vector2i(1, 1), Vector2i(-1, 1)]:
+			var c2 := sahne + off
+			if is_walkable(c2):
+				var sc = spawn_creature(c2, "normal")
+				sc.birth(CreatureBalance.BIRTH_SECONDS)
+				var dp: Vector3 = sc.position + Vector3(0, 0.15, 0)
+				_spawn_particles(dp, CreatureBalance.BIRTH_ASH_COLOR, 12)
+				_spawn_particles(dp, CreatureBalance.BIRTH_SHELL_COLOR, 7)
+				suru.append(sc)
+		if not suru.is_empty():
+			var oncu: Node3D = suru[0]
+			# KARE 1: DOGMA — dogrulma surerken (duman + yari gomuk govde)
+			camera.position = oncu.position + Vector3(-2.4, 2.6, 3.4)
+			camera.look_at(oncu.position + Vector3(0, 0.4, 0))
+			await get_tree().create_timer(0.35).timeout
+			_snap(save_path.replace(".png", "_gece_dogma.png"))
+			# KARE 2: SURU Ocak'a yururken — arkadan-yuksek kadraj
+			await get_tree().create_timer(0.8).timeout  # dogrulma bitsin
+			for i in 30:
+				_tick_creatures(0.05)
+			if is_instance_valid(oncu):
+				var yon: Vector3 = (target_pos - oncu.position)
+				yon.y = 0.0
+				yon = yon.normalized() if yon.length() > 0.01 else Vector3.FORWARD
+				camera.position = oncu.position - yon * 4.5 + Vector3(0, 4.0, 0)
+				camera.look_at(oncu.position + yon * 2.0)
+				await get_tree().create_timer(0.4).timeout
+				_snap(save_path.replace(".png", "_gece_yaratik.png"))
+			# KARE 3: MESALE ISIGINDA — yavaslar + catlak isimasi soner
+			if is_instance_valid(oncu):
+				var mcell: Vector2i = oncu.cell() + Vector2i(1, 0)
+				if _ground_char.get(mcell, "") in [".", "d", "s"] \
+						and not _objects.has(mcell) and not _placed.has(mcell):
+					_set_placed(mcell, "mesale")
+				for i in 10:
+					_tick_creatures(0.05)  # isik algisi ve sonme otursun
+				camera.position = oncu.position + Vector3(-2.0, 2.0, 2.8)
+				camera.look_at(oncu.position + Vector3(0, 0.5, 0))
+				await get_tree().create_timer(0.35).timeout
+				_snap(save_path.replace(".png", "_gece_mesale.png"))
 	# SAFAK + KARE 4: 2 sn kul erimesinin ortasi (kucule kucule dagilma)
 	_on_dawn_clear_creatures()
 	await get_tree().create_timer(0.8).timeout
