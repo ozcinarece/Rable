@@ -34,17 +34,25 @@ uniform float foam_pulse_speed = 0.6; // nabız hızı (yavaş!)
 // ---- YÜZEY HAREKETİ ----
 uniform sampler2D noise_tex : hint_default_black, repeat_enable;
     // Claude Code: NoiseTexture2D (FastNoiseLite, seamless) bağla
-uniform float wave_speed_1 = 0.020;
-uniform float wave_speed_2 = 0.013;
+uniform float wave_speed_1 = 0.029;   // prototip Hız 1.45 işlendi
+uniform float wave_speed_2 = 0.019;
 uniform vec2  wave_dir_1 = vec2(1.0, 0.35);
 uniform vec2  wave_dir_2 = vec2(-0.4, 1.0);
-uniform float normal_strength : hint_range(0.0, 1.0) = 0.25;
-uniform float bob_amplitude = 0.035;  // vertex kabartı (küçük tut!)
-uniform float bob_frequency = 1.1;
+uniform float normal_strength : hint_range(0.0, 1.0) = 0.38;
+    // prototip Kırışıklık 0.75 -> gdshader ölçeğinde ~0.38
+    // (prototip noise'u daha sertti; görsel eşdeğeri bu civarda,
+    //  Inspector'dan 0.30-0.50 bandında ince ayar yapılabilir)
+
+// --- GERÇEK DALGA SİSTEMİ (prototipten: 3 yönlü sinüs) ---
+// Prototip değerleri: yükseklik 0.09, dalga boyu 1.9, hız 1.45
+uniform float wave_amplitude = 0.09;
+uniform float wave_frequency = 1.9;
+uniform float wave_time_scale = 1.45;
 
 // ---- PARILTI + FRESNEL ----
-uniform float sparkle_threshold : hint_range(0.8, 0.999) = 0.965;
-uniform float sparkle_intensity = 0.55;
+uniform float sparkle_threshold : hint_range(0.8, 0.999) = 0.950;
+    // eşik düşürüldü: daha SIK kıvılcım (prototip Parıltı 1.5 seçimi)
+uniform float sparkle_intensity = 0.85;
 uniform float fresnel_power = 3.0;
 uniform float alpha_shallow : hint_range(0.0, 1.0) = 0.72; // sığda saydamlık
 uniform float alpha_deep    : hint_range(0.0, 1.0) = 0.94;
@@ -62,19 +70,24 @@ uniform int quality : hint_range(0, 1) = 1;
 uniform float flow_speed_scale = 3.0; // akış hızı çarpanı
 
 varying vec3 v_world_pos;
-// 4.7 DUZELTMESI: CUSTOM0 yalniz vertex asamasinda okunabilir;
-// fragment'taki akis yonu icin varying ile tasinir.
-varying vec2 v_flow_dir;
+
+varying float v_wave_h; // dalga yüksekliği (fragment'ta normal katkısı için)
 
 void vertex() {
     v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-    v_flow_dir = CUSTOM0.xy;
+    v_wave_h = 0.0;
     if (quality > 0) {
-        // hafif kabartı — iki sinüs, faz dünya konumundan (dikişsiz)
-        float b = sin(v_world_pos.x * bob_frequency + TIME * 0.9)
-                * cos(v_world_pos.z * bob_frequency * 0.8 + TIME * 0.7);
-        // kıyıda kabartıyı söndür (köpük bandı titremesin)
-        VERTEX.y += b * bob_amplitude * (1.0 - COLOR.g);
+        // ÜÇ YÖNLÜ DALGA (prototipten birebir): farklı yön/frekans/fazda
+        // üç sinüs üst üste — yüzey gerçekten şekil olarak dalgalanır
+        float t = TIME * wave_time_scale;
+        vec2 p = v_world_pos.xz;
+        float h = 0.0;
+        h += sin(dot(p, vec2( 1.0, 0.35)) * wave_frequency        + t * 1.0      ) * 0.5;
+        h += sin(dot(p, vec2(-0.5, 1.0 )) * wave_frequency * 1.7  + t * 1.3 + 1.7) * 0.3;
+        h += sin(dot(p, vec2( 0.3,-1.0 )) * wave_frequency * 2.6  + t * 0.8 + 4.0) * 0.2;
+        v_wave_h = h;
+        // kıyıda dalga söner (köpük bandı titremesin, kıyı çizgisi oturaklı)
+        VERTEX.y += h * wave_amplitude * (1.0 - COLOR.g);
     }
 }
 
@@ -82,7 +95,7 @@ void fragment() {
     float depth_f = COLOR.r;
     float shore_f = COLOR.g;
     float flow_f  = COLOR.b;
-    vec2 flow_dir = v_flow_dir;
+    vec2 flow_dir = CUSTOM0.xy;
 
     // ---------- 1. RENK BANTLARI ----------
     vec3 col = color_shallow;
@@ -101,7 +114,10 @@ void fragment() {
                           step(0.01, flow_f));
         vec3 n1 = texture(noise_tex, UV + TIME * drift1).rgb * 2.0 - 1.0;
         vec3 n2 = texture(noise_tex, UV * 1.7 + TIME * drift2).rgb * 2.0 - 1.0;
-        n = normalize(vec3((n1.xy + n2.xy) * normal_strength, 1.0));
+        // büyük dalganın eğimi de normale katılır (prototipteki gibi —
+        // dalga tepeleri ışığı farklı kırar, hacim hissi buradan gelir)
+        vec2 wave_slope = vec2(v_wave_h * 0.15, v_wave_h * 0.10);
+        n = normalize(vec3((n1.xy + n2.xy) * normal_strength + wave_slope, 1.0));
     }
     NORMAL_MAP = n * 0.5 + 0.5;
     NORMAL_MAP_DEPTH = 1.0;
