@@ -33,11 +33,13 @@ const TYPES := {
 	"normal": {
 		"hp": 10, "speed": 2.0, "damage": 6, "essence": 1,
 		# scale: creature_2 rig'li; iskeletli modelde AABB'den boy
-		# HESAPLANAMIYOR (creature.gd'de olculmus gerekce). Render boyu
-		# xvfb'de 1 m referans kuple OLCULDU: ham ~1.05 m -> hafif iri
-		# hedef icin 1.05. target_h yalnizca gomulme derinligi/goz isigi.
-		"first_night": 1, "eye": "turkuaz", "scale": 1.05,
-		"target_h": 1.1,
+		# HESAPLANAMIYOR (creature.gd'de gerekce). Boy KEMIKLERDEN olculdu
+		# (xvfb): scale 1.05'te ayakta 1.72 m cikti — 1.35 m'lik
+		# karakterden fazla iri. "Hafif iri" hedefi ~1.5 m: 0.92
+		# (ayakta ~1.51, yuruyus comelmesinde ~1.31). target_h yalnizca
+		# gomulme derinligi/goz isigi konumu.
+		"first_night": 1, "eye": "turkuaz", "scale": 0.92,
+		"target_h": 1.5,
 		"glb": "res://assets/models/creatures/creature_2.glb",
 	},
 	"tirmanici": {

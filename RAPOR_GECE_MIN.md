@@ -211,3 +211,7 @@ Görev metnindeki "yalnız debug spawn" durumu bayattı: dalga, hedefleme,
    yaratığı pembe fenere çeviriyordu → 1.15.
    **Yerel görsel doğrulama hattı artık var** (xvfb-run + SceneTree
    script) — kare iterasyonu CI beklemeden dakikalar içinde.
+4. **Tur 4:** yaratık göründü ama İRİ: göz kararı yerine boy KEMİK
+   konumlarından sayıyla ölçüldü — scale 1.05'te ayakta 1.72 m
+   (karakter 1.35 m). "Hafif iri" hedefi için scale 0.92: ayakta
+   1.51 m, yürüyüş çömelmesinde 1.31 m (ölçüm notu veride).
