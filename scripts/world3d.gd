@@ -7981,9 +7981,11 @@ func _run_night_test(save_path: String) -> void:
 			hc = get_hearth()
 	# GECE GORUNUMU: kareler gece isiginda okunmali (catlak isimasi da).
 	# night_started EMIT EDILMEZ (cift dalga olurdu) — faz elle kurulur.
+	# elapsed=0 SART: 120 verilince phase_progress 0.5 oldu ve isiklar
+	# safak renklerine harmanlandi (2. tur kareleri pembe/gunduz cikti).
 	DayNight.phase = "night"
 	DayNight.is_night = true
-	DayNight.elapsed = 120.0
+	DayNight.elapsed = 0.0
 	_update_daylight()
 	var night_no: int = DayNight.day
 	_on_night_started()
@@ -8039,21 +8041,22 @@ func _run_night_test(save_path: String) -> void:
 				suru.append(sc)
 		if not suru.is_empty():
 			var oncu: Node3D = suru[0]
-			# KARE 1: DOGMA — dogrulma surerken (duman + yari gomuk govde)
-			camera.position = oncu.position + Vector3(-2.4, 2.6, 3.4)
-			camera.look_at(oncu.position + Vector3(0, 0.4, 0))
-			await get_tree().create_timer(0.35).timeout
+			# KARE 1: DOGMA — govde YARI CIKMISKEN (birth: 0.35 sn duman,
+			# sonra 0.65 sn yukselme; 0.6'da yaklasik yari boyda)
+			camera.position = oncu.position + Vector3(-1.6, 1.5, 2.2)
+			camera.look_at(oncu.position + Vector3(0, 0.3, 0))
+			await get_tree().create_timer(0.6).timeout
 			_snap(save_path.replace(".png", "_gece_dogma.png"))
-			# KARE 2: SURU Ocak'a yururken — arkadan-yuksek kadraj
-			await get_tree().create_timer(0.8).timeout  # dogrulma bitsin
+			# KARE 2: SURU Ocak'a yururken — arkadan, yakin kadraj
+			await get_tree().create_timer(0.6).timeout  # dogrulma bitsin
 			for i in 30:
 				_tick_creatures(0.05)
 			if is_instance_valid(oncu):
 				var yon: Vector3 = (target_pos - oncu.position)
 				yon.y = 0.0
 				yon = yon.normalized() if yon.length() > 0.01 else Vector3.FORWARD
-				camera.position = oncu.position - yon * 4.5 + Vector3(0, 4.0, 0)
-				camera.look_at(oncu.position + yon * 2.0)
+				camera.position = oncu.position - yon * 3.2 + Vector3(0, 2.4, 0)
+				camera.look_at(oncu.position + yon * 1.5 + Vector3(0, 0.4, 0))
 				await get_tree().create_timer(0.4).timeout
 				_snap(save_path.replace(".png", "_gece_yaratik.png"))
 			# KARE 3: MESALE ISIGINDA — yavaslar + catlak isimasi soner
@@ -8085,7 +8088,7 @@ func _run_night_test(save_path: String) -> void:
 	# Gunduze don: akistaki sonraki kareler gunduz isiginda cekilir
 	DayNight.phase = "day"
 	DayNight.is_night = false
-	DayNight.elapsed = 200.0
+	DayNight.elapsed = 0.0
 	_update_daylight()
 
 ## Tum canli yaratiklarin verilen noktaya toplam uzakligi (test olcusu).

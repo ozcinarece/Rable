@@ -130,6 +130,21 @@ func _build_visual() -> void:
 		_body.add_child(inst)
 		_setup_glb_anim(inst)
 		_setup_glb_emission(inst)
+		# TEK PARLAK GOZ kimligi GLB'de de yasar: kucuk soguk isik —
+		# gece govde siluet kaliyordu (2. kare turu dersi), isiksiz
+		# yaratik karanlikta okunmuyor. set_simplified uzakta kapatir.
+		var eye_col2: Color = Balance.EYE_COLOR
+		if String(Balance.stat(type, "eye", "turkuaz")) == "mor":
+			eye_col2 = Balance.EYE_COLOR_ALT
+		var boyy := float(Balance.stat(type, "target_h", 1.0))
+		var glow2 := OmniLight3D.new()
+		glow2.light_color = eye_col2
+		glow2.light_energy = 0.9
+		glow2.omni_range = 2.2
+		glow2.position = Vector3(0, boyy * 0.7, 0.25)
+		glow2.shadow_enabled = false
+		_body.add_child(glow2)
+		_eye_light = glow2
 		return
 	# Gövde: yuvarlak küre, soğuk mor-gri
 	var body := MeshInstance3D.new()
