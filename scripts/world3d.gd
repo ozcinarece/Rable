@@ -1479,6 +1479,7 @@ func _run_fast_tests() -> void:
 	_run_uyuyan_test()
 	_run_uzak_test()
 	_run_cim_test()
+	_run_night_logic_test()
 	_run_kesif_perf()
 	_run_save_load_selftest()
 	print("FASTTESTS: bitti")
@@ -1490,6 +1491,26 @@ func _run_creature_selftest() -> void:
 	_clear_creatures()
 	var cc := Vector2i(52, 52)
 	var cr = spawn_creature(cc, "normal")
+	# MODEL BAGLAMA KANITI (yaratik-gece): rig'li creature_2 gercekten mi
+	# yuklendi, yurume klibi bulundu mu, boy dogru mu? Model yoksa
+	# placeholder'a duser — o zaman anim bos gorunur (bilincli fallback).
+	# Iskeletli modelde AABB'den boy okunamiyor (creature.gd gerekce) —
+	# olcek tablodan basilir; rig'siz modelde AABB boyu olculur.
+	var iskelet: bool = cr._body != null and not cr._body.find_children(
+			"*", "Skeleton3D", true, false).is_empty()
+	var boy: float = -1.0
+	if not iskelet and cr._body != null:
+		for mi: MeshInstance3D in cr._body.find_children("*", "MeshInstance3D", true, false):
+			if mi.mesh != null:
+				boy = maxf(boy, mi.mesh.get_aabb().size.y \
+						* mi.global_transform.basis.get_scale().y)
+	print("CREATUREMODEL: anim='%s' klip_sayisi=%d iskelet=%s olcek=%.2f boy=%.2f mat=%d" % [
+			cr._walk_anim,
+			(cr._anim.get_animation_list().size() if cr._anim != null else 0),
+			str(iskelet), float(CreatureBalance.stat("normal", "scale", 1.0)),
+			boy, cr._glb_mats.size()])
+	if cr._walk_anim == "" and cr._anim != null:
+		push_error("CREATURE: rig var ama yurume klibi bulunamadi")
 	var hp0: int = cr.hp
 	cr.take_hit(3, Vector3.FORWARD)
 	var dmg_ok: bool = cr.hp == hp0 - 3
@@ -3760,6 +3781,11 @@ func _update_water_night() -> void:
 		_cim_mat.set_shader_parameter("night_mix", karisim)
 	if _cicek_mat != null:
 		_cicek_mat.set_shader_parameter("night_mix", karisim)
+	# YARATIK catlak isimasi da AYNI gece kaynagindan yanar/soner
+	# (su/cim/yaratik tek kaynak sozlesmesi; faz degisince, her kare degil).
+	for cr in _creatures:
+		if is_instance_valid(cr) and cr.has_method("set_night"):
+			cr.set_night(night)
 
 # Bos cim hucrelerinin bir kismina sus otu serpistirir (toplanmaz).
 var _decor_nodes: Array = []
@@ -7922,6 +7948,7 @@ func spawn_creature(cell: Vector2i, ctype: String = "normal",
 	cr.died.connect(_on_creature_died)
 	add_child(cr)
 	_creatures.append(cr)
+	cr.set_night(DayNight.phase in ["night", "dusk"])  # isima gece kaynagi
 	_spawn_particles(cr.position + Vector3(0, 0.4, 0), CreatureBalance.EYE_COLOR, 6)
 	return cr
 
@@ -7943,6 +7970,99 @@ func _creature_near(cell: Vector2i) -> Node3D:
 			return cr
 	return null
 
+## NIGHTTEST (hizli CI, yaratik-gece): kare almayan gece mantigi —
+## dogus HALKASI mesafeleri + sayi egrisi + daze + duvari KIRMA +
+## isik alani sorgusu + safak temizligi. Basarisizlik push_error
+## (CI kirmizi yakar).
+func _run_night_logic_test() -> void:
+	_clear_creatures()
+	# Ocak garanti: halka merkezi ve hedef belli olsun
+	var hc := get_hearth()
+	if hc == Vector2i(-999, -999):
+		var occ := _player_cell() + Vector2i(0, 3)
+		if _ground_char.get(occ, "") in [".", "d", "s"] and not _objects.has(occ) \
+				and not _placed.has(occ):
+			_set_placed(occ, "ocak")
+			hc = get_hearth()
+	var merkez := hc if hc != Vector2i(-999, -999) else _player_cell()
+	# GECE 3 senaryosu: egri 2+1*(3-1)=4 (MIN_* verisi)
+	var beklenen: int = CreatureBalance.min_wave_count(3)
+	_spawn_night_wave(3)
+	var dogan := _live_creature_count()
+	var d_min := 9999.0
+	var d_max := 0.0
+	var daze_ok := dogan > 0
+	for cr in _creatures:
+		if not is_instance_valid(cr):
+			continue
+		var d := Vector2(cr.cell() - merkez).length()
+		d_min = minf(d_min, d)
+		d_max = maxf(d_max, d)
+		if cr.daze <= 0.0:
+			daze_ok = false
+	# Halka bandi: relax daralmasi 8'e kadar iner; ustte RING_MAX + pay
+	var halka_ok: bool = dogan > 0 and d_min >= 8.0 \
+			and d_max <= float(CreatureBalance.SPAWN_RING_MAX) + 2.0
+	# DUVARI KIRMA: Ocak'i 8 duvarla cevir -> her yol duvardan gecer.
+	# Yaratigi 3 hucre oteye koy, tick'le; bir duvarin cani azalmali.
+	_clear_creatures()
+	var duvarlar: Array = []
+	if merkez != Vector2i(-999, -999):
+		for oy in range(-1, 2):
+			for ox in range(-1, 2):
+				if ox == 0 and oy == 0:
+					continue
+				var w := merkez + Vector2i(ox, oy)
+				if _ground_char.get(w, "") in [".", "d", "s"] \
+						and not _objects.has(w) and not _placed.has(w):
+					_set_placed(w, "ahsap_duvar")
+					duvarlar.append(w)
+	var duvar_ok := false
+	if not duvarlar.is_empty():
+		# Oyuncu testte AGGRO menziline girmesin (hedef Ocak kalsin):
+		# gecici olarak uzaga isinla, sonra geri getir.
+		var eski_poz: Vector3 = player.position
+		player.position = _cell_center(merkez + Vector2i(30, 0))
+		var cw = spawn_creature(merkez + Vector2i(0, -3), "normal")
+		cw.daze = 0.0
+		var hp0 := 0
+		for w: Vector2i in duvarlar:
+			hp0 += int(_structures.get_inst(w).get("hp", 0))
+		for i in 120:  # ~6 sn (struct vurus araligi 0.9 sn -> birkac vurus)
+			_tick_creatures(0.05)
+		var hp1 := 0
+		for w: Vector2i in duvarlar:
+			hp1 += int(_structures.get_inst(w).get("hp", 0))
+		duvar_ok = hp1 < hp0
+		player.position = eski_poz
+	# ISIK ALANI: yanan Ocak'in dibinde true, 20 hucre otede false
+	var isik_ok: bool = merkez != Vector2i(-999, -999) \
+			and _pos_in_light(_cell_center(merkez)) \
+			and not _pos_in_light(_cell_center(merkez + Vector2i(20, 0)))
+	# SAFAK: temizlik (oz dusurmeden erirler)
+	_on_dawn_clear_creatures()
+	var kalan := _live_creature_count()
+	if not halka_ok:
+		push_error("NIGHT: dogus halkasi disinda (%.1f..%.1f)" % [d_min, d_max])
+	if dogan != beklenen:
+		push_error("NIGHT: sayi egrisi tutmadi (beklenen %d, dogan %d)" % [
+				beklenen, dogan])
+	if not daze_ok:
+		push_error("NIGHT: dogma sersemligi (daze) baslamadi")
+	if not duvar_ok:
+		push_error("NIGHT: cevrili Ocak'a giden yaratik duvara vurmadi")
+	if not isik_ok:
+		push_error("NIGHT: isik alani sorgusu yanlis")
+	if kalan != 0:
+		push_error("NIGHT: safak temizligi kalan birakti (%d)" % kalan)
+	print("NIGHTTEST: beklenen=%d dogan=%d halka=%.1f-%.1f daze=%s duvar=%s isik=%s safak_kalan=%d" % [
+			beklenen, dogan, d_min, d_max, str(daze_ok), str(duvar_ok),
+			str(isik_ok), kalan])
+	# Temizlik: duvarlar kalksin (SAVELOAD dunyayi oldugu gibi olcer)
+	for w: Vector2i in duvarlar:
+		_release_structure_cell(w)
+	_clear_creatures()
+
 ## NIGHTTEST (CI): gece tetikle -> dogdular mi, Ocak'a YAKLASIYORLAR mi,
 ## safakta temizlendi mi. Sonuc docs/screens/nighttest.txt + log.
 func _run_night_test(save_path: String) -> void:
@@ -7955,11 +8075,24 @@ func _run_night_test(save_path: String) -> void:
 				and not _placed.has(occ):
 			_set_placed(occ, "ocak")
 			hc = get_hearth()
+	# GECE GORUNUMU: kareler gece isiginda okunmali (catlak isimasi da).
+	# night_started EMIT EDILMEZ (cift dalga olurdu) — faz elle kurulur.
+	# elapsed=0 SART: 120 verilince phase_progress 0.5 oldu ve isiklar
+	# safak renklerine harmanlandi (2. tur kareleri pembe/gunduz cikti).
+	DayNight.phase = "night"
+	DayNight.is_night = true
+	DayNight.elapsed = 0.0
+	_update_daylight()
+	# ISIK OTURSUN: 5. tur dersi — kurulumdan hemen sonra cekilen kare
+	# hala gunduz gibi cikiyor (gecis ~1.5 sn'de oturuyor); dogma karesi
+	# de gece isiginda olsun diye beklenir.
+	await get_tree().create_timer(1.5).timeout
 	var night_no: int = DayNight.day
 	_on_night_started()
 	var spawned := _live_creature_count()
 	var beklenen: int = CreatureBalance.min_wave_count(night_no)
-	# Ocak'a olan TOPLAM uzaklik azaliyor mu? (duz yonelme calisiyor mu)
+	# Ocak'a olan TOPLAM uzaklik azaliyor mu? (hedefe ilerleme kaniti —
+	# yalniz dalga yaratiklari, sahneleme henuz yok)
 	var target_pos := _cell_center(hc) if hc != Vector2i(-999, -999) \
 			else player.position
 	var d0 := _creatures_total_dist(target_pos)
@@ -7967,18 +8100,87 @@ func _run_night_test(save_path: String) -> void:
 		_tick_creatures(0.05)
 	var d1 := _creatures_total_dist(target_pos)
 	var yaklasti: bool = d1 < d0 - 0.01
-	# Kare: gece yaratiklari sahnede
-	if spawned > 0:
-		var cr0: Node3D = _creatures[0]
-		# Yaratiklar harita KENARINDA doguyor (orman bandi); alcak kamera
-		# calinin icinde kaliyordu. Yuksek acidan bak -> yaprak arasina girme.
-		camera.position = cr0.position + Vector3(0.0, 5.5, 5.0)
-		camera.look_at(cr0.position + Vector3(0, 0.3, 0))
-		await get_tree().create_timer(0.4).timeout
-		_snap(save_path.replace(".png", "_gece_yaratik.png"))
-	# Safak: temizlensinler
+	# --- KARE SAHNESI (2. tur dersi): dalga BILEREK sisli/agacli yerde
+	# doguyor, kamera agac tacina gomuldu (4 kare de yesil duvar cikti).
+	# Kareler icin AYNI dogum yolundan (spawn_creature + birth + ayni
+	# parcaciklar) kamp yakininda 2-hucre cevresi NESNESIZ bir acik
+	# hucrede kucuk bir suru sahnelenir; dalga sayilari NIGHTTEST'te.
+	var sahne := Vector2i(-999, -999)
+	var pcell := _player_cell()
+	for r in range(6, 16):
+		if sahne != Vector2i(-999, -999):
+			break
+		for aci in range(0, 360, 20):
+			var c := pcell + Vector2i(int(round(cos(deg_to_rad(aci)) * r)),
+					int(round(sin(deg_to_rad(aci)) * r)))
+			if c.x < 3 or c.y < 3 or c.x >= _map_w - 3 or c.y >= _map_h - 3:
+				continue
+			if not is_walkable(c):
+				continue
+			var acik := true
+			for oy in range(-2, 3):
+				for ox in range(-2, 3):
+					if _objects.has(c + Vector2i(ox, oy)):
+						acik = false
+						break
+				if not acik:
+					break
+			if acik:
+				sahne = c
+				break
+	if sahne != Vector2i(-999, -999):
+		var suru: Array = []
+		for off: Vector2i in [Vector2i(0, 0), Vector2i(1, 1), Vector2i(-1, 1)]:
+			var c2 := sahne + off
+			if is_walkable(c2):
+				var sc = spawn_creature(c2, "normal")
+				sc.birth(CreatureBalance.BIRTH_SECONDS)
+				var dp: Vector3 = sc.position + Vector3(0, 0.15, 0)
+				_spawn_particles(dp, CreatureBalance.BIRTH_ASH_COLOR, 12)
+				_spawn_particles(dp, CreatureBalance.BIRTH_SHELL_COLOR, 7)
+				suru.append(sc)
+		if not suru.is_empty():
+			var oncu: Node3D = suru[0]
+			# KARE 1: DOGMA — govde YARI CIKMISKEN (birth: 0.35 sn duman,
+			# sonra 0.65 sn yukselme; 0.6'da yaklasik yari boyda)
+			camera.position = oncu.position + Vector3(-1.6, 1.5, 2.2)
+			camera.look_at(oncu.position + Vector3(0, 0.3, 0))
+			await get_tree().create_timer(0.55).timeout
+			# Ilk dumanin omru (0.5 sn) snap'e yetismiyordu — kul bulutu
+			# tam kare aninda tazelenir (dogrulma dumani karede gorunsun).
+			_spawn_particles(oncu.position + Vector3(0, 0.3, 0),
+					CreatureBalance.BIRTH_ASH_COLOR, 10)
+			await get_tree().create_timer(0.15).timeout
+			_snap(save_path.replace(".png", "_gece_dogma.png"))
+			# KARE 2: SURU Ocak'a yururken — arkadan, yakin kadraj
+			await get_tree().create_timer(0.6).timeout  # dogrulma bitsin
+			for i in 30:
+				_tick_creatures(0.05)
+			if is_instance_valid(oncu):
+				var yon: Vector3 = (target_pos - oncu.position)
+				yon.y = 0.0
+				yon = yon.normalized() if yon.length() > 0.01 else Vector3.FORWARD
+				camera.position = oncu.position - yon * 3.2 + Vector3(0, 2.4, 0)
+				camera.look_at(oncu.position + yon * 1.5 + Vector3(0, 0.4, 0))
+				await get_tree().create_timer(0.4).timeout
+				_snap(save_path.replace(".png", "_gece_yaratik.png"))
+			# KARE 3: MESALE ISIGINDA — yavaslar + catlak isimasi soner
+			if is_instance_valid(oncu):
+				var mcell: Vector2i = oncu.cell() + Vector2i(1, 0)
+				if _ground_char.get(mcell, "") in [".", "d", "s"] \
+						and not _objects.has(mcell) and not _placed.has(mcell):
+					_set_placed(mcell, "mesale")
+				for i in 10:
+					_tick_creatures(0.05)  # isik algisi ve sonme otursun
+				camera.position = oncu.position + Vector3(-2.0, 2.0, 2.8)
+				camera.look_at(oncu.position + Vector3(0, 0.5, 0))
+				await get_tree().create_timer(0.35).timeout
+				_snap(save_path.replace(".png", "_gece_mesale.png"))
+	# SAFAK + KARE 4: 2 sn kul erimesinin ortasi (kucule kucule dagilma)
 	_on_dawn_clear_creatures()
-	await get_tree().create_timer(0.6).timeout
+	await get_tree().create_timer(0.8).timeout
+	_snap(save_path.replace(".png", "_gece_erime.png"))
+	await get_tree().create_timer(1.5).timeout
 	var kalan := _live_creature_count()
 	var line := "NIGHTTEST: gece=%d beklenen=%d dogan=%d ocak=%s yaklasti=%s safak_kalan=%d" % [
 		night_no, beklenen, spawned, str(hc != Vector2i(-999, -999)),
@@ -7988,6 +8190,11 @@ func _run_night_test(save_path: String) -> void:
 	if f != null:
 		f.store_string(line + "\n")
 		f.close()
+	# Gunduze don: akistaki sonraki kareler gunduz isiginda cekilir
+	DayNight.phase = "day"
+	DayNight.is_night = false
+	DayNight.elapsed = 0.0
+	_update_daylight()
 
 ## Tum canli yaratiklarin verilen noktaya toplam uzakligi (test olcusu).
 func _creatures_total_dist(target: Vector3) -> float:
@@ -8025,7 +8232,7 @@ func _on_night_started() -> void:
 	else:
 		_spawn_night_wave(DayNight.day)
 
-## O gecenin yaratiklarini harita kenarindan dogurur.
+## O gecenin yaratiklarini dogus halkasindan dogurur (_pick_spawn_cell).
 func _spawn_night_wave(night: int) -> void:
 	var want: int = CreatureBalance.min_wave_count(night)
 	# KESIF 16.3 gece sertlesmesi: yakilan ana tas basina dalga buyur
@@ -8046,31 +8253,77 @@ func _spawn_night_wave(night: int) -> void:
 		if cell == Vector2i(-999, -999):
 			break
 		var tip: String = String(mix[i]) if i < mix.size() else "normal"
-		spawn_creature(cell, tip, hp_mult)
+		var cr = spawn_creature(cell, tip, hp_mult)
+		# TOPRAKTAN DOGRULMA: govde gomuk baslar, kul-duman + kabuk
+		# parcaciklariyla 1 sn'de dogrulur; bu surece AI islemez (daze).
+		cr.birth(CreatureBalance.BIRTH_SECONDS)
+		var dp: Vector3 = cr.position + Vector3(0, 0.15, 0)
+		_spawn_particles(dp, CreatureBalance.BIRTH_ASH_COLOR, 12)
+		_spawn_particles(dp, CreatureBalance.BIRTH_SHELL_COLOR, 7)
 		sayim[tip] = int(sayim.get(tip, 0)) + 1
 		made += 1
 	print("NIGHTWAVE: gece=%d istenen=%d dogan=%d aktif=%d karisim=%s" % [
 		night, want, made, _live_creature_count(), str(sayim)])
 
-## Kenar bandinda, oyuncuya ve Ocak'a uzak, yurunebilir bir hucre sec.
-## Bulamazsa (-999,-999) doner. Denemeler ilerledikce mesafe kurali gevser
-## (kucuk haritada hic dogmamasindansa biraz yakin dogsun).
+## DOGUS HALKASI (yaratik-gece): kenardan DEGIL — Ocak (yoksa oyuncu)
+## merkezli halkada, sisli/ormanlik yonler AGIRLIKLI rastgele nokta.
+## Oyuncunun gorus alaninda (frustum) dogmaz. Aday bulunamazsa halka
+## denemeler ilerledikce daralir; en son eski kenar banti son care.
 func _pick_spawn_cell() -> Vector2i:
 	var pc := _player_cell()
 	var hc := get_hearth()
-	var m: int = CreatureBalance.SPAWN_EDGE_MARGIN
+	var merkez := hc
+	if merkez == Vector2i(-999, -999):
+		merkez = _camp_at("ocak")
+	if merkez == Vector2i(-999, -999):
+		merkez = pc
+	var adaylar: Array = []      # {cell, puan}
+	var toplam_puan := 0.0
 	for attempt in CreatureBalance.SPAWN_TRIES:
 		var relax: float = float(attempt) / float(CreatureBalance.SPAWN_TRIES)
-		var min_p: float = float(CreatureBalance.SPAWN_MIN_DIST_PLAYER) * (1.0 - relax)
-		var min_h: float = float(CreatureBalance.SPAWN_MIN_DIST_HEARTH) * (1.0 - relax)
-		var cell := _random_edge_cell(m)
+		# Halka daralmasi: bulamadikca ic yaricap dusurulur (kucuk/kapali
+		# haritada hic dogmamasindansa biraz yakin dogsun).
+		var r_min: float = lerpf(float(CreatureBalance.SPAWN_RING_MIN), 8.0, relax)
+		var r_max: float = float(CreatureBalance.SPAWN_RING_MAX)
+		var aci: float = randf() * TAU
+		var r: float = randf_range(r_min, r_max)
+		var cell := Vector2i(merkez.x + int(round(cos(aci) * r)),
+				merkez.y + int(round(sin(aci) * r)))
+		if cell.x < 1 or cell.y < 1 or cell.x >= _map_w - 1 or cell.y >= _map_h - 1:
+			continue
 		if not is_walkable(cell):
 			continue
+		var min_p: float = float(CreatureBalance.SPAWN_MIN_DIST_PLAYER) * (1.0 - relax)
 		if Vector2(cell - pc).length() < min_p:
 			continue
-		if hc != Vector2i(-999, -999) and Vector2(cell - hc).length() < min_h:
+		# GOZ ONUNDE BELIRME YASAK: kamera bu noktayi goruyorsa atla.
+		if camera != null and camera.is_position_in_frustum(
+				_cell_center(cell) + Vector3(0, 0.6, 0)):
 			continue
-		return cell
+		# Agirlik: sisli yer cazip (karanliktan gelirler), agac dibi cazip.
+		var puan: float = 1.0 \
+				+ maxf(0.0, _sis_at_cell(cell)) * CreatureBalance.SPAWN_FOG_BONUS
+		for komsu in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if String(_objects.get(cell + komsu, "")) == "T":
+				puan += CreatureBalance.SPAWN_TREE_BONUS
+				break
+		adaylar.append({"cell": cell, "puan": puan})
+		toplam_puan += puan
+		if adaylar.size() >= CreatureBalance.SPAWN_CANDIDATES:
+			break
+	if not adaylar.is_empty():
+		var sec: float = randf() * toplam_puan
+		for a: Dictionary in adaylar:
+			sec -= float(a["puan"])
+			if sec <= 0.0:
+				return Vector2i(a["cell"])
+		return Vector2i(adaylar[-1]["cell"])
+	# SON CARE: eski kenar banti (halka tamamen kapaliysa gece bos gecmesin)
+	for attempt in CreatureBalance.SPAWN_TRIES:
+		var cell := _random_edge_cell(CreatureBalance.SPAWN_EDGE_MARGIN)
+		if is_walkable(cell) and Vector2(cell - pc).length() \
+				>= float(CreatureBalance.SPAWN_MIN_DIST_PLAYER) * 0.5:
+			return cell
 	return Vector2i(-999, -999)
 
 ## Haritanin dort kenarindan birinde, ic bantta rastgele hucre.
@@ -8114,15 +8367,20 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 	var dist_to_player: float = Vector2(cr.position.x - ppos.x,
 			cr.position.z - ppos.z).length()
 	cr.set_simplified(dist_to_player > CreatureBalance.FAR_SIMPLIFY_DIST)
-	# HEDEF: HER ZAMAN OCAK (kullanici karari). Once "yakinsa oyuncuyu
-	# kovala" vardi; yaratiklar oyuncunun pesine takilip kampi
-	# unutuyordu ve gecenin derdi "kac" oluyordu. Artik dert "OCAGI
-	# KORU": yaratiklar duz ocaga yuruyor, oyuncu araya girmek zorunda.
-	# OCAK YOKSA: eskiden oyuncuya yonelirlerdi ve oyunda tam da sikayet
-	# edilen sey oluyordu ("yaratiklar beni hedefliyordu") — cunku yeni
-	# oyunda ocak HENUZ KURULMAMIS oluyor. Artik kamp merkezine (terk
-	# edilmis ocak yeri) yuruyorlar: gecenin derdi ilk geceden itibaren
-	# BIR YERI korumak. Oyuncu ancak yollarina cikarsa vurulur.
+	# DOGMA SERSEMLIGI (yaratik-gece): topraktan dogrulurken AI islemez —
+	# efekt okunur, yaratik "yerden cikip" sonra yurumeye baslar.
+	if cr.daze > 0.0:
+		cr.daze -= delta
+		cr.set_moving(false)
+		return
+	# HEDEF (yaratik-gece kurali): OYUNCU MENZILDEYSE oyuncu, degilse
+	# Ocak. Gecmis: once "yakinsa kovala" vardi, oyuncu pesinde kampi
+	# unutuyorlardi; sonra "hep Ocak" yapildi. Yeni kural ikisinin
+	# ortasi — SINIRLI kovalamaca: AGGRO_RANGE icindeki oyuncu hedef
+	# olur ama menzilden cikinca yaratik BIRAKIP Ocak'a doner (bitmeyen
+	# takip geri gelmez; yoluna cikan oyuncu da gormezden gelinmez).
+	# OCAK YOKSA kamp merkezindeki ocak isaretine yurunur: gecenin derdi
+	# ilk geceden itibaren BIR YERI korumak.
 	var hedef_hucre := hearth
 	if hedef_hucre == Vector2i(-999, -999):
 		# Prefabtaki Ocak isareti: kamp merkezinden farkli bir yere
@@ -8130,6 +8388,8 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 		hedef_hucre = _camp_at("ocak")
 	var target := _cell_center(hedef_hucre) if hedef_hucre != Vector2i(-999, -999) \
 			else ppos
+	if dist_to_player <= CreatureBalance.AGGRO_RANGE:
+		target = ppos
 	# KESIF 16.6: ortam yaratiklari base'e YURUMEZ — dert oyuncudur.
 	# Damar catlagi yakindaysa isiga cekilir (dogal oz lambasi: akilli
 	# oyuncu tuzak olarak kullanir).
@@ -8152,6 +8412,7 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 			Health.damage(dmg)
 			_night_damage_taken = true
 			cr.lunge(Vector3(ppos.x - cr.position.x, 0.0, ppos.z - cr.position.z))
+		cr.set_moving(false)
 		return
 	# --- YOL BULMA (Asama 2) --------------------------------------------
 	# Once duz cizgi vardi; engelde yana kayiyordu, yani duvar dolasamiyor
@@ -8179,9 +8440,16 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 		aim = Vector3(float(nc.x) + 0.5, cr.position.y, float(nc.y) + 0.5)
 	var dir := Vector3(aim.x - cr.position.x, 0.0, aim.z - cr.position.z)
 	if dir.length() < 0.01:
+		cr.set_moving(false)
 		return
 	dir = dir.normalized()
 	var speed: float = cr.speed
+	# ISIK TEPKISI (Isik Kurami'nin gorunur hali): Ocak/mesale isiginda
+	# %10 yavaslar + catlak isimasi soner (emission kismasi creature'da).
+	var isikta := _pos_in_light(cr.position)
+	cr.set_in_light(isikta)
+	if isikta:
+		speed *= CreatureBalance.LIGHT_SLOW
 	if cr.side_time > 0.0:
 		cr.side_time -= delta
 		dir = Vector3(-dir.z, 0.0, dir.x) * cr.side_sign
@@ -8220,16 +8488,40 @@ func _tick_one_creature(cr, delta: float, ppos: Vector3,
 							CreatureBalance.STRUCT_DAMAGE * sm, dir)
 					cr.lunge(dir)
 			_bump_stuck(cr, delta)
+			cr.set_moving(false)
 			return
 	var before: Vector3 = cr.position
 	cr.position = Vector3(next_pos.x,
 			ground_height(next_pos.x, next_pos.z), next_pos.z)
-	if Vector2(cr.position.x - before.x, cr.position.z - before.z).length() \
-			< CreatureBalance.STEP_EPSILON:
+	var adim: float = Vector2(cr.position.x - before.x,
+			cr.position.z - before.z).length()
+	if adim < CreatureBalance.STEP_EPSILON:
 		_bump_stuck(cr, delta)
 	else:
 		cr.stuck_time = 0.0
+	# ANIMASYON SENKRONU: klip yalniz GERCEKTEN ilerlerken oynar (kayma yok).
+	cr.set_moving(adim >= CreatureBalance.STEP_EPSILON)
 	cr.face_direction(dir)
+
+## Nokta yanan Ocak ya da bir mesalenin isik alaninda mi? (yaratik-gece)
+## Mesale sayisi kucuk (sozluk), yaratik <= 12 — kare basi maliyet onemsiz.
+func _pos_in_light(pos: Vector3) -> bool:
+	var hc := get_hearth()
+	if hc != Vector2i(-999, -999) and _hearth_light != null \
+			and is_instance_valid(_hearth_light) and _hearth_light.visible:
+		var hp := _cell_center(hc)
+		if Vector2(pos.x - hp.x, pos.z - hp.z).length() \
+				<= CreatureBalance.LIGHT_RANGE_HEARTH:
+			return true
+	for c: Vector2i in _torch_lights:
+		var l = _torch_lights[c]
+		if l == null or not is_instance_valid(l) or not l.visible:
+			continue
+		var tp := _cell_center(c)
+		if Vector2(pos.x - tp.x, pos.z - tp.z).length() \
+				<= CreatureBalance.LIGHT_RANGE_TORCH:
+			return true
+	return false
 
 ## Ilerleyemedi: sayaci isle, esigi gecince bir sure YANA kay (A* yerine).
 func _bump_stuck(cr, delta: float) -> void:
@@ -8244,6 +8536,10 @@ func _on_dawn_clear_creatures() -> void:
 	var left := _live_creature_count()
 	for cr in _creatures:
 		if is_instance_valid(cr) and cr.is_alive():
+			# KUL OLUP DAGILMA: gri kul bulutu + govde 2 sn'de erir.
+			# OZ DUSMEZ (oz yalniz oldurulunce — melt bunu garantiler).
+			_spawn_particles(cr.position + Vector3(0, 0.5, 0),
+					CreatureBalance.BIRTH_ASH_COLOR, 10)
 			cr.melt(CreatureBalance.DAWN_MELT_SECONDS)
 	_creatures.clear()
 	if _night_wave_active:

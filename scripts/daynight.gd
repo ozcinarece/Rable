@@ -11,7 +11,7 @@ const Balance = preload("res://scripts/time_balance.gd")
 signal dawn_started   # yeni gün başladı (şafak) — sabah bonusu kancası burada
 signal day_started    # tam gündüz
 signal dusk_started   # akşam geçişi
-signal night_started  # gece — [PLANLI] yaratık dalgası buraya bağlanacak
+signal night_started  # gece — yaratık dalgası BAĞLI (world3d._on_night_started)
 signal changed        # HUD güncellemesi (gün/saat/faz)
 
 # Geriye uyum sabitleri (HUD/2D bunlara bakıyor olabilir)

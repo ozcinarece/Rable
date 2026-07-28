@@ -82,16 +82,25 @@ jobs:
           # araniyordu, yani su rengi bozulsa CI yine yesil yanardi.
           # 4.7 GERCEGI (yerelde olculdu): push_error artik "USER ERROR:"
           # DEGIL "ERROR: <mesaj>" + "at: push_error (...)" basiyor. Yalniz
+<<<<<<< HEAD
           # USER ERROR aranirken CIMTEST'in gercek bir deger hatasi CI'da
           # YESIL kaldi. "at: push_error" satiri push_error'a ozgu ve motor
           # hatalariyla karismaz; o da aga eklendi.
+=======
+          # USER ERROR aranirken gercek bir deger hatasi CI'da YESIL kaldi.
+          # "at: push_error" satiri push_error'a ozgu — aga eklendi.
+>>>>>>> origin/yaratik-gece
           if grep -qE "Parse Error|SCRIPT ERROR|USER ERROR|at: push_error" /tmp/fast.log; then
             echo "::error::GDScript hatasi var (yukariya bak)"
             exit 1
           fi
           # tail-60 uyari seliyle dolunca sayisal test satirlari
           # gorunmez kaliyordu; onemli olcum satirlarini ayrica bas.
+<<<<<<< HEAD
           grep -E "WATERCOLORTEST|TREETEST|KESIFTEST|KORTEST|SEFERTEST|UYUTEST|UZAKTEST|CIMTEST|KESIFPERF" /tmp/fast.log || true
+=======
+          grep -E "WATERCOLORTEST|TREETEST|KESIFTEST|KORTEST|SEFERTEST|UYUTEST|UZAKTEST|KESIFPERF|NIGHTTEST|NIGHTWAVE|CREATUREMODEL" /tmp/fast.log || true
+>>>>>>> origin/yaratik-gece
           if ! grep -q "FASTTESTS: bitti" /tmp/fast.log; then
             echo "::error::Hizli testler tamamlanmadi"
             exit 1

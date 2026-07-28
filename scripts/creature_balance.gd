@@ -32,8 +32,15 @@ const ESSENCE_ITEM := "oz"
 const TYPES := {
 	"normal": {
 		"hp": 10, "speed": 2.0, "damage": 6, "essence": 1,
-		"first_night": 1, "eye": "turkuaz", "scale": 1.0,
-		"glb": "res://assets/models/creatures/creature_normal.glb",
+		# scale: creature_2 rig'li; iskeletli modelde AABB'den boy
+		# HESAPLANAMIYOR (creature.gd'de gerekce). Boy KEMIKLERDEN olculdu
+		# (xvfb): scale 1.05'te ayakta 1.72 m cikti — 1.35 m'lik
+		# karakterden fazla iri. "Hafif iri" hedefi ~1.5 m: 0.92
+		# (ayakta ~1.51, yuruyus comelmesinde ~1.31). target_h yalnizca
+		# gomulme derinligi/goz isigi konumu.
+		"first_night": 1, "eye": "turkuaz", "scale": 0.92,
+		"target_h": 1.5,
+		"glb": "res://assets/models/creatures/creature_2.glb",
 	},
 	"tirmanici": {
 		"hp": 6, "speed": 2.2, "damage": 4, "essence": 1,
@@ -191,12 +198,24 @@ const MIN_MAX_COUNT := 12
 ## Ayni anda sahnede durabilecek en fazla yaratik (mobil performans).
 const MIN_MAX_ACTIVE := 12
 
-## Dogus kurallari: harita kenarindan ic bantta, oyuncuya/Ocak'a en az
-## bu kadar hucre uzakta dogar (kucuk haritada kural gevsetilir).
-const SPAWN_EDGE_MARGIN := 2      # kenardan ic bant genisligi
+## Dogus kurallari (yaratik-gece): harita kenarindan DEGIL — Ocak/oyuncu
+## MERKEZLI HALKA: merkeze SPAWN_RING_MIN..MAX hucre mesafede, sisli/
+## ormanlik yonler agirlikli. Oyuncunun GORUS ALANINDA dogmaz (frustum).
+const SPAWN_RING_MIN := 25        # halka ic yaricapi (hucre)
+const SPAWN_RING_MAX := 40        # halka dis yaricapi
+const SPAWN_FOG_BONUS := 3.0      # aday puani: sis yogunlugu (0..1) * bu
+const SPAWN_TREE_BONUS := 1.5     # aday puani: bitisik agac varsa ek
+const SPAWN_CANDIDATES := 12      # agirlikli secim icin aday sayisi
+const SPAWN_EDGE_MARGIN := 2      # (eski kenar banti — son care fallback)
 const SPAWN_MIN_DIST_PLAYER := 10 # oyuncuya en az bu kadar hucre
 const SPAWN_MIN_DIST_HEARTH := 8  # Ocak'a en az bu kadar hucre
 const SPAWN_TRIES := 40           # uygun hucre arama denemesi
+
+## Topraktan dogrulma: kul-duman + kabuk parcaciklari, govde bu surede
+## yukselir; surece AI islemez (daze). Renkler dunya diliyle.
+const BIRTH_SECONDS := 1.0
+const BIRTH_ASH_COLOR := Color(0.45, 0.43, 0.40)   # kul-duman grisi
+const BIRTH_SHELL_COLOR := Color(0.30, 0.24, 0.18) # kabuk/toprak koyusu
 
 ## Hedefleme: oyuncu bu menzildeyse oyuncuyu, degilse Ocak'i kovalar.
 # --- YOL BULMA (Asama 2) ------------------------------------------------
@@ -232,8 +251,32 @@ const STUCK_SIDE_SPEED := 0.8     # yana kayma hizi carpani
 const STUCK_SIDE_SECONDS := 0.8   # ne kadar sure yana kayar
 const STEP_EPSILON := 0.02        # "ilerledi" sayilan en kucuk mesafe (m)
 
-## Safak temizligi: kalan yaratiklar bu surede erir.
-const DAWN_MELT_SECONDS := 0.5
+## Safak temizligi: kalanlar 2 sn'de KUL OLUP dagilir (gorev kurali) —
+## oz dusurmezler, oz yalniz oldurulunce.
+const DAWN_MELT_SECONDS := 2.0
+
+# --- ANIMASYON (yaratik-gece: creature_2.glb rig'i) ----------------------
+## GLB'de UC klip var (olculdu): Running / Walk_with_Walker_Support /
+## Walking. Kullanici karari: yurume aksiyonu Walk_with_Walker_Support.
+## Idle ve saldiri klibi YOK — durunca klip durdurulur, saldiri lunge
+## tween'iyle kalir (ANIM_ATTACK dosya-bekler kanca: klip gelirse ismi
+## buraya yazilir, kod hazir).
+const ANIM_WALK := "Walk_with_Walker_Support"
+const ANIM_ATTACK := ""            # savurma klibi gelince adi buraya
+const ANIM_BLEND := 0.15           # gecis yumusatmasi (sn)
+## Yurume klibinin YAZILDIGI hiz (m/sn) — speed_scale = hiz / bu deger.
+## Kayma olursa elle ayarlanacak tek sayi budur.
+const ANIM_WALK_REF_SPEED := 1.6
+
+# --- CATLAK ISIMASI (yaratik-gece) ---------------------------------------
+## Model dokusunda emissive VAR (olculdu) — enerji katmani buradan.
+## Gece kaynagi su/cim ailesiyle AYNI (_update_water_night cagirir).
+## Enerji OLCULDU (xvfb A/B): dokunun emissive katmani tum govdeyi
+## kapliyor; 2.4 verilince yaratik pembe fenere dondu. 1.15'te govde
+## mor-gri kalip catlaklar seciliyor.
+const EMISSION_DAY := 0.55         # gunduz soluk
+const EMISSION_NIGHT := 1.15       # gece belirginlesir (fener degil)
+const EMISSION_LIGHT_DIM := 0.45   # isik alaninda soner (Isik Kurami)
 
 # --- Çevre (15.5): KAZI_SU 11.1 tablosu ----------------------------------
 const CLIMB_SECONDS := {2: 3.0, 3: 6.0, 4: 999.0}  # depth -> tırmanma süresi
@@ -242,6 +285,11 @@ const LADDER_CLIMB_FACTOR := 0.5   # merdiven varsa süre yarıya
 const RAISE_CLIMB_SECONDS := {1: 1.0, 2: 2.0}  # yükselti tırmanma
 const SWIM_SLOW := 0.30            # su: %70 yavaş (0.30 çarpan)
 const LIGHT_SLOW := 0.90           # ışık alanında %10 yavaş
+## Isik alani yaricaplari (yaratik-gece): mesale omni_range ile ayni;
+## Ocak atesi daha genis. "Isik onlari sagirlastirir" — Isik Kurami'nin
+## gorunur hali: yavaslama + catlak isimasi sonmesi bu menzilde.
+const LIGHT_RANGE_TORCH := 4.5
+const LIGHT_RANGE_HEARTH := 6.0
 
 # --- Tuzaklar (15.6) -----------------------------------------------------
 const SPIKE_SLOW := 0.60           # kazık: %40 yavaş (0.60 çarpan)
