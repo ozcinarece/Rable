@@ -75,3 +75,42 @@ Aynı koşuda görülen ayrı bulgu (bu dalın işi değil): `cam.png`,
 `kor_feneri.png`, `koz_kabi.png` ikon dosyaları yok — keşif
 paketinin eşyaları ikonsuz ("Resource file not found"). Meshy/ikon
 üretiminde sıraya alınmalı.
+
+---
+
+# ÇİM YOĞUNLUK TURU (cim-yogunluk — "web'de çim prototipteki gibi değil")
+
+## TEŞHİS
+
+Shader doğru çalışıyordu ama yalnız SEYREK süs otunda koşuyordu:
+her 5 çayır hücresinden 1'ine tek Meshy öbeği (~1890 tutam). Prototip
+görünümü SIK ince yaprak tarlası — çayırın geri kalanı düz yeşil
+zemin olarak kalıyordu.
+
+## ÇÖZÜM: ÇİM TARLASI KATMANI
+
+- Prosedürel yaprak tutamı: çapraz 3 daralan quad (12 vertex), renk
+  shader'ın kök→uç gradyanından — mesh'te renk yok.
+- Her uygun çayır hücresine 8 tutam (sayılar DigWaterVisual C3:
+  CIM_FIELD_*; ilk deneme 3/hücre + 0.09 genişlik SEYREK kaldı —
+  üstten bakan kamerada dikey yaprak az piksel kaplıyor; 8/hücre +
+  0.14 genişlik lab A/B ile seçildi). Toplam ~75k tutam.
+- 16x16 hücre chunk'ları = ayrı MultiMesh (frustum culling; tek dev
+  MM her kare 900k vertex çizerdi). Materyal/mesh ortak — ekranda
+  ~4-9 draw call.
+- ARTIMLI kurulum: _build_decor her kazı/zemin değişiminde çağrılır;
+  chunk başına uygunluk imzası tutulur, yalnız imzası değişen chunk
+  yeniden kurulur (75k transform'u her kazıda kurmak takılma yapardı).
+- Hariç tutulan hücreler: nesneli, kazılı, kamp tarlası, yol, yapı.
+- Düşük kademe: tarla TAMAMEN gizli (statik çim sözleşmesi + telefon
+  bütçesi); süs otu serpintisi Düşük'te de kalır.
+- Rüzgâr/ezme/gece/kalite otomatik: AYNI paylaşılan _cim_material.
+
+## DOĞRULAMA
+
+CIMTEST genişledi: tarla_chunk=64 tarla_ornek=75328
+tarla_dusuk_gizli=true + ortak materyal denetimi. Kareler yerel
+xvfb gerçek-oyun koşusundan: gündüz çayır artık yoğun yaprak tarlası;
+gece karesinde çayır+su aynı night_mix ile kararıyor. Kadraj seçimi
+düzeltildi (önce çevresi ±3 tamamen çayır hücre aranır — ilk tur kıyı
+toprağına düşmüştü).

@@ -4688,7 +4688,114 @@ func _build_decor(grass_cells: Array) -> void:
 				_cim_material(pool))
 		add_child(node)
 		_decor_nodes.append(node)
+	_build_cim_field(grass_cells)
 	_build_env_scatter(grass_cells)
+
+# --- CIM TARLASI (cim-yogunluk) ------------------------------------------
+# Oyunda bildirildi: "web'de cim prototipteki gibi degil". Shader dogru
+# calisiyordu ama yalniz seyrek sus otunde (~%20 hucre, Meshy obegi).
+# Prototip goruntusu SIK ince yaprak: cayir hucreleri prosedurel capraz-
+# quad tutamlarla kaplanir. Ayni paylasilan _cim_material (ruzgar/ezme/
+# gece/kalite otomatik gelir). Chunk basina tek MultiMesh (frustum
+# culling'e girsin — tek dev MM her kare tamamini cizerdi).
+var _cim_field_nodes: Array = []          # tum chunk MMI'lari (kalite gecisi okur)
+var _cim_field_by_chunk: Dictionary = {}  # chunk -> MMI
+var _cim_field_sig: Dictionary = {}       # chunk -> uygunluk imzasi (artımlı kurulum)
+var _cim_blade_cache: ArrayMesh = null
+
+## Capraz 3 duz quad'lik yaprak tutami (uca dogru daralir). Renk shader'da
+## (v_h gradyani) — vertex rengi gerekmez. Normal UP: lambert'te tutamlar
+## zeminle ayni isik alir, "yapistirilmis karton" golgesi olmaz.
+func _cim_blade_mesh() -> ArrayMesh:
+	if _cim_blade_cache != null:
+		return _cim_blade_cache
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var h := DigWaterVisual.CIM_FIELD_H
+	var w := DigWaterVisual.CIM_FIELD_W * 0.5
+	var ust := w * 0.25  # uc genisligi: sivri ama tam ucgen degil
+	for k in 3:
+		var yaw := float(k) * PI / 3.0
+		var dx := cos(yaw)
+		var dz := sin(yaw)
+		var a := Vector3(-w * dx, 0.0, -w * dz)
+		var b := Vector3(w * dx, 0.0, w * dz)
+		var c := Vector3(ust * dx, h, ust * dz)
+		var d := Vector3(-ust * dx, h, -ust * dz)
+		for p: Vector3 in [a, b, c, a, c, d]:
+			st.set_normal(Vector3.UP)
+			st.set_uv(Vector2(0.5 + p.x, p.y / h))
+			st.add_vertex(p)
+	_cim_blade_cache = st.commit()
+	return _cim_blade_cache
+
+## ARTIMLI kurulum: _build_decor HER kazi/zemin degisiminde cagrilir;
+## tarlanin tamamini (~75k transform) her seferinde kurmak gorunur
+## takilma yapardi. Chunk basina uygunluk IMZASI tutulur — yalniz
+## imzasi degisen chunk yeniden kurulur (kazi tipik 1-2 chunk'a dokunur).
+func _build_cim_field(grass_cells: Array) -> void:
+	if not (DigWaterVisual.CIM_SHADER_V1 and DigWaterVisual.CIM_FIELD_ON):
+		for node in _cim_field_nodes:
+			if is_instance_valid(node):
+				node.queue_free()
+		_cim_field_nodes.clear()
+		_cim_field_by_chunk.clear()
+		_cim_field_sig.clear()
+		return
+	var cs := DigWaterVisual.CIM_FIELD_CHUNK
+	var cells_by_chunk: Dictionary = {}  # chunk -> Array[Vector2i]
+	var sig_by_chunk: Dictionary = {}    # chunk -> int
+	for cell: Vector2i in grass_cells:
+		if _objects.has(cell) or cell == _spawn_cell:
+			continue
+		if int(_depth.get(cell, 0)) != 0:
+			continue
+		if _camp_field.has(cell) or _path_cells.has(cell) or _placed.has(cell):
+			continue
+		var ck := Vector2i(cell.x / cs, cell.y / cs)
+		if not cells_by_chunk.has(ck):
+			cells_by_chunk[ck] = []
+			sig_by_chunk[ck] = 0
+		(cells_by_chunk[ck] as Array).append(cell)
+		sig_by_chunk[ck] = int(sig_by_chunk[ck]) * 31 \
+				+ cell.x * 131071 + cell.y * 8191
+	# Uygun hucresi kalmayan chunk'lar silinir
+	for ck: Vector2i in _cim_field_by_chunk.keys():
+		if not cells_by_chunk.has(ck):
+			if is_instance_valid(_cim_field_by_chunk[ck]):
+				(_cim_field_by_chunk[ck] as Node).queue_free()
+			_cim_field_by_chunk.erase(ck)
+			_cim_field_sig.erase(ck)
+	# Imzasi degisen (ya da yeni) chunk'lar kurulur
+	for ck: Vector2i in cells_by_chunk:
+		if int(_cim_field_sig.get(ck, -1)) == int(sig_by_chunk[ck]) \
+				and _cim_field_by_chunk.has(ck) \
+				and is_instance_valid(_cim_field_by_chunk[ck]):
+			continue
+		if _cim_field_by_chunk.has(ck) and is_instance_valid(_cim_field_by_chunk[ck]):
+			(_cim_field_by_chunk[ck] as Node).queue_free()
+		var tfs: Array = []
+		for cell: Vector2i in cells_by_chunk[ck]:
+			for k in DigWaterVisual.CIM_FIELD_PER_CELL:
+				# Konum/yon/olcek deterministik hash'ten (yeniden kurulum
+				# deseni degistirmez, izgara hissi yok)
+				var ox := (DigWaterVisual.hash01(cell.x, cell.y, 811 + k) - 0.5) * 0.85
+				var oz := (DigWaterVisual.hash01(cell.x, cell.y, 823 + k) - 0.5) * 0.85
+				var yaw := DigWaterVisual.hash01(cell.x, cell.y, 837 + k) * TAU
+				var s := lerpf(DigWaterVisual.CIM_FIELD_SCALE_MIN,
+						DigWaterVisual.CIM_FIELD_SCALE_MAX,
+						DigWaterVisual.hash01(cell.x, cell.y, 853 + k))
+				var basis := Basis(Vector3.UP, yaw).scaled(Vector3(s, s, s))
+				var poz := _cell_center(cell) + Vector3(ox, 0.0, oz)
+				poz.y = ground_height(poz.x, poz.z)  # egimde tabana otur
+				tfs.append(Transform3D(basis, poz))
+		var node := _make_mesh_multimesh(_cim_blade_mesh(), tfs, false,
+				_cim_material())
+		add_child(node)
+		_cim_field_by_chunk[ck] = node
+		_cim_field_sig[ck] = int(sig_by_chunk[ck])
+	_cim_field_nodes = _cim_field_by_chunk.values()
+	_apply_cim_tier()  # Dusuk'te tarla gizli kurulsun
 
 # --- YOL HUCRELERI ------------------------------------------------------
 # Yol bir ZEMIN TURU: hucre -> yas ("miras" | "yeni"). Zemin rengini
@@ -12370,6 +12477,11 @@ func _apply_cim_tier() -> void:
 		_cim_mat.set_shader_parameter("quality", q)
 	if _cicek_mat != null:
 		_cicek_mat.set_shader_parameter("quality", q)
+	# CIM TARLASI: Dusuk'te tamamen kapali (telefon butcesi); sus otu
+	# serpintisi her kademede kalir.
+	for node in _cim_field_nodes:
+		if is_instance_valid(node):
+			(node as Node3D).visible = q > 0
 
 ## CIMTEST (hizli CI): materyal atamasi + TEK draw call korunumu +
 ## blade_height olcumu + kaynak paylasimi.
@@ -12401,9 +12513,40 @@ func _run_cim_test() -> void:
 				% [mmi_n - shaderli, mmi_n])
 	if DigWaterVisual.CIM_SHADER_V1 and (boy < 0.05 or boy > 2.0):
 		push_error("CIM: blade_height olcumu sacma (%.2f)" % boy)
-	print("CIMTEST: mmi=%d shaderli=%d ornek=%d blade_height=%.2f noise_paylasim=%s cicek=%s" % [
+	# CIM TARLASI (cim-yogunluk): chunk'lar kuruldu mu, ayni paylasilan
+	# materyali mi kullaniyorlar, Dusuk kademede gizleniyorlar mi.
+	var tarla_chunk := 0
+	var tarla_ornek := 0
+	var tarla_ortak_mat := true
+	for fnode in _cim_field_nodes:
+		if not is_instance_valid(fnode):
+			continue
+		tarla_chunk += 1
+		tarla_ornek += (fnode as MultiMeshInstance3D).multimesh.instance_count
+		if (fnode as MultiMeshInstance3D).material_override != _cim_mat:
+			tarla_ortak_mat = false
+	var dusuk_gizli := false
+	if tarla_chunk > 0:
+		var eski_tier := _quality_tier
+		_quality_tier = "dusuk"
+		_apply_cim_tier()
+		dusuk_gizli = not (_cim_field_nodes[0] as Node3D).visible
+		_quality_tier = eski_tier
+		_apply_cim_tier()
+	if DigWaterVisual.CIM_FIELD_ON and DigWaterVisual.CIM_SHADER_V1:
+		if tarla_chunk == 0 or tarla_ornek < 100:
+			push_error("CIM TARLASI: kurulmadi (chunk=%d ornek=%d)"
+					% [tarla_chunk, tarla_ornek])
+		if not tarla_ortak_mat:
+			push_error("CIM TARLASI: chunk materyali paylasilan _cim_mat degil")
+		if not dusuk_gizli:
+			push_error("CIM TARLASI: Dusuk kademede gizlenmiyor")
+	print(("CIMTEST: mmi=%d shaderli=%d ornek=%d blade_height=%.2f "
+			+ "noise_paylasim=%s cicek=%s tarla_chunk=%d tarla_ornek=%d "
+			+ "tarla_dusuk_gizli=%s") % [
 			mmi_n, shaderli, ornek_toplam, boy, str(paylasim),
-			str(_cicek_mat != null)])
+			str(_cicek_mat != null), tarla_chunk, tarla_ornek,
+			str(dusuk_gizli)])
 
 ## Agir CI kareleri: cayir gunduz (ruzgar: 1 sn arayla IKI kare — statik
 ## goruntude hareket ancak farkla kanitlanir; gif borcu RAPOR'da),
@@ -12416,21 +12559,32 @@ func _run_cim_frames(save_path: String) -> void:
 	# _decor_cells TUM cim hucreleri; tutam yalniz hash<20 olanlarda
 	# (_build_decor filtresiyle AYNI kural) — bos hucreye kadraj olmasin.
 	var hedef := Vector2i(-999, -999)
-	for c: Vector2i in _decor_cells:
-		if absi(c.x * 92821 + c.y * 68917) % 100 >= 20:
-			continue
-		# 3. tur dersi: agac dibindeki tutam kadraji agacla kapatiyor —
-		# 2 hucre cevresi nesnesiz (agac/kaya/cali) tutam sec.
-		var acik := true
-		for oy in range(-2, 3):
-			for ox in range(-2, 3):
-				if _objects.has(c + Vector2i(ox, oy)):
-					acik = false
+	# cim-yogunluk dersi: ilk kadraj kiyi topragina dustu (tutam vardi ama
+	# cevre cim degildi) — once cevresi ±3 TAMAMEN cayir olan hucre aranir,
+	# bulunamazsa eski gevsek kural (yalniz nesnesizlik) devreye girer.
+	var gset: Dictionary = {}
+	for gc: Vector2i in _decor_cells:
+		gset[gc] = true
+	for siki in [true, false]:
+		for c: Vector2i in _decor_cells:
+			if absi(c.x * 92821 + c.y * 68917) % 100 >= 20:
+				continue
+			# 3. tur dersi: agac dibindeki tutam kadraji agacla kapatiyor —
+			# 2 hucre cevresi nesnesiz (agac/kaya/cali) tutam sec.
+			var acik := true
+			var yaricap := 3 if siki else 2
+			for oy in range(-yaricap, yaricap + 1):
+				for ox in range(-yaricap, yaricap + 1):
+					var nc := c + Vector2i(ox, oy)
+					if _objects.has(nc) or (siki and not gset.has(nc)):
+						acik = false
+						break
+				if not acik:
 					break
-			if not acik:
+			if acik:
+				hedef = c
 				break
-		if acik:
-			hedef = c
+		if hedef != Vector2i(-999, -999):
 			break
 	if hedef == Vector2i(-999, -999):
 		_cam_locked = false
