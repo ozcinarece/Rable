@@ -31,6 +31,7 @@ const CreatureBalance = preload("res://scripts/creature_balance.gd")
 const CreatureAI = preload("res://scripts/creature_ai.gd")
 const FenceBalance = preload("res://scripts/fence_balance.gd")
 const FellBalance = preload("res://scripts/fell_balance.gd")
+const CampBalance = preload("res://scripts/camp_balance.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const ChestStore = preload("res://scripts/inventory.gd")  # 14.1 sandik deposu
@@ -1242,12 +1243,46 @@ func _run_camp_prefab_test() -> void:
 		var yeni: Vector2i = Vector2i(sonra.get("sandik", [{}])[0].get("off", Vector2i.ZERO))
 		tasima_ok = (yeni - eski) == Vector2i(2, 0)
 		root.free()
-	print("PREFABTEST: oge_eksik=%s tasima_yansidi=%s spawn=%s hut=%s" % [
-		str(eksik), str(tasima_ok), str(_spawn_cell), str(_camp_at("hut"))])
+	# ENKAZ (kamp-enkaz): devrik masa dekoru sokulebilir mi, malzeme
+	# dusuyor mu, sokum _build_spawn_camp yeniden kurulumunda KALICI mi.
+	var sokum_ok := false
+	var kalici_ok := false
+	var dusen := 0
+	var masa_cell := Vector2i(-999, -999)
+	for c: Vector2i in _camp_props:
+		if String(_camp_props[c]["id"]) == "arastirma_masasi":
+			masa_cell = c
+			break
+	if masa_cell != Vector2i(-999, -999):
+		var gi_once := _ground_items.size()
+		sokum_ok = _try_enkaz_sok(masa_cell)
+		dusen = _ground_items.size() - gi_once
+		_build_spawn_camp()
+		kalici_ok = not _camp_props.has(masa_cell)
+		# TEMIZLIK: test dunyayi bozmasin — isaret geri alinir, dekor geri
+		# kurulur, dusen test malzemesi yerden silinir.
+		_camp_props_removed.erase(masa_cell)
+		_build_spawn_camp()
+		var sil := dusen
+		while sil > 0 and not _ground_items.is_empty():
+			var son: Dictionary = _ground_items[-1]
+			var sn: Variant = son.get("node", null)
+			if sn != null and is_instance_valid(sn):
+				(sn as Node).queue_free()
+			_ground_items.remove_at(_ground_items.size() - 1)
+			sil -= 1
+	print(("PREFABTEST: oge_eksik=%s tasima_yansidi=%s spawn=%s hut=%s "
+			+ "enkaz_sokum=%s dusen=%d kalici=%s") % [
+		str(eksik), str(tasima_ok), str(_spawn_cell), str(_camp_at("hut")),
+		str(sokum_ok), dusen, str(kalici_ok)])
 	if not eksik.is_empty():
 		push_error("KAMP PREFABI EKSIK: %s" % str(eksik))
 	if not tasima_ok:
 		push_error("Prefabta tasinan dugum kayda yansimadi (sahne->oyun hatti kopuk)")
+	if not sokum_ok or dusen < 1:
+		push_error("ENKAZ: masa dekoru sokulemedi ya da malzeme dusmedi")
+	if not kalici_ok:
+		push_error("ENKAZ: sokum yeniden kurulumda kalici degil")
 
 ## MASKTEST — "maskede gol boya -> oyunda gol orada mi" zincirinin
 ## otomatik hali. Dunya durumuna DOKUNMAZ: uretec + maske gecisi saf
@@ -3076,7 +3111,14 @@ func to_save_data() -> Dictionary:
 		"home_bed": [_home_bed.x, _home_bed.y],  # 14.2 aktif dogus noktasi
 		"farming": Farming.to_save_data(),  # tarim-3d: tarla/evre/islaklik/kap
 		"kesif": _kesif_to_save(),  # Bolum 16: tas durumlari + fener
+		"camp_enkaz": _enkaz_to_save(),  # kamp-enkaz: sokulen dekor hucreleri
 	}
+
+func _enkaz_to_save() -> Array:
+	var out: Array = []
+	for cell: Vector2i in _camp_props_removed:
+		out.append([cell.x, cell.y])
+	return out
 
 ## KESIF kayit paketi: yalniz DURUM yazilir (konumlar deterministik ama
 ## algoritma degisirse eski kayit bozulmasin diye hucre de saklanir).
@@ -3222,6 +3264,13 @@ func from_save_data(data: Dictionary) -> bool:
 	if held != "" and Inventory.get_count(held) > 0:
 		_on_hold_requested(held)
 	_kesif_from_save(data.get("kesif", {}))  # Bolum 16: tas/fener durumu
+	# KAMP ENKAZI: sokulen dekor hucrelerini geri yukle ve kampi yeniden
+	# kur — _build_spawn_camp isaretli hucreleri atlar (sokum kalicidir).
+	_camp_props_removed.clear()
+	for ej in data.get("camp_enkaz", []):
+		if ej is Array and ej.size() == 2:
+			_camp_props_removed[Vector2i(int(ej[0]), int(ej[1]))] = true
+	_build_spawn_camp()
 	_loading = false
 	return true
 
@@ -5412,6 +5461,9 @@ var _camp_center := Vector2i(-999, -999)
 var _camp_cells: Dictionary = {}   # kamp yaricapi (serpinti yogunlugu icin)
 var _camp_field: Dictionary = {}   # tarla dekor hucreleri -> true
 var _camp_nodes: Array = []        # kamp dekor dugumleri
+# KAMP ENKAZI (kamp-enkaz): sokulebilir dekorlar (masa/sandik).
+var _camp_props: Dictionary = {}          # hucre -> {"id","node"}
+var _camp_props_removed: Dictionary = {}  # hucre -> true (kayitta kalici)
 ## Tarla dekoru hucre basina: oyuncu o hucreyi GERCEKTEN capalarsa dekor
 ## silinir, yoksa terk edilmis sirt ile gercek tarla ust uste binerdi.
 var _camp_field_nodes: Dictionary = {}  # cell -> Array[Node3D]
@@ -5598,18 +5650,32 @@ func _build_spawn_camp() -> void:
 	_camp_prop_pumpkin(_camp_at("kabak"))
 	# Uretim kosesi: solmus/devrik arastirma masasi + devrik bos sandik.
 	# TEZGAH YOK — ilk tezgahi oyuncu kuracak (mockup'taki bosluk kasitli).
-	_camp_prop_structure("arastirma_masasi", _camp_at("masa"), _camp_yaw("masa"), true)
-	_camp_prop_structure("sandik", _camp_at("sandik"), _camp_yaw("sandik"), true)
+	# KAMP ENKAZI: bu ikili SOKULEBILIR (oyunda bildirildi: islevsiz dekor
+	# "kaldirilamiyordu"). Sokulen hucre kayitta isaretli — geri kurulmaz.
+	_camp_props.clear()
+	var masa_c := _camp_at("masa")
+	if not _camp_props_removed.has(masa_c):
+		var masa_n := _camp_prop_structure("arastirma_masasi", masa_c,
+				_camp_yaw("masa"), true)
+		if masa_n != null:
+			_camp_props[masa_c] = {"id": "arastirma_masasi", "node": masa_n}
+	var sandik_c := _camp_at("sandik")
+	if not _camp_props_removed.has(sandik_c):
+		var sandik_n := _camp_prop_structure("sandik", sandik_c,
+				_camp_yaw("sandik"), true)
+		if sandik_n != null:
+			_camp_props[sandik_c] = {"id": "sandik", "node": sandik_n}
 	# Sonuk mesale direkleri (isik EKLENMEZ)
 	for mc: Vector2i in _camp_cells_of("mesale"):
 		_camp_prop_structure("mesale", mc, 0.0, false)
 
 ## Mevcut yapi gorselini DEKOR olarak koyar (veri yok, etkilesim yok).
 ## tilt=true ise devrik/yipranmis durus (13.4'teki hasarli goruntunun aynisi).
+## Donus degeri: kurulan dugum (enkaz kaydi icin) — kurulmadiysa null.
 func _camp_prop_structure(item_id: String, cell: Vector2i, yaw: float,
-		tilt: bool) -> void:
+		tilt: bool) -> Node3D:
 	if _placed.has(cell):
-		return  # oyuncu oraya bir sey koyduysa dekor cizilmez
+		return null  # oyuncu oraya bir sey koyduysa dekor cizilmez
 	var holder := _build_structure_visual(item_id)
 	holder.position = _cell_center(cell)
 	holder.rotation_degrees.y = yaw
@@ -5618,6 +5684,24 @@ func _camp_prop_structure(item_id: String, cell: Vector2i, yaw: float,
 		holder.position.y -= 0.06
 	add_child(holder)
 	_camp_nodes.append(holder)
+	return holder
+
+## KAMP ENKAZI sokumu: dekor dugumu kaldirilir, salvage malzemesi yere
+## sacilir, hucre kalici isaretlenir (kayit + _build_spawn_camp atlar).
+func _try_enkaz_sok(cell: Vector2i) -> bool:
+	if not _camp_props.has(cell):
+		return false
+	var kayit: Dictionary = _camp_props[cell]
+	var node: Node3D = kayit["node"]
+	if is_instance_valid(node):
+		_camp_nodes.erase(node)
+		node.queue_free()
+	_camp_props.erase(cell)
+	_camp_props_removed[cell] = true
+	var dus: Dictionary = CampBalance.SALVAGE.get(String(kayit["id"]), {})
+	_scatter_drops(cell, (dus as Dictionary).duplicate())
+	_dirty = true
+	return true
 
 ## GLB propu (kulube/kuyu): olcek KOK dugume verilir (node scale YASAK
 ## dersi: ic dugumlere dokunulmaz), hedef YUKSEKLIGE normalize edilir.
@@ -8658,6 +8742,12 @@ func _describe_target(cell: Vector2i) -> Dictionary:
 	if cell == get_hearth() and Inventory.get_count("yol_koru") < 1:
 		return {"type": "yolkoru", "cell": cell, "icon": "open",
 				"valid": true, "kind": "open"}
+	# KAMP ENKAZI: devrik masa/sandik dekoru — bos el/alet dokunusuyla
+	# sokulur (silah haric: dovus sirasinda yanlislikla sokulmesin).
+	if _camp_props.has(cell) and not _placed.has(cell) \
+			and not ToolProfiles.is_weapon(held):
+		return {"type": "enkaz", "cell": cell, "icon": "grab",
+				"valid": true, "kind": "enkaz"}
 	# Cekic elde + yerlestirilmis yapi: SOKME (12.4). Istasyon acmadan once.
 	var placed := String(_placed.get(cell, ""))
 	if held == "cekic" and placed != "":
@@ -8831,6 +8921,8 @@ func _apply_strike(kind: String, cell: Vector2i) -> void:
 			_try_scoop(cell)
 		"pour":
 			_try_pour(cell)
+		"enkaz":
+			_try_enkaz_sok(cell)  # kamp enkazi: dekor sokumu + salvage
 		"dismantle":
 			if _placed.has(cell):
 				_remove_placed(cell)  # cekic: malzeme %100 iade (12.4)
