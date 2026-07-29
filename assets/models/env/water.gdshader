@@ -52,7 +52,13 @@ uniform float wave_time_scale = 1.45;
 // ---- PARILTI + FRESNEL ----
 uniform float sparkle_threshold : hint_range(0.8, 0.999) = 0.950;
     // eşik düşürüldü: daha SIK kıvılcım (prototip Parıltı 1.5 seçimi)
-uniform float sparkle_intensity = 0.85;
+uniform float sparkle_intensity = 0.05;
+    // KULLANICI İSTEĞİ (parlaklık turu): gündüz çok parlak -> 0'a yakın.
+    // Asıl beyazlık kaynağı specular'dı (aşağıda spec_strength); parıltı
+    // kıvılcımları da aynı istekle 0.85'ten kısıldı.
+uniform float spec_strength : hint_range(0.0, 1.0) = 0.05;
+    // Yüzey yansıma gücü (eski sabit 0.55). Alçak açıda gökyüzü/güneş
+    // yansıması bütün gölü sütlü beyaza boyuyordu — 0'a yakın istendi.
 uniform float fresnel_power = 3.0;
 uniform float alpha_shallow : hint_range(0.0, 1.0) = 0.72; // sığda saydamlık
 uniform float alpha_deep    : hint_range(0.0, 1.0) = 0.94;
@@ -165,7 +171,7 @@ void fragment() {
 
     // ---------- 6. PARILTI ----------
     ROUGHNESS = 0.18;
-    SPECULAR = 0.55;
+    SPECULAR = spec_strength;
     if (quality > 0) {
         float sp = texture(noise_tex, UV * 3.1 + vec2(TIME * 0.03, -TIME * 0.02)).r;
         float sparkle = step(sparkle_threshold, sp) * sparkle_intensity;

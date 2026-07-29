@@ -159,3 +159,21 @@ kanal kareleri önceki kadrajda.
   döndürülebilir.
 - `3d_su_kanal.png` / `3d_su_hendek.png`: kompozisyon öncekiyle aynı
   (kadraj değişmedi) — gerileme yok, iç su v2 ile çiziliyor.
+
+## PARLAKLIK TURU (kullanıcı geri bildirimi: "gündüz çok parlak, 0'a yakın")
+
+Teşhis (yerel xvfb A/B, sığ göl + alçak kamera replikası):
+- Sanılan kaynak parıltı (sparkle) DEĞİLDİ — sparkle_intensity 0.85→0.05
+  aynı kadrajda görüntüyü neredeyse hiç değiştirmedi.
+- Asıl kaynak SPECULAR yansıması: alçak açıda parlak gökyüzü/güneş
+  su yüzeyinden aynaya yakın yansıyor (ROUGHNESS 0.18, eski SPECULAR
+  sabit 0.55) — bütün göl sütlü beyaz sheen'e boğuluyordu.
+
+Değişiklik (ikisi de shader varsayılanı, Inspector'dan ayarlanabilir):
+- `spec_strength` YENİ uniform = 0.05 (eski sabit 0.55'in yerine) —
+  gündüz beyazlığının ana düğmesi, 0'a yakın istendi.
+- `sparkle_intensity` 0.85 → 0.05 — kıvılcımlar da aynı istekle kısıldı.
+
+Not: kıyı köpüğü bilinçli bırakıldı (stil öğesi, "parlaklık" değil);
+gece Ocak/meşale yansıması EMISSION tabanlı olduğundan bu ayarlardan
+etkilenmez. WATERCOLORTEST değişmedi (bant renkleri ayrı).
