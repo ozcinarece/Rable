@@ -177,3 +177,31 @@ Değişiklik (ikisi de shader varsayılanı, Inspector'dan ayarlanabilir):
 Not: kıyı köpüğü bilinçli bırakıldı (stil öğesi, "parlaklık" değil);
 gece Ocak/meşale yansıması EMISSION tabanlı olduğundan bu ayarlardan
 etkilenmez. WATERCOLORTEST değişmedi (bant renkleri ayrı).
+
+---
+
+# V2.1 GÜNCELLEMESİ (su-v21): köpük turu
+
+Kullanıcı v2.1 yükledi: köpük İNCE (foam_width 0.35→0.16), kenarı daha
+dalgalı (wobble 0.14), KESİKLİ (`foam_break=0.45` — büyük ölçekli noise
+köpüğü yer yer siler) ve YARI SAYDAM (`foam_opacity=0.65`). Köpük artık
+kesintisiz kalın şerit değil, kıyı boyunca kopuk kopuk yamalar.
+
+## Yeniden işlenen düzeltmeler (yükleme eski tabana dayanıyordu)
+
+Yüklenen dosya parlaklık turu ÖNCESİ v2 tabanından türemişti; üç şey
+geri bozulmuştu ve yeniden işlendi:
+1. `v_flow_dir` varying (CUSTOM0 4.7'de fragment'ta okunamaz),
+2. `sparkle_intensity` 0.85→0.05 (kullanıcı isteği: 0'a yakın),
+3. `spec_strength` uniform'u = 0.05 (sabit SPECULAR 0.55 dönmüştü).
+
+NOT (süreç): prototip dışa aktarımı repodaki güncel shader'ı baz alırsa
+bu üçlü elle geri işleme turu biter.
+
+## Sözleşme etkisi
+
+Bant renkleri/eşikleri değişmedi — WATERCOLORTEST bant replikası
+geçerli. Köpük eşiği ince banda güncellendi: `V1_FOAM_ESIK` 0.65→0.84
+(= 1 - foam_width). Kıyı karesi aynı yandan alçak açı kadrajla yerel
+gerçek-oyun koşusundan yeniden çekildi: ince/kesikli köpük + dalga
+silueti + parlama yok.

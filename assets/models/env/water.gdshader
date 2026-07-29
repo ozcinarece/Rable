@@ -56,7 +56,13 @@ uniform float wave_time_scale = 1.45;
 // ---- PARILTI + FRESNEL ----
 uniform float sparkle_threshold : hint_range(0.8, 0.999) = 0.950;
     // eşik düşürüldü: daha SIK kıvılcım (prototip Parıltı 1.5 seçimi)
-uniform float sparkle_intensity = 0.85;
+uniform float sparkle_intensity = 0.05;
+    // KULLANICI ISTEGI (parlaklik turu, v2.1'de yeniden islendi):
+    // gunduz cok parlak -> 0'a yakin. Asil beyazlik kaynagi specular'di
+    // (asagida spec_strength); kivilcimlar da ayni istekle kisildi.
+uniform float spec_strength : hint_range(0.0, 1.0) = 0.05;
+    // Yuzey yansima gucu (eski sabit 0.55). Alcak acida gokyuzu/gunes
+    // yansimasi golu sutlu beyaza boyuyordu — 0'a yakin istendi.
 uniform float fresnel_power = 3.0;
 uniform float alpha_shallow : hint_range(0.0, 1.0) = 0.72; // sığda saydamlık
 uniform float alpha_deep    : hint_range(0.0, 1.0) = 0.94;
@@ -74,11 +80,15 @@ uniform int quality : hint_range(0, 1) = 1;
 uniform float flow_speed_scale = 3.0; // akış hızı çarpanı
 
 varying vec3 v_world_pos;
+// 4.7 DUZELTMESI (her surumde yeniden isleniyor): CUSTOM0 yalniz vertex
+// asamasinda okunabilir; fragment'taki akis yonu varying ile tasinir.
+varying vec2 v_flow_dir;
 
 varying float v_wave_h; // dalga yüksekliği (fragment'ta normal katkısı için)
 
 void vertex() {
     v_world_pos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+    v_flow_dir = CUSTOM0.xy;
     v_wave_h = 0.0;
     if (quality > 0) {
         // ÜÇ YÖNLÜ DALGA (prototipten birebir): farklı yön/frekans/fazda
@@ -99,7 +109,7 @@ void fragment() {
     float depth_f = COLOR.r;
     float shore_f = COLOR.g;
     float flow_f  = COLOR.b;
-    vec2 flow_dir = CUSTOM0.xy;
+    vec2 flow_dir = v_flow_dir;
 
     // ---------- 1. RENK BANTLARI ----------
     vec3 col = color_shallow;
@@ -170,7 +180,7 @@ void fragment() {
 
     // ---------- 6. PARILTI ----------
     ROUGHNESS = 0.18;
-    SPECULAR = 0.55;
+    SPECULAR = spec_strength;
     if (quality > 0) {
         float sp = texture(noise_tex, UV * 3.1 + vec2(TIME * 0.03, -TIME * 0.02)).r;
         float sparkle = step(sparkle_threshold, sp) * sparkle_intensity;

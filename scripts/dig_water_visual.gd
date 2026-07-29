@@ -167,9 +167,11 @@ const V1_DEEP_M := 0.60
 const V1_SHORE_M := 0.22
 ## UV = dunya xz / bu deger (desen hucre yereli DEGIL, sozlesme geregi).
 const V1_UV_OLCEK := 8.0
-## Kopuk replikasi esigi: shore_f bunun ustundeyse kopuk bolgesi
-## (shader foam_width=0.35 varsayilaniyla uyumlu).
-const V1_FOAM_ESIK := 0.65
+## Kopuk replikasi esigi: shore_f bunun ustundeyse kopuk bolgesi.
+## v2.1: foam_width 0.35 -> 0.16 (ince bant) — esik shore_f olceginde
+## 1 - foam_width. Kopuk artik foam_break ile kesikli oldugundan replika
+## "kopuk BOLGESI" der, "her pikselde kopuk" demez.
+const V1_FOAM_ESIK := 0.84
 const V1_FOAM_COLOR := Color(0.918, 0.969, 0.969)
 ## Shader bant sabitlerinin BIREBIR kopyasi (water.gdshader varsayilanlari).
 ## Ikisi TEK SOZLESME: shader degisirse burasi da degisir, WATERCOLORTEST
