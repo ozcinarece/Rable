@@ -75,6 +75,16 @@ uniform int  warm_light_count = 0;               // aktif sıcak ışık sayıs�
 uniform vec3 warm_lights[4];                     // dünya konumları (koddan)
 uniform float warm_light_radius = 6.0;
 
+// ---- KIYI DALGASI (v2.1 rotusu, kullanici istegi) ----
+// "Kenar kisimlar hareketli olsun — dalga yavas yavas kiyiya vuruyormus
+// gibi suyun sekli hafifce degissin." Acik su dalgasi kiyida bilerek
+// sonuyor (kopuk bandi titremesin); onun yerine kiyida YAVAS, alcak bir
+// soluma dalgasi calisir. Yuzey kiyida inip kalktikca su cizgisi kumsal
+// egiminde ileri-geri yuruyor — vurma hissi buradan gelir.
+uniform float shore_lap_amplitude = 0.022;  // m — kiyi soluma genligi
+uniform float shore_lap_frequency = 0.9;    // kiyi boyunca dalga sikligi
+uniform float shore_lap_speed = 0.8;        // acik su dalgasindan YAVAS
+
 // ---- GENEL ----
 uniform int quality : hint_range(0, 1) = 1;
 uniform float flow_speed_scale = 3.0; // akış hızı çarpanı
@@ -100,8 +110,17 @@ void vertex() {
         h += sin(dot(p, vec2(-0.5, 1.0 )) * wave_frequency * 1.7  + t * 1.3 + 1.7) * 0.3;
         h += sin(dot(p, vec2( 0.3,-1.0 )) * wave_frequency * 2.6  + t * 0.8 + 4.0) * 0.2;
         v_wave_h = h;
-        // kıyıda dalga söner (köpük bandı titremesin, kıyı çizgisi oturaklı)
+        // kıyıda AÇIK SU dalgası söner (köpük bandı titremesin) —
+        // yerini aşağıdaki yavaş kıyı solumasına bırakır
         VERTEX.y += h * wave_amplitude * (1.0 - COLOR.g);
+        // KIYI SOLUMASI: iki yavaş sinüs, faz kıyı boyunca kayar —
+        // dalga kıyıya tek anda değil, süpürerek vurur. COLOR.g ile
+        // ağırlıklı: açık suda sıfır, kıyıda tam.
+        float lt = TIME * shore_lap_speed;
+        float lap = sin(dot(p, vec2(0.8, 0.6)) * shore_lap_frequency + lt) * 0.7
+                  + sin(dot(p, vec2(-0.5, 0.9)) * shore_lap_frequency * 1.7
+                        + lt * 0.6 + 2.3) * 0.3;
+        VERTEX.y += lap * shore_lap_amplitude * COLOR.g;
     }
 }
 

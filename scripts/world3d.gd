@@ -12240,6 +12240,10 @@ func _run_su_frames(save_path: String) -> void:
 	camera.look_at(bakis)
 	await get_tree().create_timer(0.9).timeout
 	_snap(save_path.replace(".png", "_su_golet.png"))
+	# KIYI DALGASI kaniti: ayni kadrajdan ~1.2 sn sonra ikinci kare —
+	# su cizgisi/kopuk konumu iki karede farkli olmali (soluma calisiyor).
+	await get_tree().create_timer(1.2).timeout
+	_snap(save_path.replace(".png", "_su_golet_b.png"))
 	# 2) GECE + KIYIDA SICAK ISIK: kiyiya mesale (gorevdeki "Ocak kiyisinda"
 	# niyeti sicak yansima; Ocak'i tasimak kamp merkezini bozacagi icin
 	# ayni sicak-isik yolunu kullanan mesale konur — RAPOR'da gerekceli).

@@ -205,3 +205,18 @@ geçerli. Köpük eşiği ince banda güncellendi: `V1_FOAM_ESIK` 0.65→0.84
 (= 1 - foam_width). Kıyı karesi aynı yandan alçak açı kadrajla yerel
 gerçek-oyun koşusundan yeniden çekildi: ince/kesikli köpük + dalga
 silueti + parlama yok.
+
+## KIYI DALGASI RÖTUŞU (kullanıcı isteği, v2.1 üstüne)
+
+"Kenar kısımlar hareketli olsun — dalgalar yavaş yavaş kıyıya
+vuruyormuş gibi suyun şekli hafifçe değişsin." Açık su dalgası kıyıda
+bilerek sönüyordu (köpük bandı titremesin); tamamen açmak yerine
+kıyıya ÖZEL yavaş bir soluma eklendi:
+- `shore_lap_amplitude=0.022`, `shore_lap_frequency=0.9`,
+  `shore_lap_speed=0.8` (açık su dalgasından yavaş) — üçü de uniform.
+- İki sinüs, fazı kıyı boyunca kayar: dalga kıyıya tek anda değil
+  süpürerek vurur. COLOR.g ağırlığı: açık suda sıfır, kıyıda tam.
+- Yüzey kıyıda inip kalktıkça su çizgisi kumsal eğiminde ileri-geri
+  yürür — "vurma" hissi buradan. quality=0'da kapalı (blok içinde).
+- Kanıt: `3d_su_golet_b.png` — aynı kadraj ~1.2 sn sonra; su çizgisi
+  ve köpük konumu iki karede farklı.
