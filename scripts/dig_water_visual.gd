@@ -221,12 +221,12 @@ const CIM_CICEK_BASE := Color(0.373, 0.478, 0.322)  # sap yesili (ayni kok)
 ## Eski tutam yaklasimi bayrakla kapali (geri donulebilir).
 const CIM_TUTAM_ON := false     # eski sus otu obek serpintisi (Meshy)
 const CIM_FIELD_ON := true
-const CIM_V2_MEAN := 28.0       # hucre basina ORTALAMA yaprak (Yuksek;
+const CIM_V2_MEAN := 34.0       # hucre basina ORTALAMA yaprak (Yuksek;
 	# prototip 6000 yaprak / 196 m2 ~= 30; telefon FPS ayar noktasi)
-const CIM_V2_H_MIN := 0.25      # yaprak boyu bandi (gorev: 25-45 cm)
-const CIM_V2_H_MAX := 0.45
-const CIM_V2_W_MIN := 0.04      # taban genisligi bandi (gorev: 4-7 cm)
-const CIM_V2_W_MAX := 0.07
+const CIM_V2_H_MIN := 0.18      # yaprak boyu bandi (kullanici: kucultuldu)
+const CIM_V2_H_MAX := 0.32
+const CIM_V2_W_MIN := 0.03      # taban genisligi bandi (boyla orantili kuculdu)
+const CIM_V2_W_MAX := 0.055
 ## Kumeli yogunluk: value-noise carpani (bazi alan sik, bazi seyrek).
 const CIM_V2_NOISE_SCALE := 0.16
 const CIM_V2_DENS_MIN := 0.35
@@ -244,7 +244,7 @@ const CIM_V2_WIND := 0.12
 const CIM_V2_WIND_SPEED := 0.35
 const CIM_V2_GUST := 0.25
 const CIM_V2_BEND_R := 1.1
-const CIM_V2_BLADE_H := 0.45    # blade_height uniform = mesh referans boyu
+const CIM_V2_BLADE_H := 0.32    # blade_height uniform = mesh referans boyu
 ## Chunk = iki MultiMesh (yakin yari + uzak yari); 16x16 hucre chunk'lar
 ## frustum culling'e girer.
 const CIM_FIELD_CHUNK := 16
