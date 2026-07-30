@@ -223,7 +223,8 @@ const CIM_CICEK_BASE := Color(0.373, 0.478, 0.322)  # sap yesili (ayni kok)
 ## Eski tutam yaklasimi bayrakla kapali (geri donulebilir).
 const CIM_TUTAM_ON := false     # eski sus otu obek serpintisi (Meshy)
 const CIM_FIELD_ON := true
-const CIM_V2_MEAN := 34.0       # hucre basina ORTALAMA yaprak (Yuksek;
+const CIM_V2_MEAN := 68.0       # hucre basina ORTALAMA yaprak (Yuksek;
+	# 2x deneyi (kullanici istegi): yavaslarsa geri almak tek satir
 	# prototip 6000 yaprak / 196 m2 ~= 30; telefon FPS ayar noktasi)
 const CIM_V2_H_MIN := 0.18      # yaprak boyu bandi (kullanici: kucultuldu)
 const CIM_V2_H_MAX := 0.32
