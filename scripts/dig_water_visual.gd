@@ -216,3 +216,54 @@ const CIM_SHADER_V1 := true
 const CIM_CICEK_WIND := 0.03
 const CIM_CICEK_TIP := Color(0.85, 0.55, 0.70)      # yumusak pembe uc
 const CIM_CICEK_BASE := Color(0.373, 0.478, 0.322)  # sap yesili (ayni kok)
+
+## CIM V2 (cim-v2): PROTOTIP TARZI YAPRAK CAYIRI — referans
+## assets/models/prototips/cim_prototip.html. Her yaprak 3 vertex'lik
+## sivri ucgen (tutam/yelpaze modeli YOK); dagilim noise ile KUMELI.
+## Eski tutam yaklasimi bayrakla kapali (geri donulebilir).
+const CIM_TUTAM_ON := false     # eski sus otu obek serpintisi (Meshy)
+const CIM_FIELD_ON := true
+const CIM_V2_MEAN := 34.0       # hucre basina ORTALAMA yaprak (Yuksek;
+	# prototip 6000 yaprak / 196 m2 ~= 30; telefon FPS ayar noktasi)
+const CIM_V2_H_MIN := 0.18      # yaprak boyu bandi (kullanici: kucultuldu)
+const CIM_V2_H_MAX := 0.32
+const CIM_V2_W_MIN := 0.03      # taban genisligi bandi (boyla orantili kuculdu)
+const CIM_V2_W_MAX := 0.055
+## Kumeli yogunluk: value-noise carpani (bazi alan sik, bazi seyrek).
+const CIM_V2_NOISE_SCALE := 0.16
+const CIM_V2_DENS_MIN := 0.35
+const CIM_V2_DENS_MAX := 1.65
+## Kalite kademesi yogunluk kesri (gorev sarti); Dusuk ayrica statik
+## (quality=0 — ruzgar/ezme kapali, _apply_cim_tier).
+const CIM_V2_TIER_FRAC := {"dusuk": 0.3, "orta": 0.6, "yuksek": 1.0}
+## Mesafe eleme: her chunk'ta yapraklarin YARISI ayri MM'de ve
+## visibility_range ile bu mesafeden sonra cizilmez — uzak chunk'ta
+## yogunluk kendiliginden yariya iner (kare basina kod yok).
+const CIM_V2_FAR_M := 24.0
+## Shader baslangiclari (prototipte begenilen; titresim shader'da sabit
+## 0.25): wind 0.12 / speed 0.35 / gust 0.25 / bend 1.1.
+const CIM_V2_WIND := 0.12
+const CIM_V2_WIND_SPEED := 0.35
+const CIM_V2_GUST := 0.25
+const CIM_V2_BEND_R := 1.1
+const CIM_V2_BLADE_H := 0.32    # blade_height uniform = mesh referans boyu
+## Chunk = iki MultiMesh (yakin yari + uzak yari); 16x16 hucre chunk'lar
+## frustum culling'e girer.
+const CIM_FIELD_CHUNK := 16
+
+## Kumeli 0..1 yogunluk: hash01 uzerine bilinear value-noise (ucuz,
+## deterministik — chunk yeniden kurulunca desen degismez).
+static func cim_density01(x: int, y: int) -> float:
+	var fx := float(x) * CIM_V2_NOISE_SCALE
+	var fy := float(y) * CIM_V2_NOISE_SCALE
+	var ix := floori(fx)
+	var iy := floori(fy)
+	var tx := fx - float(ix)
+	var ty := fy - float(iy)
+	tx = tx * tx * (3.0 - 2.0 * tx)
+	ty = ty * ty * (3.0 - 2.0 * ty)
+	var na := hash01(ix, iy, 907)
+	var nb := hash01(ix + 1, iy, 907)
+	var nc := hash01(ix, iy + 1, 907)
+	var nd := hash01(ix + 1, iy + 1, 907)
+	return lerpf(lerpf(na, nb, tx), lerpf(nc, nd, tx), ty)
