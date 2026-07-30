@@ -226,8 +226,8 @@ const CIM_FIELD_ON := true
 const CIM_V2_MEAN := 68.0       # hucre basina ORTALAMA yaprak (Yuksek;
 	# 2x deneyi (kullanici istegi): yavaslarsa geri almak tek satir
 	# prototip 6000 yaprak / 196 m2 ~= 30; telefon FPS ayar noktasi)
-const CIM_V2_H_MIN := 0.18      # yaprak boyu bandi (kullanici: kucultuldu)
-const CIM_V2_H_MAX := 0.32
+const CIM_V2_H_MIN := 0.09      # yaprak boyu bandi (10x deneyi: %50 kisaldi)
+const CIM_V2_H_MAX := 0.16
 const CIM_V2_W_MIN := 0.03      # taban genisligi bandi (boyla orantili kuculdu)
 const CIM_V2_W_MAX := 0.055
 ## Kumeli yogunluk: value-noise carpani (bazi alan sik, bazi seyrek).
@@ -247,7 +247,13 @@ const CIM_V2_WIND := 0.12
 const CIM_V2_WIND_SPEED := 0.35
 const CIM_V2_GUST := 0.25
 const CIM_V2_BEND_R := 1.1
-const CIM_V2_BLADE_H := 0.32    # blade_height uniform = mesh referans boyu
+const CIM_V2_BLADE_H := 0.16    # blade_height uniform = mesh referans boyu
+## 10x DENEYI (kullanici istegi): yaprak sayisi mesh ICINE gomulerek
+## katlanir — instance basina tek ucgen degil MIKRO-TUTAM (asagidaki
+## kadar yaprak). Kurulum suresi/instance sayisi DEGISMEZ (636k),
+## gorunen yaprak 10 katina cikar; bedeli GPU vertex yuku (10x).
+const CIM_V2_MESH_BLADES := 10
+const CIM_V2_MESH_SPREAD := 0.30  # mikro-tutam yayilim yaricapi (m)
 ## Chunk = iki MultiMesh (yakin yari + uzak yari); 16x16 hucre chunk'lar
 ## frustum culling'e girer.
 const CIM_FIELD_CHUNK := 16

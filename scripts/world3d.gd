@@ -4722,11 +4722,25 @@ func _cim_blade_mesh() -> ArrayMesh:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var h := DigWaterVisual.CIM_V2_BLADE_H
 	var w := (DigWaterVisual.CIM_V2_W_MIN + DigWaterVisual.CIM_V2_W_MAX) * 0.25
-	for pt: Vector3 in [Vector3(-w, 0.0, 0.0), Vector3(w, 0.0, 0.0),
-			Vector3(0.0, h, 0.0)]:
-		st.set_normal(Vector3.UP)
-		st.set_uv(Vector2(0.5 + pt.x, pt.y / h))
-		st.add_vertex(pt)
+	# 10x DENEYI: mesh basina COKLU yaprak (mikro-tutam) — instance
+	# sayisi/kurulum suresi degismeden gorunen yaprak katlanir. Yaprak
+	# konum/yon/boy cesitliligi mesh'e gomulu (deterministik hash).
+	for b in DigWaterVisual.CIM_V2_MESH_BLADES:
+		var ang := DigWaterVisual.hash01(b, 7, 911) * TAU
+		var uz := sqrt(DigWaterVisual.hash01(b, 11, 919)) \
+				* DigWaterVisual.CIM_V2_MESH_SPREAD
+		var merkez := Vector3(cos(ang) * uz, 0.0, sin(ang) * uz)
+		var yaw := DigWaterVisual.hash01(b, 13, 929) * PI
+		var olc := 0.75 + DigWaterVisual.hash01(b, 17, 937) * 0.5
+		var dx := cos(yaw) * w * olc
+		var dz := sin(yaw) * w * olc
+		var bh := h * olc
+		for pt: Vector3 in [merkez + Vector3(-dx, 0.0, -dz),
+				merkez + Vector3(dx, 0.0, dz),
+				merkez + Vector3(0.0, bh, 0.0)]:
+			st.set_normal(Vector3.UP)
+			st.set_uv(Vector2(0.5 + pt.x, pt.y / h))
+			st.add_vertex(pt)
 	_cim_blade_cache = st.commit()
 	return _cim_blade_cache
 
@@ -12575,7 +12589,7 @@ func _run_cim_test() -> void:
 				ortak = false
 		return [mm_n, yaprak, ortak]
 	var ucgen_ok: bool = _cim_blade_mesh().surface_get_arrays(0)[
-			Mesh.ARRAY_VERTEX].size() == 3
+			Mesh.ARRAY_VERTEX].size() == 3 * DigWaterVisual.CIM_V2_MESH_BLADES
 	# Kademe kesri: taban YUKSEK'te olculur (oyun varsayilani "orta"
 	# olabilir — ilk kosuda oranlar 1.00/0.50 cikip tuzaga dusuldu);
 	# orta/dusuk yeniden kurulumlari ~0.6x / ~0.3x olmali.
