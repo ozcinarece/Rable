@@ -221,11 +221,11 @@ const CIM_CICEK_BASE := Color(0.373, 0.478, 0.322)  # sap yesili (ayni kok)
 ## tarlasi. Bu katman cayir hucrelerini prosedurel yaprak tutamlariyla
 ## kaplar: capraz 3 duz quad/tutam, renk/ruzgar/ezme AYNI grass.gdshader.
 const CIM_FIELD_ON := true
-const CIM_FIELD_PER_CELL := 8      # hucre basina tutam (3 seyrek kaldi: ustten bakan kamerada dikey yaprak az yer kaplar)
+const CIM_FIELD_PER_CELL := 6      # hucre basina tutam (8 kalabalik geldi — kullanici istegi: bir tik seyrek; 3 ise seyrekti)
 const CIM_FIELD_H := 0.30          # yaprak boyu = blade_height (materyal ortak)
 const CIM_FIELD_W := 0.14          # yaprak taban genisligi (ustten okunurluk icin genis)
-const CIM_FIELD_SCALE_MIN := 0.7   # tutam olcek bandi (tekduzelik kirilir)
-const CIM_FIELD_SCALE_MAX := 1.15
+const CIM_FIELD_SCALE_MIN := 0.55  # tutam olcek bandi (kullanici istegi: kucultuldu)
+const CIM_FIELD_SCALE_MAX := 0.85
 ## Chunk = tek MultiMesh. MultiMesh her karede TAMAMINI cizer; harita
 ## boyu tek MM'de ~30k tutam surekli cizilirdi. 16x16 hucre chunk'lar
 ## frustum culling'e girer — ekranda yalniz gorunen chunk'lar cizilir
