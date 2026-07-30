@@ -215,21 +215,53 @@ const CIM_CICEK_WIND := 0.03
 const CIM_CICEK_TIP := Color(0.85, 0.55, 0.70)      # yumusak pembe uc
 const CIM_CICEK_BASE := Color(0.373, 0.478, 0.322)  # sap yesili (ayni kok)
 
-## CIM TARLASI (cim-yogunluk — oyunda bildirildi: "web'de cim
-## prototipteki gibi degil"). Shader dogruydu ama SEYREK Meshy obegi
-## uzerinde kosuyordu (~5 hucrede 1 sus otu); prototip SIK ince yaprak
-## tarlasi. Bu katman cayir hucrelerini prosedurel yaprak tutamlariyla
-## kaplar: capraz 3 duz quad/tutam, renk/ruzgar/ezme AYNI grass.gdshader.
+## CIM V2 (cim-v2): PROTOTIP TARZI YAPRAK CAYIRI — referans
+## assets/models/prototips/cim_prototip.html. Her yaprak 3 vertex'lik
+## sivri ucgen (tutam/yelpaze modeli YOK); dagilim noise ile KUMELI.
+## Eski tutam yaklasimi bayrakla kapali (geri donulebilir).
+const CIM_TUTAM_ON := false     # eski sus otu obek serpintisi (Meshy)
 const CIM_FIELD_ON := true
-const CIM_FIELD_PER_CELL := 6      # hucre basina tutam (8 kalabalik geldi — kullanici istegi: bir tik seyrek; 3 ise seyrekti)
-const CIM_FIELD_H := 0.30          # yaprak boyu = blade_height (materyal ortak)
-const CIM_FIELD_W := 0.14          # yaprak taban genisligi (ustten okunurluk icin genis)
-const CIM_FIELD_SCALE_MIN := 0.55  # tutam olcek bandi (kullanici istegi: kucultuldu)
-const CIM_FIELD_SCALE_MAX := 0.85
-## Chunk = tek MultiMesh. MultiMesh her karede TAMAMINI cizer; harita
-## boyu tek MM'de ~30k tutam surekli cizilirdi. 16x16 hucre chunk'lar
-## frustum culling'e girer — ekranda yalniz gorunen chunk'lar cizilir
-## (materyal/mesh ortak: draw call sayisi ekranda ~4-9).
+const CIM_V2_MEAN := 28.0       # hucre basina ORTALAMA yaprak (Yuksek;
+	# prototip 6000 yaprak / 196 m2 ~= 30; telefon FPS ayar noktasi)
+const CIM_V2_H_MIN := 0.25      # yaprak boyu bandi (gorev: 25-45 cm)
+const CIM_V2_H_MAX := 0.45
+const CIM_V2_W_MIN := 0.04      # taban genisligi bandi (gorev: 4-7 cm)
+const CIM_V2_W_MAX := 0.07
+## Kumeli yogunluk: value-noise carpani (bazi alan sik, bazi seyrek).
+const CIM_V2_NOISE_SCALE := 0.16
+const CIM_V2_DENS_MIN := 0.35
+const CIM_V2_DENS_MAX := 1.65
+## Kalite kademesi yogunluk kesri (gorev sarti); Dusuk ayrica statik
+## (quality=0 — ruzgar/ezme kapali, _apply_cim_tier).
+const CIM_V2_TIER_FRAC := {"dusuk": 0.3, "orta": 0.6, "yuksek": 1.0}
+## Mesafe eleme: her chunk'ta yapraklarin YARISI ayri MM'de ve
+## visibility_range ile bu mesafeden sonra cizilmez — uzak chunk'ta
+## yogunluk kendiliginden yariya iner (kare basina kod yok).
+const CIM_V2_FAR_M := 24.0
+## Shader baslangiclari (prototipte begenilen; titresim shader'da sabit
+## 0.25): wind 0.12 / speed 0.35 / gust 0.25 / bend 1.1.
+const CIM_V2_WIND := 0.12
+const CIM_V2_WIND_SPEED := 0.35
+const CIM_V2_GUST := 0.25
+const CIM_V2_BEND_R := 1.1
+const CIM_V2_BLADE_H := 0.45    # blade_height uniform = mesh referans boyu
+## Chunk = iki MultiMesh (yakin yari + uzak yari); 16x16 hucre chunk'lar
+## frustum culling'e girer.
 const CIM_FIELD_CHUNK := 16
-## Dusuk kademe: tarla TAMAMEN kapali (statik cim sozlesmesi + telefon
-## butcesi). Sus otu serpintisi Dusuk'te de kalir.
+
+## Kumeli 0..1 yogunluk: hash01 uzerine bilinear value-noise (ucuz,
+## deterministik — chunk yeniden kurulunca desen degismez).
+static func cim_density01(x: int, y: int) -> float:
+	var fx := float(x) * CIM_V2_NOISE_SCALE
+	var fy := float(y) * CIM_V2_NOISE_SCALE
+	var ix := floori(fx)
+	var iy := floori(fy)
+	var tx := fx - float(ix)
+	var ty := fy - float(iy)
+	tx = tx * tx * (3.0 - 2.0 * tx)
+	ty = ty * ty * (3.0 - 2.0 * ty)
+	var na := hash01(ix, iy, 907)
+	var nb := hash01(ix + 1, iy, 907)
+	var nc := hash01(ix, iy + 1, 907)
+	var nd := hash01(ix + 1, iy + 1, 907)
+	return lerpf(lerpf(na, nb, tx), lerpf(nc, nd, tx), ty)

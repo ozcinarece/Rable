@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Son Kor — Çim Prototipi</title>
+<style>
+  html,body{margin:0;height:100%;background:#1a1f2b;overflow:hidden;
+    font-family:'Baloo 2','Nunito',system-ui,sans-serif;}
+  #c{width:100%;height:100%;display:block;}
+  #panel{position:fixed;left:10px;top:10px;background:rgba(246,237,214,.94);
+    border-radius:14px;padding:12px 14px;width:230px;color:#4A3728;
+    box-shadow:0 4px 14px rgba(0,0,0,.3);font-size:13px;}
+  #panel h3{margin:0 0 8px;font-size:15px;}
+  .row{margin:7px 0;}
+  .row label{display:flex;justify-content:space-between;font-weight:700;}
+  .row input[type=range]{width:100%;accent-color:#7BA05B;}
+  .toggle{display:flex;align-items:center;gap:8px;font-weight:700;margin-top:9px;}
+  #hint{position:fixed;right:12px;bottom:10px;color:#F6EDD6;opacity:.7;font-size:12px;}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="panel">
+  <h3>🌿 Çim Ayarları</h3>
+  <div class="row"><label>Rüzgâr gücü <span id="vW">0.12</span></label>
+    <input type="range" id="wind" min="0" max="0.5" step="0.01" value="0.12"></div>
+  <div class="row"><label>Rüzgâr hızı <span id="vS">0.35</span></label>
+    <input type="range" id="spd" min="0" max="1.5" step="0.05" value="0.35"></div>
+  <div class="row"><label>Esinti ölçeği <span id="vG">0.25</span></label>
+    <input type="range" id="gust" min="0.05" max="1" step="0.05" value="0.25"></div>
+  <div class="row"><label>Titreşim <span id="vF">0.25</span></label>
+    <input type="range" id="flut" min="0" max="1" step="0.05" value="0.25"></div>
+  <div class="row"><label>Ezme yarıçapı <span id="vB">1.1</span></label>
+    <input type="range" id="bend" min="0" max="2.5" step="0.1" value="1.1"></div>
+  <div class="toggle"><input type="checkbox" id="night"><label for="night">Gece</label></div>
+  <div style="margin-top:8px;font-size:11px;opacity:.75">Turuncu top = oyuncu (ezme
+  etkisi) • Sürükle: kamera • Beğendiğin değerleri bana yaz</div>
+</div>
+<div id="hint">Son Kor çim prototipi</div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+const canvas=document.getElementById('c');
+const renderer=new THREE.WebGLRenderer({canvas,antialias:true});
+renderer.setPixelRatio(Math.min(devicePixelRatio,2));
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0xBFE3EC);
+const cam=new THREE.PerspectiveCamera(50,1,0.1,100);
+let camAng=0.5,camYaw=0.6,camDist=9;
+function placeCam(){
+  cam.position.set(Math.sin(camYaw)*camDist*Math.cos(camAng),
+    Math.sin(camAng)*camDist,Math.cos(camYaw)*camDist*Math.cos(camAng));
+  cam.lookAt(0,0.3,0);
+}
+placeCam();
+
+const uni={
+  uTime:{value:0},uWind:{value:0.12},uSpd:{value:0.35},uGust:{value:0.25},
+  uFlut:{value:0.25},uBendR:{value:1.1},uNight:{value:0},
+  uPlayer:{value:new THREE.Vector3(0,0,0)},
+  uBase:{value:new THREE.Color(0x5F7A52)},
+  uTip:{value:new THREE.Color(0x8CC066)},
+  uSun:{value:new THREE.Vector3(0.5,0.8,0.3).normalize()}
+};
+
+// ---- ÇAYIR GEOMETRİSİ: ~6000 yaprak, tek birleşik mesh ----
+const FIELD=14, BLADES=6000;
+const pos=[],hgt=[],root=[],idx=[];
+let vi=0;
+for(let i=0;i<BLADES;i++){
+  const rx=(Math.random()-0.5)*FIELD, rz=(Math.random()-0.5)*FIELD;
+  const h=0.35+Math.random()*0.3;          // yaprak boyu
+  const w=0.045+Math.random()*0.03;        // taban genişliği
+  const a=Math.random()*Math.PI;           // yaprak yönü
+  const dx=Math.cos(a)*w, dz=Math.sin(a)*w;
+  // tek yaprak = 3 vertex'lik sivri üçgen (taban 2 + uç 1)
+  pos.push(rx-dx,0,rz-dz,  rx+dx,0,rz+dz,  rx,h,rz);
+  hgt.push(0,0,1);
+  root.push(rx,rz, rx,rz, rx,rz);
+  idx.push(vi,vi+1,vi+2); vi+=3;
+}
+const geo=new THREE.BufferGeometry();
+geo.setAttribute('position',new THREE.Float32BufferAttribute(pos,3));
+geo.setAttribute('aH',new THREE.Float32BufferAttribute(hgt,1));
+geo.setAttribute('aRoot',new THREE.Float32BufferAttribute(root,2));
+geo.setIndex(idx);
+
+const vert=`
+uniform float uTime,uWind,uSpd,uGust,uFlut,uBendR;
+uniform vec3 uPlayer;
+attribute float aH; attribute vec2 aRoot;
+varying float vH; varying vec2 vRoot;
+float hash(vec2 p){p=fract(p*vec2(234.34,435.345));p+=dot(p,p+34.23);return fract(p.x*p.y);}
+float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);
+  return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),
+             mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
+void main(){
+  vH=aH; vRoot=aRoot;
+  vec3 p=position;
+  float sw=aH*aH; // yükseklik karesi: kök sabit, uç savrulur
+  // geniş esinti dalgası + ince titreşim
+  float gust=(noise(aRoot*uGust+uTime*uSpd*0.5)-0.5)*2.0;
+  float flut=sin(uTime*2.2+aRoot.x*3.1+aRoot.y*2.3)*uFlut;
+  vec2 wdir=normalize(vec2(1.0,0.3));
+  vec2 sway=wdir*(gust+flut)*uWind*sw;
+  // oyuncu ezmesi
+  vec2 away=aRoot-uPlayer.xz;
+  float d=length(away);
+  float bend=smoothstep(uBendR,uBendR*0.25,d)*0.35*sw;
+  if(d>0.001) sway+=normalize(away)*bend;
+  p.y-=bend*0.4*0.5;
+  p.x+=sway.x; p.z+=sway.y;
+  gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
+}`;
+
+const frag=`
+precision highp float;
+uniform vec3 uBase,uTip,uSun;
+uniform float uNight;
+varying float vH; varying vec2 vRoot;
+float hash(vec2 p){p=fract(p*vec2(234.34,435.345));p+=dot(p,p+34.23);return fract(p.x*p.y);}
+void main(){
+  float t=smoothstep(0.25,1.0,vH);
+  vec3 col=mix(uBase,uTip,t);
+  float hv=hash(floor(vRoot*2.0)*0.5);
+  col*=1.0+(hv-0.5)*0.2;
+  col.r*=1.0+(hv-0.5)*0.1;
+  col*=mix(0.72,1.0,vH); // kök gölgesi
+  vec3 nightTint=vec3(0.30,0.36,0.55);
+  col=mix(col,col*nightTint*2.0,uNight);
+  gl_FragColor=vec4(col,1.0);
+}`;
+
+const mat=new THREE.ShaderMaterial({uniforms:uni,vertexShader:vert,
+  fragmentShader:frag,side:THREE.DoubleSide});
+scene.add(new THREE.Mesh(geo,mat));
+
+// zemin
+const ground=new THREE.Mesh(new THREE.PlaneGeometry(FIELD+2,FIELD+2),
+  new THREE.MeshBasicMaterial({color:0x4E6B45}));
+ground.rotation.x=-Math.PI/2; ground.position.y=-0.01;
+scene.add(ground);
+
+// oyuncu topu (ezme göstergesi) — çayırda tur atar
+const ball=new THREE.Mesh(new THREE.SphereGeometry(0.28,16,12),
+  new THREE.MeshBasicMaterial({color:0xE8833A}));
+scene.add(ball);
+
+let drag=false,lx=0,ly=0;
+canvas.addEventListener('pointerdown',e=>{drag=true;lx=e.clientX;ly=e.clientY;});
+addEventListener('pointerup',()=>drag=false);
+addEventListener('pointermove',e=>{
+  if(!drag)return;
+  camYaw+=(e.clientX-lx)*0.005;
+  camAng=Math.min(1.2,Math.max(0.15,camAng+(e.clientY-ly)*0.004));
+  lx=e.clientX;ly=e.clientY;placeCam();
+});
+
+function bind(id,key,lbl){
+  const el=document.getElementById(id);
+  el.addEventListener('input',()=>{
+    uni[key].value=parseFloat(el.value);
+    document.getElementById(lbl).textContent=(+el.value).toFixed(2);
+  });
+}
+bind('wind','uWind','vW');bind('spd','uSpd','vS');bind('gust','uGust','vG');
+bind('flut','uFlut','vF');bind('bend','uBendR','vB');
+document.getElementById('night').addEventListener('change',e=>{
+  uni.uNight.value=e.target.checked?1:0;
+  scene.background=new THREE.Color(e.target.checked?0x141B2E:0xBFE3EC);
+  ground.material.color.set(e.target.checked?0x232E3F:0x4E6B45);
+});
+
+function resize(){renderer.setSize(innerWidth,innerHeight,false);
+  cam.aspect=innerWidth/innerHeight;cam.updateProjectionMatrix();}
+addEventListener('resize',resize);resize();
+
+const clock=new THREE.Clock();
+(function loop(){
+  const t=clock.getElapsedTime();
+  uni.uTime.value=t;
+  // oyuncu topu tur atar
+  const px=Math.sin(t*0.4)*3.5, pz=Math.cos(t*0.55)*3.0;
+  ball.position.set(px,0.22,pz);
+  uni.uPlayer.value.set(px,0,pz);
+  renderer.render(scene,cam);
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>

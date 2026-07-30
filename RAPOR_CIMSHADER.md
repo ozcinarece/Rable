@@ -114,3 +114,46 @@ xvfb gerçek-oyun koşusundan: gündüz çayır artık yoğun yaprak tarlası;
 gece karesinde çayır+su aynı night_mix ile kararıyor. Kadraj seçimi
 düzeltildi (önce çevresi ±3 tamamen çayır hücre aranır — ilk tur kıyı
 toprağına düşmüştü).
+
+---
+
+# CİM V2 (cim-v2): PROTOTİP TARZI YAPRAK ÇAYIRI
+
+Referans: assets/models/prototips/cim_prototip.html (BLADES bloğu).
+
+## Üretim (prototip algoritması)
+- Her yaprak 3 vertex'lik SİVRİ ÜÇGEN (tutam/yelpaze modeli YOK);
+  boy 25-45 cm, taban 4-7 cm (görev bantları), yön 0..PI rastgele —
+  hepsi deterministik hash'ten, varyasyon instance ölçeğinde.
+- KÜMELİ dağılım: hash tabanlı bilinear value-noise
+  (`cim_density01`), yoğunluk çarpanı 0.35-1.65 — bazı alanlar sık,
+  bazıları seyrek (prototipteki doğal dağılım hissi).
+- Ortalama 28 yaprak/hücre (Yüksek) → toplam 261.851 yaprak;
+  chunk başına yakın+uzak İKİ MultiMesh (64 chunk × 2 = 128 MM).
+- Eski Meshy süs otu öbekleri `CIM_TUTAM_ON=false` bayrağıyla kapalı.
+
+## Performans kademesi
+- Yüksek 1.0 / Orta 0.6 / Düşük 0.3 yoğunluk (CIMTEST ölçtü:
+  0.60/0.30 tam isabet) + Düşük'te quality=0 (statik).
+- Mesafe eleme: her chunk'ın yaprak yarısı ayrı MM'de,
+  `visibility_range_end=24 m` — uzakta yoğunluk kendiliğinden yarıya
+  (kare başına kod yok). Kademe değişimi imzalı artımlı kurulumla
+  yalnız kesir değiştiğinde chunk'ları yeniden kurar.
+- Sayılar: Yüksek 262k / Orta 157k / Düşük 79k yaprak (×3 vertex).
+  Telefon FPS ölçümü cihaz gerektirir — ilk ayar noktası CIM_V2_MEAN.
+
+## Shader + zemin uyumu
+- grass.gdshader aynen (yaprak-başına tasarım); materyal başlangıçları
+  prototipin beğenilen değerleri: wind 0.12 / speed 0.35 / gust 0.25 /
+  bend 1.1 (titreşim shader'da sabit 0.25). blade_height=0.45.
+- ZEMİN UYUMU (kritik bulgu): prototipte çim halısını "kapalı"
+  gösteren asıl şey KOYU ZEMİN — yaprakla aynı aile. Çayır zemin
+  rengi #4A8736 (parlak yeşil) → (0.40,0.52,0.34) zeytin ailesine
+  çekildi (kök #5F7A52'den bir tık açık, görev kuralı); plato "h"
+  de uyumlu kaydı.
+
+## Süreç dersi (tekrar)
+dig_water_visual C3 bloğu python dilimiyle değiştirilirken blok
+sırası varsayımı yanlıştı ve dosya iki kez bozuldu — count==1 assert
++ TEK dilim + parse-check zinciri şart (DERSLER'deki kural bir kez
+daha doğrulandı).
