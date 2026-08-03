@@ -11632,6 +11632,13 @@ func _try_burn_kor_tas(id: String) -> bool:
 	_spawn_particles(_cell_center(cell) + Vector3(0, 1.0, 0),
 			Color(1.0, 0.55, 0.2), 14)
 	_spawn_floating_text(cell, "Kor tasi yandi — bolge canlandi", Color(1, 0.8, 0.4))
+	# TARIM-2: nadir tohum odulu (tas indeksine gore sirali; veri
+	# kesif_balance.KOR_TAS_TOHUM — derin kesif loot'una tasinacak TODO)
+	var tas_sira: int = _kor_taslari.keys().find(id)
+	if tas_sira >= 0 and not KesifBalance.KOR_TAS_TOHUM.is_empty():
+		var tohum_id: String = KesifBalance.KOR_TAS_TOHUM[
+				tas_sira % KesifBalance.KOR_TAS_TOHUM.size()]
+		_scatter_drops(cell, {tohum_id: 1})
 	# Arastirma: tas bilgisi dugumleri kademeli belirir (1./3./5. ana tas).
 	var yanik := _yanik_ana_sayisi()
 	if yanik >= 1:

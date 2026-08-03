@@ -175,6 +175,12 @@ const YANA_YEDEK_OZ := 3
 const YANB_OZ := 8
 const YANC_SABAH_CARPAN := 1.10
 
+# --- TARIM-2: kor tasi tohum odulleri --------------------------------------
+## Yakilan her ANA tasin cevresine 1 nadir tohum sacilir (tas indeksine
+## gore sirayla — deterministik, kayitla uyumlu). Derin kesif loot
+## tablosu (TODO: kesif Asama 6 odul revizyonu) gelince oraya tasinir.
+const KOR_TAS_TOHUM := ["tohum_kabak", "tohum_korotu", "tohum_mantar"]
+
 # --- Sorgular -------------------------------------------------------------
 
 static func ring_of(cell: Vector2i, merkez: Vector2i) -> int:
