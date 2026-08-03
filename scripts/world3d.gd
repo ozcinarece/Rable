@@ -8873,8 +8873,16 @@ const CROP_STAGE_H := [0.22, 0.40, 0.60]  # hedef boylar (m)
 
 func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 	var root := Node3D.new()
+	var crop_def0: Dictionary = TarimBalance.CROPS.get(crop_id, {})
+	var max_stage0: int = int(crop_def0.get("stages", 3)) - 1
+	# TARIM-2: evre sayisi urune gore 3-6 — gorsel UC kovaya iner:
+	# 0=filiz (ortak), son=olgun (urune ozel), arasi=fide konisi.
+	var kova: int = 0 if stage <= 0 else (2 if stage >= max_stage0 else 1)
 	var paths: Array = CROP_STAGE_GLB.get(crop_id, [])
-	var glb: String = String(paths[stage]) if stage < paths.size() else ""
+	var glb: String = String(paths[kova]) if kova < paths.size() else ""
+	# Olgun evrede kullanici GLB kancasi (crops/ klasoru) varsa onu kullan
+	if glb == "" and kova == 2:
+		glb = String(TarimBalance.CROP_GLB_KANCA.get(crop_id, ""))
 	if glb != "" and ResourceLoader.exists(glb):
 		var inst: Node3D = load(glb).instantiate()
 		root.add_child(inst)
@@ -8885,12 +8893,16 @@ func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 					/ aabb.size.y
 			inst.scale = Vector3(s, s, s)
 			inst.position.y = -aabb.position.y * s  # zemine otur
+	elif kova == 2 and crop_id != "berry_bush" \
+			and TarimBalance.CROP_GLB_KANCA.has(crop_id):
+		# TARIM-2: model GELMEDI — ayirt edilebilir proseduerel placeholder
+		_crop_placeholder(root, crop_id)
 	else:
 		var green := Color(0.32, 0.62, 0.28)
-		if stage == 0:
+		if kova == 0:
 			root.add_child(_crop_part(_crop_cyl(0.03, 0.12), green,
 					Vector3(0, 0.06, 0)))
-		elif stage == 1:
+		elif kova == 1:
 			var cone := CylinderMesh.new()
 			cone.top_radius = 0.0
 			cone.bottom_radius = 0.14
@@ -8912,14 +8924,72 @@ func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 						Vector3(cos(ang) * 0.18, 0.30 + float(k % 2) * 0.08,
 						sin(ang) * 0.18)))
 	# Olgun evrede hafif salinim (hasat cagrisi) — GLB/proseduerel farketmez
-	var crop_def: Dictionary = TarimBalance.CROPS.get(crop_id, {})
-	if stage >= int(crop_def.get("stages", 3)) - 1:
+	if kova == 2:
 		var tw := create_tween().set_loops()
 		tw.tween_property(root, "rotation:z", 0.05, 1.1) \
 				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 		tw.tween_property(root, "rotation:z", -0.05, 1.1) \
 				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	return root
+
+## TARIM-2 placeholder'lari: renk+form urun kimligi (gorev tarifi).
+func _crop_placeholder(root: Node3D, crop_id: String) -> void:
+	match crop_id:
+		"earth_apple":
+			# kahve yumrular: alcak toprak tumsekleri
+			for k in 3:
+				var yumru := SphereMesh.new()
+				yumru.radius = 0.10
+				yumru.height = 0.15
+				var ang := TAU * float(k) / 3.0
+				root.add_child(_crop_part(yumru, Color(0.45, 0.30, 0.18),
+						Vector3(cos(ang) * 0.14, 0.07, sin(ang) * 0.14)))
+			root.add_child(_crop_part(_crop_cyl(0.02, 0.18),
+					Color(0.35, 0.55, 0.28), Vector3(0, 0.18, 0)))
+		"golden_wheat":
+			# sari cubuklar: ince basak demeti
+			for k in 6:
+				var ang2 := TAU * float(k) / 6.0
+				root.add_child(_crop_part(_crop_cyl(0.015, 0.52),
+						Color(0.86, 0.72, 0.30),
+						Vector3(cos(ang2) * 0.10, 0.26, sin(ang2) * 0.10)))
+		"pumpkin":
+			# turuncu kure + sap
+			var kabak := SphereMesh.new()
+			kabak.radius = 0.24
+			kabak.height = 0.34
+			root.add_child(_crop_part(kabak, Color(0.86, 0.46, 0.14),
+					Vector3(0, 0.17, 0)))
+			root.add_child(_crop_part(_crop_cyl(0.03, 0.10),
+					Color(0.30, 0.42, 0.20), Vector3(0, 0.38, 0)))
+		"korotu":
+			# turkuaz cicek + hafif emission (GECE PARLAR — kimligi bu)
+			root.add_child(_crop_part(_crop_cyl(0.02, 0.30),
+					Color(0.25, 0.45, 0.35), Vector3(0, 0.15, 0)))
+			var cicek := SphereMesh.new()
+			cicek.radius = 0.09
+			cicek.height = 0.14
+			var mi := _crop_part(cicek, TarimBalance.KOROTU_EMISSION,
+					Vector3(0, 0.34, 0))
+			var cm: StandardMaterial3D = mi.material_override
+			cm.emission_enabled = true
+			cm.emission = TarimBalance.KOROTU_EMISSION
+			cm.emission_energy_multiplier = TarimBalance.KOROTU_EMISSION_ENERJI
+			root.add_child(mi)
+		"mist_mushroom":
+			# gri sapkalar: iki mantar
+			for k in 2:
+				var ofs := Vector3(-0.10 + 0.20 * float(k), 0, 0.05 - 0.10 * float(k))
+				root.add_child(_crop_part(_crop_cyl(0.035, 0.16),
+						Color(0.78, 0.75, 0.70), ofs + Vector3(0, 0.08, 0)))
+				var sapka := SphereMesh.new()
+				sapka.radius = 0.11
+				sapka.height = 0.10
+				root.add_child(_crop_part(sapka, Color(0.52, 0.50, 0.48),
+						ofs + Vector3(0, 0.17, 0)))
+		_:
+			root.add_child(_crop_part(_crop_cyl(0.05, 0.3),
+					Color(0.4, 0.6, 0.3), Vector3(0, 0.15, 0)))
 
 func _crop_cyl(r: float, h: float) -> CylinderMesh:
 	var m := CylinderMesh.new()
