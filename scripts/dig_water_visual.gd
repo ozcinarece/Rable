@@ -222,7 +222,10 @@ const CIM_CICEK_BASE := Color(0.373, 0.478, 0.322)  # sap yesili (ayni kok)
 ## sivri ucgen (tutam/yelpaze modeli YOK); dagilim noise ile KUMELI.
 ## Eski tutam yaklasimi bayrakla kapali (geri donulebilir).
 const CIM_TUTAM_ON := false     # eski sus otu obek serpintisi (Meshy)
-const CIM_FIELD_ON := true
+## ATMOSFER FINAL: 3D cim TAMAMEN kapali (gorev) — cayir hissi artik
+## zemin shader'inda (ground_meadow.gdshader, ZEMIN_SHADER_ON).
+## Kod silinmedi; true yapinca yaprak tarlasi aynen geri gelir.
+const CIM_FIELD_ON := false
 const CIM_V2_MEAN := 68.0       # hucre basina ORTALAMA yaprak (Yuksek;
 	# 2x deneyi (kullanici istegi): yavaslarsa geri almak tek satir
 	# prototip 6000 yaprak / 196 m2 ~= 30; telefon FPS ayar noktasi)
@@ -274,3 +277,16 @@ static func cim_density01(x: int, y: int) -> float:
 	var nc := hash01(ix, iy + 1, 907)
 	var nd := hash01(ix + 1, iy + 1, 907)
 	return lerpf(lerpf(na, nb, tx), lerpf(nc, nd, tx), ty)
+
+# =======================================================================
+# C4. ZEMIN CAYIR DOKUSU (assets/models/env/ground_meadow.gdshader)
+# =======================================================================
+## Benek/leke/sicak-serin sayilari SHADER varsayilanlarinda (prototip
+## zemin_v2.html secimleri: .25/14/.10, .50/.11, .16). Buradakiler yalniz
+## ENTEGRASYON verisi.
+const ZEMIN_SHADER_ON := true
+## Cim maskesi vertex COLOR.a kanalinda tasinir (bos kanaldi):
+## 1=cayir (benek/leke tam), 0=toprak/kum/tarla/yol (temiz).
+## Kenarlarda paylasimli vertex'ler maskeyi dogrusal yumusatir; shader
+## ustune noise sallantisi ekler (asagidaki genlik) — organik sinir.
+const ZEMIN_MASK_NOISE := 0.25

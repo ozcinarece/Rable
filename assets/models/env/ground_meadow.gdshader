@@ -42,6 +42,9 @@ uniform float night_mix : hint_range(0.0, 1.0) = 0.0;
 uniform vec3 night_tint : source_color = vec3(0.30, 0.36, 0.55);
 
 uniform int quality : hint_range(0, 1) = 1;
+// ENTEGRASYON: kenar gecisi yumusatma — maske 0-1 arasi interpolasyonda
+// (zemin turu siniri) noise sallantisi, duz cizgi organiklesir.
+uniform float mask_noise : hint_range(0.0, 0.6) = 0.25;
 
 varying vec3 v_world;
 varying float v_grass_mask;
@@ -61,16 +64,26 @@ float vnoise(vec2 p) {
 
 void vertex() {
     v_world = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
-    // ÇİM MASKESİ: zemin türü vertex color'daysa buradan oku.
-    // Varsayılan: COLOR.g kanalı "çimlik" oranı varsayıldı —
-    // Claude Code gerçek mekanizmaya göre bu satırı uyarlar.
-    v_grass_mask = COLOR.g;
+    // ÇİM MASKESİ (uyarlandı): bu projede zemin RENGİ vertex color
+    // RGB'sinde yaşar (tür rengi + kazı kararması + falez boyası) —
+    // COLOR.g rengin parçası, maske OLAMAZ. Maske, boşta duran ALPHA
+    // kanalında taşınır (_build_chunk yazar: çayır=1, yol/kazı/falez=0).
+    v_grass_mask = COLOR.a;
 }
 
 void fragment() {
     vec2 w = v_world.xz;
-    vec3 col = base_color;
+    // Taban renk VERTEX'ten (sözleşme: renk başka sistemden geliyorsa
+    // onu kullan) — tür renkleri, kazı katmanları, ıslak bant, kenar
+    // harmanı aynen korunur; base_color uniform'u yalnız yedek.
+    vec3 col = COLOR.rgb;
     float m = v_grass_mask; // benekler yalnız çimde
+    // Tür sınırında (maske 0-1 arası interpolasyon bandı) noise
+    // sallantısı: düz vertex-geçişi organik kenara döner.
+    if (m > 0.01 && m < 0.99) {
+        m = clamp(m + (vnoise(w * 2.3 + 7.7) - 0.5) * mask_noise * 2.0,
+                0.0, 1.0);
+    }
 
     // --- İRİ LEKELER: yumuşak ton bulutları ---
     float blotch = vnoise(w * blotch_scale);

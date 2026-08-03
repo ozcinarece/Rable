@@ -1543,6 +1543,7 @@ func _run_fast_tests() -> void:
 	_run_uyuyan_test()
 	_run_uzak_test()
 	_run_cim_test()
+	_run_zemin_test()
 	_run_night_logic_test()
 	_run_fence_test()
 	_run_fell_test()
@@ -4132,6 +4133,7 @@ func _sample_terrain(x: float, z: float) -> Array:
 const CHUNK_CELLS := 16  # harita-v2: 16x16 hucre/parca (128x128'de 8x8=64 parca)
 var _terrain_chunks: Dictionary = {}  # parca koordinati -> MeshInstance3D
 var _terrain_material: StandardMaterial3D
+var _zemin_mat: ShaderMaterial   # ATMOSFER: cayir dokusu (ground_meadow)
 
 func _build_terrain() -> void:
 	for key in _terrain_chunks:
@@ -4141,7 +4143,18 @@ func _build_terrain() -> void:
 		for ci in ceili(float(_map_w) / CHUNK_CELLS):
 			_build_chunk(Vector2i(ci, cj))
 
-func _terrain_mat() -> StandardMaterial3D:
+func _terrain_mat() -> Material:
+	# ATMOSFER FINAL: zemin cayir dokusu shader'i (benek/leke/sicak-serin
+	# yalniz cim maskesinde — maske vertex COLOR.a, _build_chunk yazar).
+	# Bayrak kapaliysa eski StandardMaterial yolu birebir geri gelir.
+	if DigWaterVisual.ZEMIN_SHADER_ON:
+		if _zemin_mat == null:
+			_zemin_mat = ShaderMaterial.new()
+			_zemin_mat.shader = load("res://assets/models/env/ground_meadow.gdshader")
+			_zemin_mat.set_shader_parameter("mask_noise",
+					DigWaterVisual.ZEMIN_MASK_NOISE)
+			_apply_zemin_tier()
+		return _zemin_mat
 	if _terrain_material == null:
 		_terrain_material = StandardMaterial3D.new()
 		_terrain_material.vertex_color_use_as_albedo = true
@@ -4215,7 +4228,11 @@ func _build_chunk(ck: Vector2i) -> void:
 			# Organik his: deterministik minik renk oynamasi
 			var n := sin(x * 51.9592 + z * 313.0) * 0.035
 			row_p.append(Vector3(x, height, z))
-			row_c.append(Color(c.r * (1.0 + n), c.g * (1.0 + n), c.b * (1.0 + n)))
+			# ZEMIN SHADER MASKESI: alpha kanali (bostu) cim orani tasir —
+			# benek/leke yalniz cayirda; yol/kazi/falez/toprak temiz kalir.
+			var maske := _zemin_mask_at(x, z, dug, steep)
+			row_c.append(Color(c.r * (1.0 + n), c.g * (1.0 + n),
+					c.b * (1.0 + n), maske))
 		pts.append(row_p)
 		cols.append(row_c)
 	var st := SurfaceTool.new()
@@ -4233,6 +4250,26 @@ func _build_chunk(ck: Vector2i) -> void:
 	inst.material_override = _terrain_mat()
 	add_child(inst)
 	_terrain_chunks[ck] = inst
+
+## ZEMIN maskesi: bu noktada benek/leke calissin mi? Cim turu ("." / "h")
+## + kazisiz + falez/toprak kusagi disi + yol harici -> 1, digerleri 0.
+## Kenar yumusakligi: paylasimli vertex'ler maskeyi 0.25 m'de dogrusal
+## harmanlar, shader ustune noise sallantisi ekler (ZEMIN_MASK_NOISE).
+func _zemin_mask_at(x: float, z: float, dug: bool, steep: float) -> float:
+	if dug or steep > 0.26:
+		return 0.0
+	var cell := Vector2i(floori(x), floori(z))
+	if _path_cells.has(cell):
+		return 0.0
+	var ch := String(_ground_char.get(cell, "."))
+	return 1.0 if ch in [".", "h"] else 0.0
+
+## Kalite kademesi -> zemin shader quality (Dusuk'te ince benek kapali).
+func _apply_zemin_tier() -> void:
+	if _zemin_mat == null:
+		return
+	var t := DigWaterVisual.tier_of(_quality_tier)
+	_zemin_mat.set_shader_parameter("quality", 1 if bool(t["wave"]) else 0)
 
 ## Bir hucre degisince yalnizca etkilenen parcalari yeniden kurar
 ## (harman + diklik ornekleme yaricapi nedeniyle 2 hucre pay birakilir)
@@ -4652,6 +4689,9 @@ func _update_water_night() -> void:
 	# CIM SHADER V1: gece tonu SU ILE AYNI KAYNAKTAN (sozlesme sarti)
 	if _cim_mat != null:
 		_cim_mat.set_shader_parameter("night_mix", karisim)
+	# ZEMIN CAYIR DOKUSU da ayni kaynaktan kararir (atmosfer-final)
+	if _zemin_mat != null:
+		_zemin_mat.set_shader_parameter("night_mix", karisim)
 	if _cicek_mat != null:
 		_cicek_mat.set_shader_parameter("night_mix", karisim)
 	# YARATIK catlak isimasi da AYNI gece kaynagindan yanar/soner
@@ -10146,6 +10186,7 @@ func apply_quality(tier: String) -> void:
 
 func _on_quality_changed(tier: String) -> void:
 	_apply_water_tier()  # C: Dusuk'te dalga/parilti kapansin
+	_apply_zemin_tier()  # zemin dokusu: Dusuk'te ince benek kapali
 	# CIM V2: kademe yogunluk kesri imzaya girer — yalniz kesir
 	# degistiginde chunk'lar yeniden kurulur (ucuz cagri).
 	_build_cim_field(_decor_cells)
@@ -12545,6 +12586,44 @@ func _apply_cim_tier() -> void:
 
 ## CIMTEST (hizli CI): materyal atamasi + TEK draw call korunumu +
 ## blade_height olcumu + kaynak paylasimi.
+## ZEMINTEST (hizli CI): zemin cayir dokusu — shader atanmis mi, maske
+## mantigi dogru mu (cim=1, kazi/falez/yol=0), gece uniform'u bagli mi.
+func _run_zemin_test() -> void:
+	var mat := _terrain_mat()
+	var shader_ok := DigWaterVisual.ZEMIN_SHADER_ON \
+			and mat is ShaderMaterial \
+			and (mat as ShaderMaterial).shader != null \
+			and (mat as ShaderMaterial).shader.resource_path.ends_with(
+					"ground_meadow.gdshader")
+	# Maske mantigi: acik cim hucresi bul
+	var cim := 0.0
+	var oc := _find_open_cell(1, 3, 25)
+	if oc != Vector2i(-999, -999):
+		cim = _zemin_mask_at(float(oc.x) + 0.5, float(oc.y) + 0.5, false, 0.0)
+	var kazi := _zemin_mask_at(float(oc.x) + 0.5, float(oc.y) + 0.5, true, 0.0)
+	var falez := _zemin_mask_at(float(oc.x) + 0.5, float(oc.y) + 0.5, false, 0.5)
+	var yol := 1.0
+	if not _path_cells.is_empty():
+		var pc: Vector2i = _path_cells.keys()[0]
+		yol = _zemin_mask_at(float(pc.x) + 0.5, float(pc.y) + 0.5, false, 0.0)
+	# Gece kaynagi: night_mix setter zinciri zemin materyaline ulasiyor mu
+	DayNight.phase = "night"
+	_update_water_night()
+	var gece: float = float((_terrain_mat() as ShaderMaterial)
+			.get_shader_parameter("night_mix")) if shader_ok else -1.0
+	DayNight.phase = "day"
+	_update_water_night()
+	print("ZEMINTEST: shader=%s cim=%.0f kazi=%.0f falez=%.0f yol=%.0f gece_mix=%.2f" % [
+			str(shader_ok), cim, kazi, falez, yol, gece])
+	if DigWaterVisual.ZEMIN_SHADER_ON:
+		if not shader_ok:
+			push_error("ZEMIN: chunk materyali ground_meadow shader'i degil")
+		if cim != 1.0 or kazi != 0.0 or falez != 0.0 or yol != 0.0:
+			push_error("ZEMIN: maske mantigi yanlis (cim=%.0f kazi=%.0f falez=%.0f yol=%.0f)"
+					% [cim, kazi, falez, yol])
+		if absf(gece - DigWaterVisual.NIGHT_WARM_MIX) > 0.001:
+			push_error("ZEMIN: gece kaynagi bagli degil (%.2f)" % gece)
+
 func _run_cim_test() -> void:
 	var mmi_n := 0
 	var shaderli := 0
@@ -12572,7 +12651,10 @@ func _run_cim_test() -> void:
 			and shaderli != mmi_n:
 		push_error("CIM: %d/%d sus otu MMI'si shadersiz kaldi"
 				% [mmi_n - shaderli, mmi_n])
-	if DigWaterVisual.CIM_SHADER_V1 and (boy < 0.05 or boy > 2.0):
+	# ATMOSFER FINAL: 3D cim tamamen kapaliyken _cim_mat hic kurulmaz —
+	# boy/noise olcumu ancak cim materyali KULLANIMDAYKEN anlamli.
+	var cim_aktif: bool = DigWaterVisual.CIM_TUTAM_ON or DigWaterVisual.CIM_FIELD_ON
+	if DigWaterVisual.CIM_SHADER_V1 and cim_aktif and (boy < 0.05 or boy > 2.0):
 		push_error("CIM: blade_height olcumu sacma (%.2f)" % boy)
 	# CIM V2: yaprak sayimi (chunk basina yakin+uzak IKI MM), ortak
 	# materyal, mesh 3 vertex mi (tek ucgen), kademe kesirleri calisiyor mu.
