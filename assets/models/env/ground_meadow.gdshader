@@ -50,9 +50,9 @@ varying vec3 v_world;
 varying float v_grass_mask;
 
 float hash21(vec2 p) {
-    p = fract(p * vec2(234.34, 435.345));
-    p += dot(p, p + 34.23);
-    return fract(p.x * p.y);
+    // izotropik hash: eski çarpımsal hash çapraz bant artefaktı
+    // üretiyordu (geniş zeminde diyagonal şeritler) — bu sürüm yönsüz
+    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 float vnoise(vec2 p) {
     vec2 i = floor(p);
@@ -86,11 +86,13 @@ void fragment() {
     }
 
     // --- İRİ LEKELER: yumuşak ton bulutları ---
-    float blotch = vnoise(w * blotch_scale);
+    // döndürülmüş örnekleme: eksen hizalı desen kalıntısını da kırar
+    vec2 wr = mat2(vec2(0.866, -0.5), vec2(0.5, 0.866)) * w; // 30 derece
+    float blotch = vnoise(wr * blotch_scale);
     col *= 1.0 + (blotch - 0.5) * 2.0 * blotch_amount * m;
 
     // --- SICAK-SERİN: çok geniş ölçekli renk kayması ---
-    float wv = vnoise(w * warm_scale + 13.7);
+    float wv = vnoise(wr * warm_scale + 13.7);
     col.r *= 1.0 + (wv - 0.5) * 2.0 * warm_variation * m;
     col.b *= 1.0 - (wv - 0.5) * 1.2 * warm_variation * m;
 
