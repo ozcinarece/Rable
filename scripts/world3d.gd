@@ -7023,7 +7023,10 @@ func _fell_tree(cell: Vector2i, drops: Dictionary) -> void:
 		if is_instance_valid(pivot):
 			pivot.basis = Basis(eksen, deg_to_rad(a))
 	var w := FellBalance.WOBBLE_DEG
-	var tw := create_tween()
+	# Tween PIVOT'a bagli: pivot silinirse (testler agaci temizler)
+	# tween de olur — world'e bagli hali her karede freed-capture
+	# lambda hatasi basiyordu ("Lambda capture ... was freed").
+	var tw := pivot.create_tween()
 	# 1) kararsizlik: once hafif GERI, sonra one salinim
 	tw.tween_method(setang, 0.0, -w, FellBalance.WOBBLE_SECONDS * 0.5)
 	tw.tween_method(setang, -w, w * 0.5, FellBalance.WOBBLE_SECONDS * 0.5)
