@@ -32,6 +32,7 @@ const CreatureAI = preload("res://scripts/creature_ai.gd")
 const FenceBalance = preload("res://scripts/fence_balance.gd")
 const FellBalance = preload("res://scripts/fell_balance.gd")
 const CampBalance = preload("res://scripts/camp_balance.gd")
+const AcilisBalance = preload("res://scripts/acilis_balance.gd")
 const Recipes = preload("res://scripts/recipes.gd")
 const Items = preload("res://scripts/items.gd")
 const ChestStore = preload("res://scripts/inventory.gd")  # 14.1 sandik deposu
@@ -413,6 +414,14 @@ func _ready() -> void:
 	DayNight.dawn_started.connect(_on_farm_dawn)
 	DayNight.night_started.connect(_on_farm_night)
 	PlayerStats.buffs_changed.connect(_update_buff_gorsel)
+	# ACILIS: barlar IHTIYACLA dogar (yalniz sinematikte gizli baslarlar)
+	Health.changed.connect(func():
+		if Health.value < 99.9 and not hud.bar_dogdu("kalp"):
+			hud.bar_dogur("kalp"))
+	Thirst.changed.connect(func():
+		if Thirst.value < AcilisBalance.SUSUZLUK_DOGUM_ESIK \
+				and not hud.bar_dogdu("damla"):
+			hud.bar_dogur("damla"))
 	DayNight.dawn_started.connect(_on_kesif_dawn)  # 16.4 sefer sabahi
 	hud.fener_kisik_toggled.connect(set_fener_kisik)  # 16.5 stealth
 	# GECE DALGASI (minimal): kanca artik BOS degil — gece dogur, safakta erit.
@@ -441,6 +450,9 @@ func _ready() -> void:
 		return
 	if not OS.has_environment("RABLE_SCREENSHOT") and SaveManager.has_save():
 		_show_start_menu()
+	elif not OS.has_environment("RABLE_SCREENSHOT"):
+		# ACILIS: kayitsiz taze oyun — sinematik ya da hizli baslat
+		_acilis_yeni_oyun()
 	# CI ekran goruntusu modu: birkac saniye sonra kare kaydet ve cik
 	if OS.has_environment("RABLE_SCREENSHOT"):
 		_setup_screenshot(OS.get_environment("RABLE_SCREENSHOT"))
@@ -3125,6 +3137,8 @@ func to_save_data() -> Dictionary:
 		"farming": Farming.to_save_data(),  # tarim-3d: tarla/evre/islaklik/kap
 		"kesif": _kesif_to_save(),  # Bolum 16: tas durumlari + fener
 		"camp_enkaz": _enkaz_to_save(),  # kamp-enkaz: sokulen dekor hucreleri
+		"acilis": {"durum": _acilis_durum, "adim": _acilis_adim,
+				"g01": _acilis_g01},
 	}
 
 func _enkaz_to_save() -> Array:
@@ -3284,6 +3298,24 @@ func from_save_data(data: Dictionary) -> bool:
 		if ej is Array and ej.size() == 2:
 			_camp_props_removed[Vector2i(int(ej[0]), int(ej[1]))] = true
 	_build_spawn_camp()
+	# ACILIS: Gun 0 tamamlanmadan kaydedildiyse Gun 0'dan surer
+	var ac: Dictionary = data.get("acilis", {"durum": 2})
+	_acilis_durum = int(ac.get("durum", 2))
+	_acilis_adim = int(ac.get("adim", 0))
+	_acilis_g01 = bool(ac.get("g01", false))
+	if _acilis_durum <= 0:
+		_acilis_durum = 2   # once bitmis say, akis bastan kurulsun
+		call_deferred("_acilis_baslat")
+	elif _acilis_durum == 1:
+		Crafting.acilis_kilit = AcilisBalance.DEFTER_TARIFLER.duplicate() \
+				if _acilis_adim < 2 else []
+		hud.acilis_barlari_gizle()
+		hud.bar_dogur("mide")
+		hud.todo_goster(AcilisBalance.G1_TODO_YIYECEK % 0
+				if _acilis_adim == 0 else (AcilisBalance.G1_TODO_ARASTIR
+				if _acilis_adim == 1 else AcilisBalance.G1_TODO_BALTA))
+		if not Inventory.changed.is_connected(_acilis_kontrol):
+			Inventory.changed.connect(_acilis_kontrol)
 	_loading = false
 	return true
 
@@ -3335,7 +3367,8 @@ func _confirm_new_game(vb: VBoxContainer, layer: CanvasLayer) -> void:
 		Inventory.reset(); Research.reset(); Crafting.reset()
 		Hunger.reset(); Thirst.reset(); Health.reset()
 		PlayerStats.reset(); DayNight.reset()
-		layer.queue_free())
+		layer.queue_free()
+		_acilis_yeni_oyun())  # ACILIS: yeni oyun = mod secimi
 	vb.add_child(yes)
 	var no := _pill_button("Vazgeç")
 	no.pressed.connect(func():
@@ -5889,6 +5922,212 @@ func _camp_prop_structure(item_id: String, cell: Vector2i, yaw: float,
 	add_child(holder)
 	_camp_nodes.append(holder)
 	return holder
+
+# ==========================================================================
+# ACILIS SAHNESI (acilis-sahnesi) — Gun 0 + Gun 1 dikey dilim kapisi.
+# Sureler/metinler AcilisBalance'ta. YALNIZ gercek yeni oyunda calisir;
+# test ortami (RABLE_SCREENSHOT) ve debug hizli baslat atlar.
+# ==========================================================================
+var _acilis_durum: int = 2      # 0=Gun0 bekliyor, 1=Gun1 zinciri, 2=bitti
+var _acilis_adim: int = 0       # Gun1: 0=yiyecek 1=arastir 2=balta 3=bitti
+var _acilis_g01: bool = false   # G-01 "geldin" hikaye bayragi
+var _acilis_sure: float = 1.0   # SLICETEST sureleri kisaltir
+var _acilis_meyve_taban: int = 0
+
+func _acilis_bekle(sn: float) -> void:
+	await get_tree().create_timer(maxf(0.01, sn * _acilis_sure)).timeout
+
+## Mod secimi (yeni oyunda cagrilir): sinematik mi hizli mi?
+func _acilis_sinematik_mi() -> bool:
+	if OS.has_environment("RABLE_SCREENSHOT"):
+		return false  # test ortami: bugunku akis birebir
+	if AcilisBalance.ARGUMAN in OS.get_cmdline_args():
+		return true   # gelistirici bilerek istedi
+	if OS.is_debug_build() and AcilisBalance.DEBUG_HIZLI_BASLAT:
+		return false  # debug F5 = hizli baslat
+	return true       # release: acilis varsayilan
+
+## HIZLI BASLAT: Gun 1 sabahi, kamp ocagi YANIK, tarifler acik,
+## aclik %80, to-do yok — gelistirici test akisi.
+func _acilis_hizli_baslat() -> void:
+	_acilis_durum = 2
+	Crafting.acilis_kilit.clear()
+	var oc := _camp_at("ocak")
+	if oc != Vector2i(-999, -999) and not _placed.has(oc):
+		_set_placed(oc, "ocak")
+	Hunger.value = AcilisBalance.HIZLI_ACLIK
+	Hunger.changed.emit()
+
+## Yeni oyun giris noktasi: mod sec ve uygula.
+func _acilis_yeni_oyun() -> void:
+	if _acilis_sinematik_mi():
+		_acilis_baslat()
+	else:
+		_acilis_hizli_baslat()
+
+## SINEMATIK baslangic: garantili kaynak spawn'lari + kilitler + Gun 0.
+func _acilis_baslat() -> void:
+	_acilis_durum = 0
+	Crafting.acilis_kilit = AcilisBalance.DEFTER_TARIFLER.duplicate()
+	_acilis_garanti_spawn()
+	hud.acilis_barlari_gizle()
+	await _acilis_gun0()
+
+## Kamp cevresi garantileri: berry calilari + yerde dal/tas + kulube
+## onunde ip (sayilar veride; yalniz sinematikte cagrilir).
+func _acilis_garanti_spawn() -> void:
+	var merkez := _camp_center if _camp_center != Vector2i(-999, -999) \
+			else _player_cell()
+	var berry := 0
+	var r := AcilisBalance.G_BERRY_YARICAP
+	for dy in range(-r, r + 1):
+		if berry >= AcilisBalance.G_BERRY_ADET:
+			break
+		for dx in range(-r, r + 1):
+			var c := merkez + Vector2i(dx, dy)
+			if absi(dx) + absi(dy) < 3:
+				continue  # kampin gobegine degil, cevresine
+			if _objects.has(c) or _placed.has(c) or not is_walkable(c):
+				continue
+			if String(_ground_char.get(c, "")) != ".":
+				continue
+			_objects[c] = "m"
+			berry += 1
+			if berry >= AcilisBalance.G_BERRY_ADET:
+				break
+	_rebuild_objects()
+	var yerde: Array = []
+	for i in AcilisBalance.G_DAL_ADET:
+		yerde.append("cubuk")
+	for i in AcilisBalance.G_TAS_ADET:
+		yerde.append("tas")
+	var k := 0
+	var ry := AcilisBalance.G_YER_YARICAP
+	for dy in range(-ry, ry + 1):
+		if k >= yerde.size():
+			break
+		for dx in range(-ry, ry + 1):
+			if k >= yerde.size():
+				break
+			if (dx + dy) % 2 != 0 or absi(dx) + absi(dy) < 2:
+				continue
+			var c2 := merkez + Vector2i(dx, dy)
+			if is_walkable(c2) and not _objects.has(c2) and not _placed.has(c2):
+				_add_ground_item(c2, yerde[k], 1)
+				k += 1
+	var hut := _camp_at("hut")
+	if hut != Vector2i(-999, -999):
+		_add_ground_item(hut + Vector2i(0, 2), "ip", AcilisBalance.G_IP_ADET)
+
+## GUN 0 akisi (gorev metni birebir).
+func _acilis_gun0() -> void:
+	hud.set_acilis_gizli(true)
+	hud.acilis_siyah(AcilisBalance.G0_ETIKET)
+	DayNight.day = 0
+	DayNight.phase = "night"
+	DayNight.elapsed = 0.0
+	_update_daylight()
+	_clear_creatures()
+	await _acilis_bekle(AcilisBalance.G0_ETIKET_SN)
+	await hud.acilis_fade_in(AcilisBalance.G0_FADEIN_SN * _acilis_sure)
+	_spawn_floating_text(_player_cell(), AcilisBalance.G0_BALON,
+			Color(0.92, 0.9, 0.82))
+	await _acilis_bekle(AcilisBalance.G0_BALON_SN)
+	hud.todo_goster(AcilisBalance.G0_TODO)
+	# Devami dokunusta: _acilis_ocak_dokun (hedefleme "Dokun" verir)
+
+## Ocak dokunusu: 1sn duraklama -> alev canlanir -> 3sn aydinlanma ->
+## fisilti + G-01 bayragi -> ✓ -> siyah -> Gun 1.
+func _acilis_ocak_dokun() -> void:
+	if _acilis_durum != 0:
+		return
+	_acilis_durum = -1  # cift dokunus kilidi (akis sürüyor)
+	await _acilis_bekle(AcilisBalance.G0_DOKUNUS_BEKLE_SN)
+	var oc := _camp_at("ocak")
+	if oc != Vector2i(-999, -999) and not _placed.has(oc):
+		_set_placed(oc, "ocak")  # alev CANLANIR (aktif isik + damarlar)
+	if _hearth_light != null:
+		var hedef_r := _hearth_light.omni_range
+		_hearth_light.omni_range = 0.5
+		create_tween().tween_property(_hearth_light, "omni_range",
+				hedef_r, AcilisBalance.G0_AYDINLANMA_SN * _acilis_sure)
+	if oc != Vector2i(-999, -999):
+		_spawn_particles(_cell_center(oc) + Vector3(0, 0.8, 0),
+				Color(1.0, 0.6, 0.2), 16)
+	await _acilis_bekle(AcilisBalance.G0_AYDINLANMA_SN)
+	hud.fisilti(AcilisBalance.G0_FISILTI,
+			AcilisBalance.G0_FISILTI_SN * _acilis_sure)
+	_acilis_g01 = true  # G-01 kaydi acildi (panel sonraki gorev)
+	await _acilis_bekle(AcilisBalance.G0_FISILTI_SN * 0.6)
+	await hud.todo_tamam()
+	await _acilis_bekle(AcilisBalance.G0_TIK_SONRASI_SN)
+	hud.acilis_siyah("")
+	await _acilis_gun1()
+
+## GUN 1: sabah + aclik dogusu + to-do zinciri.
+func _acilis_gun1() -> void:
+	_acilis_durum = 1
+	_acilis_adim = 0
+	DayNight.day = 1
+	DayNight.phase = "day"
+	DayNight.elapsed = 0.0
+	_update_daylight()
+	player.position = _cell_center(_camp_at("ocak") + Vector2i(1, 1))
+	hud.acilis_siyah(AcilisBalance.G1_ETIKET)
+	await _acilis_bekle(AcilisBalance.G0_ETIKET_SN)
+	hud.set_acilis_gizli(false)
+	await hud.acilis_fade_in(AcilisBalance.G0_FADEIN_SN * _acilis_sure)
+	await _acilis_bekle(AcilisBalance.G1_ACLIK_GECIKME_SN)
+	_play_sfx("stomach_growl")  # SES KANCASI (dosya gelince calar)
+	Hunger.value = AcilisBalance.G1_ACLIK_BASLANGIC
+	Hunger.changed.emit()
+	hud.bar_dogur("mide")
+	_acilis_meyve_taban = Inventory.get_count("meyve")
+	hud.todo_goster(AcilisBalance.G1_TODO_YIYECEK % 0)
+	if not Inventory.changed.is_connected(_acilis_kontrol):
+		Inventory.changed.connect(_acilis_kontrol)
+	_acilis_vurgula()
+
+## Kamp arastirma vurgusu: kulube/kuyu/masa/defter hafif pariltisi.
+func _acilis_vurgula() -> void:
+	for id in ["hut", "well", "masa"]:
+		var c := _camp_at(id)
+		if c != Vector2i(-999, -999):
+			_spawn_particles(_cell_center(c) + Vector3(0, 0.9, 0),
+					Color(1.0, 0.9, 0.5), 6)
+
+## Zincir denetimi (Inventory.changed + craft tesliminde tetiklenir).
+func _acilis_kontrol() -> void:
+	if _acilis_durum != 1:
+		return
+	if _acilis_adim == 0:
+		var n: int = clampi(Inventory.get_count("meyve") - _acilis_meyve_taban,
+				0, AcilisBalance.G1_YIYECEK_HEDEF)
+		hud.todo_goster(AcilisBalance.G1_TODO_YIYECEK % n)
+		if n >= AcilisBalance.G1_YIYECEK_HEDEF:
+			_acilis_adim = 1
+			await hud.todo_tamam()
+			hud.todo_goster(AcilisBalance.G1_TODO_ARASTIR)
+			_acilis_vurgula()
+	elif _acilis_adim == 2:
+		if Inventory.get_count("balta") > 0:
+			_acilis_adim = 3
+			await hud.todo_tamam()
+			hud.todo_goster(AcilisBalance.G1_TODO_SON)
+			await _acilis_bekle(AcilisBalance.G1_SON_SN)
+			await hud.todo_gizle()
+			_acilis_durum = 2
+			_dirty = true
+
+## Not defteri okundu: tarifler ACILIR, zincir balta adimina gecer.
+func _acilis_defter_okundu() -> void:
+	if _acilis_durum != 1 or _acilis_adim != 1:
+		return
+	Crafting.acilis_kilit.clear()
+	_acilis_adim = 2
+	await hud.todo_tamam()
+	hud.todo_goster(AcilisBalance.G1_TODO_BALTA)
+	_acilis_kontrol()
 
 ## KAMP ENKAZI sokumu: dekor dugumu kaldirilir, salvage malzemesi yere
 ## sacilir, hucre kalici isaretlenir (kayit + _build_spawn_camp atlar).
@@ -9110,6 +9349,13 @@ func _describe_target(cell: Vector2i) -> Dictionary:
 	if _creature_near(cell) != null:
 		return {"type": "creature", "cell": cell, "icon": "attack",
 				"valid": true, "kind": "attack"}
+	# ACILIS hedefleri: Gun 0 sonuk Ocak "Dokun"; Gun 1 arastirmada defter
+	if _acilis_durum == 0 and cell == _camp_at("ocak"):
+		return {"type": "acilis_ocak", "cell": cell, "icon": "open",
+				"valid": true, "kind": "open"}
+	if _acilis_durum == 1 and _acilis_adim == 1 and cell == _camp_at("masa"):
+		return {"type": "acilis_defter", "cell": cell, "icon": "open",
+				"valid": true, "kind": "open"}
 	# Yerdeki esya: elde ne olursa olsun toplanir
 	if _ground_item_at(cell) != -1:
 		return {"type": "ground", "cell": cell, "icon": "grab",
@@ -9260,6 +9506,15 @@ func _perform_tool_action(t: Dictionary) -> void:
 			return
 		"yolkoru":
 			_take_yol_koru()
+			return
+		"acilis_ocak":
+			_acilis_ocak_dokun()  # async: alev + aydinlanma zinciri
+			return
+		"acilis_defter":
+			hud.not_defteri_ac(AcilisBalance.G1_DEFTER_METIN)
+			if not hud.defter_kapandi.is_connected(_acilis_defter_okundu):
+				hud.defter_kapandi.connect(_acilis_defter_okundu,
+						CONNECT_ONE_SHOT)
 			return
 		"station":
 			_interact_station(cell, String(t.get("placed", "")))
