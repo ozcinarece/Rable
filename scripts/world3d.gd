@@ -407,6 +407,7 @@ func _ready() -> void:
 	# otomatigi, sonra buyume tick'i — sira world3d'de, belirsizlik yok)
 	Farming.plot_changed.connect(_on_plot_changed)
 	DayNight.dawn_started.connect(_on_farm_dawn)
+	DayNight.night_started.connect(_on_farm_night)
 	DayNight.dawn_started.connect(_on_kesif_dawn)  # 16.4 sefer sabahi
 	hud.fener_kisik_toggled.connect(set_fener_kisik)  # 16.5 stealth
 	# GECE DALGASI (minimal): kanca artik BOS degil — gece dogur, safakta erit.
@@ -8672,15 +8673,30 @@ func _try_till(cell: Vector2i) -> void:
 		_spawn_floating_text(cell, "Tarla açıldı", Color(0.8, 1.0, 0.8))
 
 func _try_plant(cell: Vector2i) -> void:
-	var check: Dictionary = Farming.can_plant(cell, "berry_bush")
-	if not bool(check.ok):
-		_spawn_floating_text(cell, String(check.reason), Color(1, 0.85, 0.6))
-		return
-	if Inventory.get_count("tohum") <= 0:
+	# TARIM-2: urun eldeki tohumdan cozulur (berry sabiti kalkti)
+	var crop_id := TarimBalance.crop_of_seed(_held_item)
+	if crop_id == "":
+		crop_id = "berry_bush"
+	var seed_item := String(TarimBalance.CROPS[crop_id].seed_item)
+	if Inventory.get_count(seed_item) <= 0:
 		_spawn_floating_text(cell, "Tohum yok", Color(1, 0.85, 0.6))
 		return
-	if Farming.plant(cell, "berry_bush"):
-		Inventory.remove_item("tohum", 1)
+	var ekildi := false
+	if bool(TarimBalance.CROPS[crop_id].get("field_free", false)):
+		# Sis mantari: tarla gerekmez — los/golge hucre sarti
+		if not _mantar_golge_valid(cell):
+			_spawn_floating_text(cell, "Loş bir yer gerek (ağaç dibi/iç mekan)",
+					Color(1, 0.85, 0.6))
+			return
+		ekildi = Farming.plant_free(cell, crop_id)
+	else:
+		var check: Dictionary = Farming.can_plant(cell, crop_id)
+		if not bool(check.ok):
+			_spawn_floating_text(cell, String(check.reason), Color(1, 0.85, 0.6))
+			return
+		ekildi = Farming.plant(cell, crop_id)
+	if ekildi:
+		Inventory.remove_item(seed_item, 1)
 		_play_sfx(String(TarimBalance.SFX["plant"]))
 		_spawn_floating_text(cell, "Ekildi", Color(0.8, 1.0, 0.8))
 
@@ -8707,8 +8723,13 @@ func _try_crop_harvest(cell: Vector2i) -> void:
 	# Urun YERE SACILIR (loot hissi) + tohum iade sansi
 	var n := randi_range(int(crop.yield_min), int(crop.yield_max))
 	var drops := {String(crop.yield_item): n}
-	if randf() < TarimBalance.SEED_RETURN_CHANCE:
+	# TARIM-2: iade sansi urun tablosundan; kabakta %30 sus kabagi bonusu
+	var iade := float(crop.get("seed_return", TarimBalance.SEED_RETURN_CHANCE))
+	if randf() < iade:
 		drops[String(crop.seed_item)] = int(drops.get(String(crop.seed_item), 0)) + 1
+	var bonus: Dictionary = crop.get("bonus_drop", {})
+	if not bonus.is_empty() and randf() < float(bonus.chance):
+		drops[String(bonus.item)] = int(drops.get(String(bonus.item), 0)) + 1
 	_scatter_drops(cell, drops)
 	_play_sfx(String(TarimBalance.SFX["harvest"]))
 	_spawn_floating_text(cell, "Hasat!", Color(0.8, 1.0, 0.8))
@@ -8720,6 +8741,26 @@ func _on_farm_dawn() -> void:
 		if has_adjacent_water(cell):
 			Farming.water_free(cell)
 	Farming.day_tick()
+
+## TARIM-2: gece basinda korotu buyume tick'i (yalniz night_grow).
+func _on_farm_night() -> void:
+	Farming.night_tick()
+
+## TARIM-2: sis mantari golge kurali — agac dibi (1 hucre komsulukta
+## agac) YA DA ic mekan. Sayilar tarim_balance'ta.
+func _mantar_golge_valid(cell: Vector2i) -> bool:
+	if not is_walkable(cell) or _placed.has(cell) or _objects.has(cell):
+		return false
+	if Farming.plots.has(cell):
+		return false
+	# TODO(ev-cati merge edilince): is_indoor(cell) da golge sayilacak —
+	# o fonksiyon henuz bu dalda yok (cati sistemi rafta).
+	var r: int = TarimBalance.MANTAR_GOLGE_AGAC_KOMSU
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			if String(_objects.get(cell + Vector2i(dx, dy), "")) == "T":
+				return true
+	return false
 
 ## Veri->gorsel koprusu: zemin parcasi + bitki dugumu yenilenir
 var _crop_nodes: Dictionary = {}  # cell -> Node3D
@@ -8973,10 +9014,18 @@ func _describe_target(cell: Vector2i) -> Dictionary:
 	if held == "capa":
 		return {"type": "till", "cell": cell, "icon": "till",
 				"valid": _till_valid(cell), "kind": "till"}
-	if held == "tohum" and Farming.plots.has(cell):
-		return {"type": "plant", "cell": cell, "icon": "plant",
-				"valid": bool(Farming.can_plant(cell, "berry_bush").ok),
-				"kind": "plant"}
+	# TARIM-2: her tohum kendi urununu eker; sis mantari TARLASIZ
+	# (golge hucre), digerleri capalanmis tarla ister.
+	var ekim_crop := TarimBalance.crop_of_seed(held)
+	if ekim_crop != "":
+		var ekim_def: Dictionary = TarimBalance.CROPS[ekim_crop]
+		if bool(ekim_def.get("field_free", false)):
+			return {"type": "plant", "cell": cell, "icon": "plant",
+					"valid": _mantar_golge_valid(cell), "kind": "plant"}
+		if Farming.plots.has(cell):
+			return {"type": "plant", "cell": cell, "icon": "plant",
+					"valid": bool(Farming.can_plant(cell, ekim_crop).ok),
+					"kind": "plant"}
 	if held == "sulama_kabi":
 		if is_water_source(cell) or pool_at(cell) >= 0:
 			return {"type": "fillcan", "cell": cell, "icon": "fill",

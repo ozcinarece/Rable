@@ -78,6 +78,13 @@ const CROPS := {
 	},
 }
 
+## Tohum esyasindan urun id'si (ekim akisi: eldeki tohum hangi urun?)
+static func crop_of_seed(seed_item: String) -> String:
+	for cid: String in CROPS:
+		if String(CROPS[cid].seed_item) == seed_item:
+			return cid
+	return ""
+
 ## GLB KANCALARI (crops/ klasoru — modeller GELMEDI; dosya gelince
 ## CROP_STAGE_GLB'ye baglanir, o zamana kadar ayirt edilebilir
 ## proseduerel placeholder cizilir; world3d._crop_placeholder).
