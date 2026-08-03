@@ -144,6 +144,10 @@ const PLACE_MODELS := {
 	"mesale": {"model": "res://assets/models/tools/campfire-stand.glb",
 			"h": 0.7, "solid": false,
 			"behavior": "torch", "max_hp": 30},
+	# TARIM-2: TAS DIBEK — ogutme istasyonu (un). GLB kancasi dosya-bekler;
+	# gelene kadar proseduerel canak (_build_dibek_visual).
+	"tas_dibek": {"model": "res://assets/models/crops/tas_dibek.glb",
+			"h": 0.45, "solid": true, "behavior": "station", "max_hp": 60},
 	# KESIF 16.4: yol koru yere konunca MINI KAMP ATESI olur (isik cemberi
 	# + pisirme + kayit noktasi). Yerlestirme isik kapisina tabidir.
 	"yol_koru": {"model": "res://assets/models/tools/campfire-pit.glb",
@@ -407,6 +411,8 @@ func _ready() -> void:
 	# otomatigi, sonra buyume tick'i — sira world3d'de, belirsizlik yok)
 	Farming.plot_changed.connect(_on_plot_changed)
 	DayNight.dawn_started.connect(_on_farm_dawn)
+	DayNight.night_started.connect(_on_farm_night)
+	PlayerStats.buffs_changed.connect(_update_buff_gorsel)
 	DayNight.dawn_started.connect(_on_kesif_dawn)  # 16.4 sefer sabahi
 	hud.fener_kisik_toggled.connect(set_fener_kisik)  # 16.5 stealth
 	# GECE DALGASI (minimal): kanca artik BOS degil — gece dogur, safakta erit.
@@ -648,6 +654,7 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(Vector3(float(fbase.x) + 1.5, 0.15, float(fbase.y) + 0.5))
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_tarim.png"))
+	await _run_tarim2_frames(save_path)  # TARIM-2: 6 urun + dibek + corba
 	# YENI OZELLIK KARELERI ONE ALINDI: tur CI zaman butcesini asinca
 	# sondaki kareler hic cekilmiyordu (agac-kesim turunda olculdu —
 	# kesim kareleri bos kaldi). Yeni is her zaman butcenin basinda.
@@ -1544,6 +1551,7 @@ func _run_fast_tests() -> void:
 	_run_uzak_test()
 	_run_cim_test()
 	_run_zemin_test()
+	_run_tarim2_test()
 	_run_night_logic_test()
 	_run_fence_test()
 	_run_fell_test()
@@ -7833,6 +7841,8 @@ func _build_structure_visual(item_id: String) -> Node3D:
 	# ground_height ile eslesir; oyuncu deck ustunde durur.
 	if item_id == "platform":
 		return _build_platform_visual()
+	if item_id == "tas_dibek" and not ResourceLoader.exists(String(def["model"])):
+		return _build_dibek_visual()
 	if item_id == "merdiven":
 		return _build_ladder_visual()
 	if item_id == "kazik":
@@ -7870,6 +7880,26 @@ func _build_structure_visual(item_id: String) -> Node3D:
 ## bir kenarda basamak (holder donunce basamak yonu secilir). Prosedurel;
 ## boyut ground_height ile eslesir (deck ust yuzu local y=1.5).
 const PLATFORM_HEIGHT := 1.5
+## TARIM-2: tas dibek placeholder — alcak tas canak (govde + oyuk agiz
+## izlenimi veren koyu kapak) + havan eli (yatik silindir).
+func _build_dibek_visual() -> Node3D:
+	var root := Node3D.new()
+	var govde := CylinderMesh.new()
+	govde.top_radius = 0.22
+	govde.bottom_radius = 0.26
+	govde.height = 0.30
+	root.add_child(_crop_part(govde, Color(0.58, 0.56, 0.52), Vector3(0, 0.15, 0)))
+	var agiz := CylinderMesh.new()
+	agiz.top_radius = 0.15
+	agiz.bottom_radius = 0.15
+	agiz.height = 0.03
+	root.add_child(_crop_part(agiz, Color(0.30, 0.28, 0.26), Vector3(0, 0.31, 0)))
+	var el := _crop_cyl(0.045, 0.34)
+	var el_mi := _crop_part(el, Color(0.46, 0.36, 0.26), Vector3(0.16, 0.36, 0.0))
+	el_mi.rotation_degrees = Vector3(0, 0, 55)
+	root.add_child(el_mi)
+	return root
+
 func _build_platform_visual() -> Node3D:
 	var holder := Node3D.new()
 	var wood := Color(0.58, 0.40, 0.24)
@@ -8274,6 +8304,7 @@ func _update_station_proximity() -> void:
 	var near_bench := false
 	var near_res := false
 	var near_hearth := false
+	var near_dibek := false
 	# CIHAZ HATASI ("tezgahin yanindayim ama uzaktasin diyor"): yaricap 3x3
 	# idi. Oyuncu carpisma yaricapi yuzunden tezgaha 1 hucreden fazla
 	# yaklasamiyor; kose/capraz duruslarda hucre farki 2'ye cikip kapi
@@ -8285,6 +8316,8 @@ func _update_station_proximity() -> void:
 					near_bench = true
 				"arastirma_masasi":
 					near_res = true
+				"tas_dibek":
+					near_dibek = true   # TARIM-2 ogutme (un)
 				"ocak":
 					near_hearth = true  # 14.3 pisirme istasyonu (arayuz)
 				"yol_koru":
@@ -8292,6 +8325,7 @@ func _update_station_proximity() -> void:
 	Crafting.near_station = near_bench
 	Crafting.near_research = near_res
 	Crafting.near_hearth = near_hearth
+	Crafting.near_dibek = near_dibek
 	# SU MODELI (11.2): yuzulur hucrede oyuncu yavaslar (tek placeholder)
 	player.water_factor = WaterRules.SWIM_SPEED_FACTOR if is_swimmable(pc) else 1.0
 
@@ -8672,15 +8706,30 @@ func _try_till(cell: Vector2i) -> void:
 		_spawn_floating_text(cell, "Tarla açıldı", Color(0.8, 1.0, 0.8))
 
 func _try_plant(cell: Vector2i) -> void:
-	var check: Dictionary = Farming.can_plant(cell, "berry_bush")
-	if not bool(check.ok):
-		_spawn_floating_text(cell, String(check.reason), Color(1, 0.85, 0.6))
-		return
-	if Inventory.get_count("tohum") <= 0:
+	# TARIM-2: urun eldeki tohumdan cozulur (berry sabiti kalkti)
+	var crop_id := TarimBalance.crop_of_seed(_held_item)
+	if crop_id == "":
+		crop_id = "berry_bush"
+	var seed_item := String(TarimBalance.CROPS[crop_id].seed_item)
+	if Inventory.get_count(seed_item) <= 0:
 		_spawn_floating_text(cell, "Tohum yok", Color(1, 0.85, 0.6))
 		return
-	if Farming.plant(cell, "berry_bush"):
-		Inventory.remove_item("tohum", 1)
+	var ekildi := false
+	if bool(TarimBalance.CROPS[crop_id].get("field_free", false)):
+		# Sis mantari: tarla gerekmez — los/golge hucre sarti
+		if not _mantar_golge_valid(cell):
+			_spawn_floating_text(cell, "Loş bir yer gerek (ağaç dibi/iç mekan)",
+					Color(1, 0.85, 0.6))
+			return
+		ekildi = Farming.plant_free(cell, crop_id)
+	else:
+		var check: Dictionary = Farming.can_plant(cell, crop_id)
+		if not bool(check.ok):
+			_spawn_floating_text(cell, String(check.reason), Color(1, 0.85, 0.6))
+			return
+		ekildi = Farming.plant(cell, crop_id)
+	if ekildi:
+		Inventory.remove_item(seed_item, 1)
 		_play_sfx(String(TarimBalance.SFX["plant"]))
 		_spawn_floating_text(cell, "Ekildi", Color(0.8, 1.0, 0.8))
 
@@ -8707,8 +8756,13 @@ func _try_crop_harvest(cell: Vector2i) -> void:
 	# Urun YERE SACILIR (loot hissi) + tohum iade sansi
 	var n := randi_range(int(crop.yield_min), int(crop.yield_max))
 	var drops := {String(crop.yield_item): n}
-	if randf() < TarimBalance.SEED_RETURN_CHANCE:
+	# TARIM-2: iade sansi urun tablosundan; kabakta %30 sus kabagi bonusu
+	var iade := float(crop.get("seed_return", TarimBalance.SEED_RETURN_CHANCE))
+	if randf() < iade:
 		drops[String(crop.seed_item)] = int(drops.get(String(crop.seed_item), 0)) + 1
+	var bonus: Dictionary = crop.get("bonus_drop", {})
+	if not bonus.is_empty() and randf() < float(bonus.chance):
+		drops[String(bonus.item)] = int(drops.get(String(bonus.item), 0)) + 1
 	_scatter_drops(cell, drops)
 	_play_sfx(String(TarimBalance.SFX["harvest"]))
 	_spawn_floating_text(cell, "Hasat!", Color(0.8, 1.0, 0.8))
@@ -8716,10 +8770,71 @@ func _try_crop_harvest(cell: Vector2i) -> void:
 ## Safak surucusu: ONCE bitisik-su otomatigi (kanal kaz -> tarla kendini
 ## sular; 11.7 kancasi BAGLANDI), SONRA buyume tick'i.
 func _on_farm_dawn() -> void:
+	PlayerStats.end_night_buffs()  # TARIM-2: gece-boyu buff safakta biter
 	for cell: Vector2i in Farming.plots.keys():
 		if has_adjacent_water(cell):
 			Farming.water_free(cell)
 	Farming.day_tick()
+
+## TARIM-2: gece basinda korotu buyume tick'i (yalniz night_grow).
+func _on_farm_night() -> void:
+	Farming.night_tick()
+	_update_buff_gorsel()
+
+# --- TARIM-2 BUFF GORSELLERI: isik halkasi + HUD rozeti -------------------
+var _buff_isik: OmniLight3D = null
+var _buff_rozet: Label = null
+
+## Koz Corbasi: oyuncu cevresinde kucuk isik halkasi (yalniz buff
+## aktifken; yaricap/enerji veride). Rozet: aktif buff adlari HUD'da.
+func _update_buff_gorsel() -> void:
+	var corba: bool = PlayerStats.has_buff("koz_corbasi")
+	if corba and _buff_isik == null:
+		_buff_isik = OmniLight3D.new()
+		var b: Dictionary = TarimBalance.BUFFS["koz_corbasi"]
+		_buff_isik.omni_range = float(b["isik_halka_yaricap"])
+		_buff_isik.light_energy = float(b["isik_halka_enerji"])
+		_buff_isik.light_color = Color(1.0, 0.72, 0.42)
+		_buff_isik.position = Vector3(0, 1.0, 0)
+		player.add_child(_buff_isik)
+	elif not corba and _buff_isik != null:
+		_buff_isik.queue_free()
+		_buff_isik = null
+	# HUD rozeti: kucuk metin pili (aktif buff adlari)
+	var adlar: Array = []
+	for id: String in PlayerStats.buffs:
+		adlar.append(String(TarimBalance.BUFFS[id]["ad"]))
+	if adlar.is_empty():
+		if _buff_rozet != null:
+			_buff_rozet.queue_free()
+			_buff_rozet = null
+		return
+	if _buff_rozet == null:
+		_buff_rozet = Label.new()
+		_buff_rozet.add_theme_font_size_override("font_size", 14)
+		_buff_rozet.add_theme_color_override("font_color", Color(1.0, 0.85, 0.55))
+		_buff_rozet.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+		_buff_rozet.add_theme_constant_override("shadow_offset_y", 1)
+		_buff_rozet.set_anchors_preset(Control.PRESET_CENTER_TOP)
+		_buff_rozet.position = Vector2(-80, 64)
+		hud.add_child(_buff_rozet)
+	_buff_rozet.text = "✦ " + " • ".join(adlar)
+
+## TARIM-2: sis mantari golge kurali — agac dibi (1 hucre komsulukta
+## agac) YA DA ic mekan. Sayilar tarim_balance'ta.
+func _mantar_golge_valid(cell: Vector2i) -> bool:
+	if not is_walkable(cell) or _placed.has(cell) or _objects.has(cell):
+		return false
+	if Farming.plots.has(cell):
+		return false
+	# TODO(ev-cati merge edilince): is_indoor(cell) da golge sayilacak —
+	# o fonksiyon henuz bu dalda yok (cati sistemi rafta).
+	var r: int = TarimBalance.MANTAR_GOLGE_AGAC_KOMSU
+	for dy in range(-r, r + 1):
+		for dx in range(-r, r + 1):
+			if String(_objects.get(cell + Vector2i(dx, dy), "")) == "T":
+				return true
+	return false
 
 ## Veri->gorsel koprusu: zemin parcasi + bitki dugumu yenilenir
 var _crop_nodes: Dictionary = {}  # cell -> Node3D
@@ -8832,8 +8947,16 @@ const CROP_STAGE_H := [0.22, 0.40, 0.60]  # hedef boylar (m)
 
 func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 	var root := Node3D.new()
+	var crop_def0: Dictionary = TarimBalance.CROPS.get(crop_id, {})
+	var max_stage0: int = int(crop_def0.get("stages", 3)) - 1
+	# TARIM-2: evre sayisi urune gore 3-6 — gorsel UC kovaya iner:
+	# 0=filiz (ortak), son=olgun (urune ozel), arasi=fide konisi.
+	var kova: int = 0 if stage <= 0 else (2 if stage >= max_stage0 else 1)
 	var paths: Array = CROP_STAGE_GLB.get(crop_id, [])
-	var glb: String = String(paths[stage]) if stage < paths.size() else ""
+	var glb: String = String(paths[kova]) if kova < paths.size() else ""
+	# Olgun evrede kullanici GLB kancasi (crops/ klasoru) varsa onu kullan
+	if glb == "" and kova == 2:
+		glb = String(TarimBalance.CROP_GLB_KANCA.get(crop_id, ""))
 	if glb != "" and ResourceLoader.exists(glb):
 		var inst: Node3D = load(glb).instantiate()
 		root.add_child(inst)
@@ -8844,12 +8967,16 @@ func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 					/ aabb.size.y
 			inst.scale = Vector3(s, s, s)
 			inst.position.y = -aabb.position.y * s  # zemine otur
+	elif kova == 2 and crop_id != "berry_bush" \
+			and TarimBalance.CROP_GLB_KANCA.has(crop_id):
+		# TARIM-2: model GELMEDI — ayirt edilebilir proseduerel placeholder
+		_crop_placeholder(root, crop_id)
 	else:
 		var green := Color(0.32, 0.62, 0.28)
-		if stage == 0:
+		if kova == 0:
 			root.add_child(_crop_part(_crop_cyl(0.03, 0.12), green,
 					Vector3(0, 0.06, 0)))
-		elif stage == 1:
+		elif kova == 1:
 			var cone := CylinderMesh.new()
 			cone.top_radius = 0.0
 			cone.bottom_radius = 0.14
@@ -8871,14 +8998,72 @@ func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 						Vector3(cos(ang) * 0.18, 0.30 + float(k % 2) * 0.08,
 						sin(ang) * 0.18)))
 	# Olgun evrede hafif salinim (hasat cagrisi) — GLB/proseduerel farketmez
-	var crop_def: Dictionary = TarimBalance.CROPS.get(crop_id, {})
-	if stage >= int(crop_def.get("stages", 3)) - 1:
+	if kova == 2:
 		var tw := create_tween().set_loops()
 		tw.tween_property(root, "rotation:z", 0.05, 1.1) \
 				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 		tw.tween_property(root, "rotation:z", -0.05, 1.1) \
 				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
 	return root
+
+## TARIM-2 placeholder'lari: renk+form urun kimligi (gorev tarifi).
+func _crop_placeholder(root: Node3D, crop_id: String) -> void:
+	match crop_id:
+		"earth_apple":
+			# kahve yumrular: alcak toprak tumsekleri
+			for k in 3:
+				var yumru := SphereMesh.new()
+				yumru.radius = 0.10
+				yumru.height = 0.15
+				var ang := TAU * float(k) / 3.0
+				root.add_child(_crop_part(yumru, Color(0.45, 0.30, 0.18),
+						Vector3(cos(ang) * 0.14, 0.07, sin(ang) * 0.14)))
+			root.add_child(_crop_part(_crop_cyl(0.02, 0.18),
+					Color(0.35, 0.55, 0.28), Vector3(0, 0.18, 0)))
+		"golden_wheat":
+			# sari cubuklar: ince basak demeti
+			for k in 6:
+				var ang2 := TAU * float(k) / 6.0
+				root.add_child(_crop_part(_crop_cyl(0.015, 0.52),
+						Color(0.86, 0.72, 0.30),
+						Vector3(cos(ang2) * 0.10, 0.26, sin(ang2) * 0.10)))
+		"pumpkin":
+			# turuncu kure + sap
+			var kabak := SphereMesh.new()
+			kabak.radius = 0.24
+			kabak.height = 0.34
+			root.add_child(_crop_part(kabak, Color(0.86, 0.46, 0.14),
+					Vector3(0, 0.17, 0)))
+			root.add_child(_crop_part(_crop_cyl(0.03, 0.10),
+					Color(0.30, 0.42, 0.20), Vector3(0, 0.38, 0)))
+		"korotu":
+			# turkuaz cicek + hafif emission (GECE PARLAR — kimligi bu)
+			root.add_child(_crop_part(_crop_cyl(0.02, 0.30),
+					Color(0.25, 0.45, 0.35), Vector3(0, 0.15, 0)))
+			var cicek := SphereMesh.new()
+			cicek.radius = 0.09
+			cicek.height = 0.14
+			var mi := _crop_part(cicek, TarimBalance.KOROTU_EMISSION,
+					Vector3(0, 0.34, 0))
+			var cm: StandardMaterial3D = mi.material_override
+			cm.emission_enabled = true
+			cm.emission = TarimBalance.KOROTU_EMISSION
+			cm.emission_energy_multiplier = TarimBalance.KOROTU_EMISSION_ENERJI
+			root.add_child(mi)
+		"mist_mushroom":
+			# gri sapkalar: iki mantar
+			for k in 2:
+				var ofs := Vector3(-0.10 + 0.20 * float(k), 0, 0.05 - 0.10 * float(k))
+				root.add_child(_crop_part(_crop_cyl(0.035, 0.16),
+						Color(0.78, 0.75, 0.70), ofs + Vector3(0, 0.08, 0)))
+				var sapka := SphereMesh.new()
+				sapka.radius = 0.11
+				sapka.height = 0.10
+				root.add_child(_crop_part(sapka, Color(0.52, 0.50, 0.48),
+						ofs + Vector3(0, 0.17, 0)))
+		_:
+			root.add_child(_crop_part(_crop_cyl(0.05, 0.3),
+					Color(0.4, 0.6, 0.3), Vector3(0, 0.15, 0)))
 
 func _crop_cyl(r: float, h: float) -> CylinderMesh:
 	var m := CylinderMesh.new()
@@ -8973,10 +9158,18 @@ func _describe_target(cell: Vector2i) -> Dictionary:
 	if held == "capa":
 		return {"type": "till", "cell": cell, "icon": "till",
 				"valid": _till_valid(cell), "kind": "till"}
-	if held == "tohum" and Farming.plots.has(cell):
-		return {"type": "plant", "cell": cell, "icon": "plant",
-				"valid": bool(Farming.can_plant(cell, "berry_bush").ok),
-				"kind": "plant"}
+	# TARIM-2: her tohum kendi urununu eker; sis mantari TARLASIZ
+	# (golge hucre), digerleri capalanmis tarla ister.
+	var ekim_crop := TarimBalance.crop_of_seed(held)
+	if ekim_crop != "":
+		var ekim_def: Dictionary = TarimBalance.CROPS[ekim_crop]
+		if bool(ekim_def.get("field_free", false)):
+			return {"type": "plant", "cell": cell, "icon": "plant",
+					"valid": _mantar_golge_valid(cell), "kind": "plant"}
+		if Farming.plots.has(cell):
+			return {"type": "plant", "cell": cell, "icon": "plant",
+					"valid": bool(Farming.can_plant(cell, ekim_crop).ok),
+					"kind": "plant"}
 	if held == "sulama_kabi":
 		if is_water_source(cell) or pool_at(cell) >= 0:
 			return {"type": "fillcan", "cell": cell, "icon": "fill",
@@ -11269,8 +11462,14 @@ func _update_kesif() -> void:
 	if gorunur != _fener_ui_son:
 		_fener_ui_son = gorunur
 		hud.set_fener_gorunur(gorunur)
+	# TARIM-2: Koz Corbasi gece boyu sis direnci — isik acigi affedilir,
+	# vinyet veri carpaniyla kisilir (tarim_balance.BUFFS).
+	if PlayerStats.has_buff("koz_corbasi"):
+		_isik_acik = 0
 	var v: float = KesifBalance.vinyet(_sis_yogun, _isik_acik,
 			_fener_kisik and isik >= 2)
+	if PlayerStats.has_buff("koz_corbasi"):
+		v *= float(TarimBalance.BUFFS["koz_corbasi"].get("vinyet_carpan", 1.0))
 	# KESIF 16.6 Kul Firtinasi: gorus zorla kapanir; siginakta yari.
 	if _firtina_kalan > 0.0:
 		v = KesifBalance.FIRTINA_VINYET
@@ -11513,6 +11712,13 @@ func _try_burn_kor_tas(id: String) -> bool:
 	_spawn_particles(_cell_center(cell) + Vector3(0, 1.0, 0),
 			Color(1.0, 0.55, 0.2), 14)
 	_spawn_floating_text(cell, "Kor tasi yandi — bolge canlandi", Color(1, 0.8, 0.4))
+	# TARIM-2: nadir tohum odulu (tas indeksine gore sirali; veri
+	# kesif_balance.KOR_TAS_TOHUM — derin kesif loot'una tasinacak TODO)
+	var tas_sira: int = _kor_taslari.keys().find(id)
+	if tas_sira >= 0 and not KesifBalance.KOR_TAS_TOHUM.is_empty():
+		var tohum_id: String = KesifBalance.KOR_TAS_TOHUM[
+				tas_sira % KesifBalance.KOR_TAS_TOHUM.size()]
+		_scatter_drops(cell, {tohum_id: 1})
 	# Arastirma: tas bilgisi dugumleri kademeli belirir (1./3./5. ana tas).
 	var yanik := _yanik_ana_sayisi()
 	if yanik >= 1:
@@ -12586,6 +12792,146 @@ func _apply_cim_tier() -> void:
 
 ## CIMTEST (hizli CI): materyal atamasi + TEK draw call korunumu +
 ## blade_height olcumu + kaynak paylasimi.
+## TARIM-2 KARELERI (agir CI): 6 urun OLGUN evrede yan yana (placeholder
+## kimlikleri okunur mu), tas dibek, gece Koz Corbasi isik halkasi.
+func _run_tarim2_frames(save_path: String) -> void:
+	_cam_locked = true
+	var base := _find_open_cell(2, 5, 35)
+	if base == Vector2i(-999, -999):
+		_cam_locked = false
+		return
+	var sira: Array = ["berry_bush", "earth_apple", "golden_wheat",
+			"pumpkin", "korotu", "mist_mushroom"]
+	var kurulan: Array = []
+	for k in sira.size():
+		var c := base + Vector2i(k % 3, k / 3)
+		var cid: String = sira[k]
+		if Farming.plots.has(c) or _objects.has(c) or _placed.has(c):
+			continue
+		if bool(TarimBalance.CROPS[cid].get("field_free", false)):
+			Farming.plant_free(c, cid)
+		else:
+			Farming.till_cell(c)
+			Farming.plant(c, cid)
+		Farming.plots[c].stage = int(TarimBalance.CROPS[cid]["stages"]) - 1
+		_on_plot_changed(c)
+		kurulan.append(c)
+	# Tas dibek yan hucreye
+	var dc := base + Vector2i(-1, 0)
+	if not _placed.has(dc) and not _objects.has(dc) and not Farming.plots.has(dc):
+		_set_placed(dc, "tas_dibek")
+	var merkez := _cell_center(base + Vector2i(1, 0))
+	camera.position = merkez + Vector3(-1.8, 2.4, 3.0)
+	camera.look_at(merkez + Vector3(0, 0.2, 0))
+	await get_tree().create_timer(0.7).timeout
+	_snap(save_path.replace(".png", "_tarim2_urunler.png"))
+	# GECE: Koz Corbasi isik halkasi (buff gorseli + korotu parlamasi)
+	var eski_poz := player.position
+	player.position = merkez + Vector3(1.2, 0, 0.8)
+	PlayerStats.add_buff("koz_corbasi")
+	DayNight.jump_to_night()
+	_clear_creatures()
+	await get_tree().create_timer(1.2).timeout
+	camera.position = player.position + Vector3(-2.0, 2.2, 2.8)
+	camera.look_at(player.position + Vector3(0, 0.5, 0))
+	await get_tree().create_timer(0.4).timeout
+	_snap(save_path.replace(".png", "_tarim2_corba_gece.png"))
+	DayNight.jump_to_day()
+	PlayerStats.end_night_buffs()
+	player.position = eski_poz
+	# Temizlik: kurulan tarlalar kaldirilir (dunya bozulmasin)
+	for c2: Vector2i in kurulan:
+		Farming.plots.erase(c2)
+		_on_plot_changed(c2)
+	if _placed.get(dc, "") == "tas_dibek":
+		_release_structure_cell(dc)
+		if _placed_nodes.has(dc):
+			(_placed_nodes[dc] as Node3D).queue_free()
+			_placed_nodes.erase(dc)
+	camera.position = player.position + _camera_offset()
+	await get_tree().create_timer(0.3).timeout
+	_cam_locked = false
+
+## FARMTEST2 (hizli CI, tarim-2): 6 urun dongusu + ozel kurallar.
+## korotu: gunduz tick ILERLETMEZ, gece tick ilerletir. mantar:
+## tarla/sulama olmadan golge hucrede buyur, hasatta hucre temizlenir.
+func _run_tarim2_test() -> void:
+	var hatalar: Array = []
+	# Tarlali urunler: nights kadar sulanmis tick ile olgunlasmali
+	for cid: String in ["earth_apple", "golden_wheat", "pumpkin"]:
+		var c := _find_open_cell(1, 4, 40)
+		if c == Vector2i(-999, -999):
+			hatalar.append(cid + ":hucre-yok")
+			continue
+		Farming.till_cell(c)
+		Farming.plant(c, cid)
+		var nights: int = int(TarimBalance.CROPS[cid]["nights"])
+		for i in nights:
+			Farming.plots[c].watered_today = true
+			Farming.day_tick()
+		if not Farming.can_harvest(c):
+			hatalar.append(cid + ":olgunlasmadi")
+		Farming.plots.erase(c)
+		_on_plot_changed(c)
+	# KOROTU: gunduz buyumez, gece buyur
+	var kc := _find_open_cell(1, 4, 40)
+	var korotu_ok := false
+	if kc != Vector2i(-999, -999):
+		Farming.till_cell(kc)
+		Farming.plant(kc, "korotu")
+		Farming.plots[kc].watered_today = true
+		Farming.day_tick()   # gunduz tick: ilerletMEmeli (islakligi sifirlar)
+		var gunduz_durdu: bool = int(Farming.plots[kc].stage) == 0
+		Farming.plots[kc].watered_today = true
+		Farming.night_tick()  # gece tick: ilerletmeli
+		korotu_ok = gunduz_durdu and int(Farming.plots[kc].stage) == 1
+		Farming.plots.erase(kc)
+		_on_plot_changed(kc)
+	# SIS MANTARI: golge hucre (agac dibi), tarla + sulama YOK
+	var mc := Vector2i(-999, -999)
+	for oc: Vector2i in _objects:
+		if String(_objects[oc]) != "T":
+			continue
+		for nb: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if _mantar_golge_valid(oc + nb):
+				mc = oc + nb
+				break
+		if mc != Vector2i(-999, -999):
+			break
+	var mantar_ok := false
+	var mantar_temiz := false
+	if mc != Vector2i(-999, -999):
+		Farming.plant_free(mc, "mist_mushroom")
+		Farming.day_tick()
+		Farming.day_tick()   # sulamasiz 2 tick -> olgun
+		mantar_ok = Farming.can_harvest(mc)
+		Farming.harvest_clear(mc)
+		mantar_temiz = not Farming.plots.has(mc)  # tarla birakmaz
+		_on_plot_changed(mc)
+	# BUFF cercevesi: hiz carpani + gece-boyu temizligi
+	PlayerStats.add_buff("korlu_lokma")
+	PlayerStats.add_buff("koz_corbasi")
+	var hiz_ok: bool = absf(PlayerStats.speed_mult() - 1.3) < 0.001
+	var corba_var: bool = PlayerStats.has_buff("koz_corbasi")
+	PlayerStats.end_night_buffs()
+	var safak_ok: bool = not PlayerStats.has_buff("koz_corbasi") \
+			and PlayerStats.has_buff("korlu_lokma")
+	PlayerStats.buffs.clear()
+	PlayerStats.buffs_changed.emit()
+	print(("FARMTEST2: urunler=%s korotu_gece=%s mantar=%s mantar_temiz=%s "
+			+ "hiz=%s corba=%s safak=%s") % [
+			"ok" if hatalar.is_empty() else str(hatalar), str(korotu_ok),
+			str(mantar_ok), str(mantar_temiz), str(hiz_ok), str(corba_var),
+			str(safak_ok)])
+	if not hatalar.is_empty():
+		push_error("TARIM2: urun dongusu hatasi: %s" % str(hatalar))
+	if not korotu_ok:
+		push_error("TARIM2: korotu gece kurali bozuk")
+	if not (mantar_ok and mantar_temiz):
+		push_error("TARIM2: mantar tarlasiz/sulamasiz kurali bozuk")
+	if not (hiz_ok and corba_var and safak_ok):
+		push_error("TARIM2: buff cercevesi bozuk")
+
 ## ZEMINTEST (hizli CI): zemin cayir dokusu — shader atanmis mi, maske
 ## mantigi dogru mu (cim=1, kazi/falez/yol=0), gece uniform'u bagli mi.
 func _run_zemin_test() -> void:

@@ -6,6 +6,7 @@ extends Node
 ## Hunger autoload'larında kalır (HUD/kayıt uyumu) — bu script mantığı sürer.
 
 const Balance = preload("res://scripts/survival_balance.gd")
+const TarimB = preload("res://scripts/tarim_balance.gd")
 
 signal hunger_warning       # açlık eşiğin altına düştü (HUD nabız)
 signal hunger_recovered     # eşiğin üstüne çıktı
@@ -21,6 +22,12 @@ var death_count: int = 0
 ## world3d atar (yeniden doğuş konumu için respawn_player çağrılır).
 var world: Node = null
 
+## TARIM-2 BUFF CERCEVESI: yemek etkileri. buff_id -> kalan sn
+## (GECE_BOYU = -1: safakta end_night_buffs temizler). Sayilar
+## tarim_balance.BUFFS'ta; HUD rozeti buffs_changed'i dinler.
+signal buffs_changed
+var buffs: Dictionary = {}
+
 var _nausea_time: float = 0.0
 var _was_warning: bool = false
 var _dead: bool = false
@@ -30,6 +37,7 @@ func _process(delta: float) -> void:
 		return
 	if _nausea_time > 0.0:
 		_nausea_time = maxf(0.0, _nausea_time - delta)
+	_tick_buffs(delta)
 	_tick_hunger(delta)
 	_tick_health(delta)
 
@@ -84,12 +92,56 @@ func apply_food(item_id: String) -> void:
 	Hunger.value = minf(Balance.HUNGER_MAX,
 			Hunger.value + satiation_of(item_id))
 	Hunger.changed.emit()
+	if TarimB.BUFFS.has(item_id):
+		add_buff(item_id)   # yemek adi = buff adi (koz_corbasi, korlu_lokma)
 	if item_id in Balance.RAW_MEAT_IDS and randf() < Balance.NAUSEA_CHANCE:
 		_nausea_time = Balance.NAUSEA_DURATION
 		nausea_started.emit()
 
 func is_nauseous() -> bool:
 	return _nausea_time > 0.0
+
+# --- TARIM-2: zamanli yemek etkileri -----------------------------------
+
+func _tick_buffs(delta: float) -> void:
+	var degisti := false
+	for id: String in buffs.keys():
+		if float(buffs[id]) < 0.0:
+			continue  # gece boyu: sureyle degil safakla biter
+		buffs[id] = float(buffs[id]) - delta
+		if float(buffs[id]) <= 0.0:
+			buffs.erase(id)
+			degisti = true
+	if degisti:
+		buffs_changed.emit()
+
+func add_buff(buff_id: String) -> void:
+	var tanim: Dictionary = TarimB.BUFFS.get(buff_id, {})
+	if tanim.is_empty():
+		return
+	buffs[buff_id] = -1.0 if bool(tanim.get("gece_boyu", false)) \
+			else float(tanim.get("sure_sn", 60.0))
+	buffs_changed.emit()
+
+func has_buff(buff_id: String) -> bool:
+	return buffs.has(buff_id)
+
+## Gece-boyu buff'lar safakta biter (world3d dawn'da cagirir).
+func end_night_buffs() -> void:
+	var degisti := false
+	for id: String in buffs.keys():
+		if float(buffs[id]) < 0.0:
+			buffs.erase(id)
+			degisti = true
+	if degisti:
+		buffs_changed.emit()
+
+## Hiz carpani (player3d hiz hesabina girer): korlu_lokma vb.
+func speed_mult() -> float:
+	var m := 1.0
+	for id: String in buffs:
+		m *= float(TarimB.BUFFS[id].get("hiz_carpani", 1.0))
+	return m
 
 # --- Ölüm / yeniden doğuş ----------------------------------------------
 
@@ -122,6 +174,7 @@ func from_save_data(data: Dictionary) -> void:
 ## "Yeni Oyun" / reset: sayaç ve durum sıfırlanır (Health/Hunger.reset ayrı).
 func reset() -> void:
 	death_count = 0
+	buffs.clear()
 	_nausea_time = 0.0
 	_was_warning = false
 	_dead = false

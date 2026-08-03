@@ -57,6 +57,21 @@ func plant(cell: Vector2i, crop_id: String) -> bool:
 	plot_changed.emit(cell)   # gorsel: filiz
 	return true
 
+## TARIM-2: tarla GEREKTIRMEYEN ekim (sis mantari — los/golge hucre).
+## Golge gecerliligi WORLD3D'de (_mantar_golge_valid); modul saf kalir.
+func plant_free(cell: Vector2i, crop_id: String) -> bool:
+	if plots.has(cell):
+		return false
+	var crop: Dictionary = Balance.CROPS.get(crop_id, {})
+	if not bool(crop.get("field_free", false)):
+		return false
+	var plot := _make_plot()
+	plot.crop_id = crop_id
+	plot.field_free = true
+	plots[cell] = plot
+	plot_changed.emit(cell)
+	return true
+
 # --- 3) SULAMA -------------------------------------------------------------
 func fill_watering_can() -> void:
 	watering_can_left = Balance.WATERING_CAN_USES
@@ -95,14 +110,33 @@ func day_tick() -> void:
 				plot_changed.emit(cell)
 				continue
 		else:
-			var max_stage: int = int(Balance.CROPS[plot.crop_id].stages) - 1
-			# --- ISIK KURALI BURAYA GELECEK (hikaye fazi; simdilik yok) ---
-			if bool(plot.watered_today) and int(plot.stage) < max_stage:
-				plot.stage += 1
-				plot_changed.emit(cell)
-				if int(plot.stage) == max_stage:
-					crop_harvest_ready.emit(cell)
+			var crop: Dictionary = Balance.CROPS[plot.crop_id]
+			# TARIM-2: korotu YALNIZ GECE buyur — gunduz/safak tick'i atlar
+			# (night_tick ilerletir), islaklik sifirlamasi yine burada.
+			if not bool(crop.get("night_grow", false)):
+				_advance(cell, plot, crop)
 		plot.watered_today = false   # islaklik her sabah sifirlanir
+
+## TARIM-2: aksam tick'i (world3d gece basinda cagirir) — yalniz
+## night_grow urunleri ilerletir (korotu kimligi: gece buyur).
+func night_tick() -> void:
+	for cell: Vector2i in plots.keys():
+		var plot: Dictionary = plots[cell]
+		if String(plot.crop_id) == "":
+			continue
+		var crop: Dictionary = Balance.CROPS[plot.crop_id]
+		if bool(crop.get("night_grow", false)):
+			_advance(cell, plot, crop)
+
+## Ortak buyume adimi: sulamasiz urun (no_water) islaklik sarti aramaz.
+func _advance(cell: Vector2i, plot: Dictionary, crop: Dictionary) -> void:
+	var max_stage: int = int(crop.stages) - 1
+	var sulu: bool = bool(plot.watered_today) or bool(crop.get("no_water", false))
+	if sulu and int(plot.stage) < max_stage:
+		plot.stage += 1
+		plot_changed.emit(cell)
+		if int(plot.stage) == max_stage:
+			crop_harvest_ready.emit(cell)
 
 # --- 5) HASAT ----------------------------------------------------------------
 func can_harvest(cell: Vector2i) -> bool:
@@ -119,10 +153,13 @@ func harvest_clear(cell: Vector2i) -> Dictionary:
 		return {}
 	var plot: Dictionary = plots[cell]
 	var crop: Dictionary = Balance.CROPS[plot.crop_id]
-	plot.crop_id = ""
-	plot.stage = 0
-	plot.empty_days = 0
-	plot_changed.emit(cell)   # gorsel: surulu-bos tarla
+	if bool(plot.get("field_free", false)):
+		plots.erase(cell)   # mantar tarla birakmaz — hucre eski haline
+	else:
+		plot.crop_id = ""
+		plot.stage = 0
+		plot.empty_days = 0
+	plot_changed.emit(cell)   # gorsel: surulu-bos tarla / temiz zemin
 	return crop
 
 # --- 6) KAYIT ----------------------------------------------------------------

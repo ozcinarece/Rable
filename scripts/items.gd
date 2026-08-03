@@ -39,6 +39,25 @@ const ITEMS: Dictionary = {
 	"zirh": {"name": "Zırh", "icon": "res://assets/items/zirh.png"},
 	"sapka": {"name": "Şapka", "icon": "res://assets/items/sapka.png"},
 	"tohum": {"name": "Tohum", "icon": "res://assets/items/tohum.png"},
+	# --- TARIM-2: yeni urun ailesi (ikonlar EMANET — ozel ikonlar gelince
+	# degisir: tohumlar tohum.png, yiyecekler meyve/mantar, dekor cicek) ---
+	"tohum_elma": {"name": "Elma Tohumu", "icon": "res://assets/items/tohum.png"},
+	"tohum_bugday": {"name": "Altınbaş Tohumu", "icon": "res://assets/items/tohum.png"},
+	"tohum_kabak": {"name": "Kabak Tohumu", "icon": "res://assets/items/tohum.png"},
+	"tohum_korotu": {"name": "Korotu Tohumu", "icon": "res://assets/items/tohum.png"},
+	"tohum_mantar": {"name": "Mantar Sporu", "icon": "res://assets/items/tohum.png"},
+	"toprak_elmasi": {"name": "Toprak Elması", "icon": "res://assets/items/meyve.png"},
+	"altinbas": {"name": "Altınbaş Demeti", "icon": "res://assets/items/tohum.png"},
+	"kozkabagi": {"name": "Közkabağı", "icon": "res://assets/items/meyve.png"},
+	"korotu_cicek": {"name": "Korotu Çiçeği", "icon": "res://assets/items/cicek.png"},
+	"sis_mantari": {"name": "Sis Mantarı", "icon": "res://assets/items/mantar.png"},
+	"pumpkin_decor": {"name": "Süs Kabağı", "icon": "res://assets/items/meyve.png"},
+	"un": {"name": "Un", "icon": "res://assets/items/tohum.png"},
+	"ekmek": {"name": "Ekmek", "icon": "res://assets/items/meyve.png"},
+	"koz_corbasi": {"name": "Köz Çorbası", "icon": "res://assets/items/kova.png"},
+	"mantarli_guvec": {"name": "Mantarlı Güveç", "icon": "res://assets/items/mantar.png"},
+	"korlu_lokma": {"name": "Korlu Lokma", "icon": "res://assets/items/meyve.png"},
+	"tas_dibek": {"name": "Taş Dibek", "icon": "res://assets/items/tas.png"},
 	# TARIM (tarim-3d): ikon PNG yuklenince baglanir (balta akisi gibi);
 	# simdilik 2 harf placeholder kurali devrede.
 	"capa": {"name": "Çapa", "icon": "res://assets/items/capa.png"},

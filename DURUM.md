@@ -215,3 +215,9 @@ Görsel atmosfer katmanı tamamlandı ve main'de:
   3D çim (yaprak tarlası/mikro-tutam) BAYRAKLA KAPALI, kod ve
   grass.gdshader arşivde duruyor (RAPOR_ATMOSFER.md).
 - Gece tonu tek kaynaktan: su + zemin + çiçek + yaratık ışıması.
+
+## GÜNCEL DURUM NOTU (tarim-2 sonrası)
+Tarım çeşitliliği yayında: 6 ürün (gece büyüyen korotu, sulamasız
+gölge mantarı dahil), 5 mutfak tarifi + Taş Dibek istasyonu, zamanlı
+buff çerçevesi (çorba gece ışık halkası + sis direnci, lokma hız).
+Ayrıntı RAPOR_TARIM2.md; sayılar tarim_balance.gd.

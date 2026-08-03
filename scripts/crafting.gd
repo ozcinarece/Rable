@@ -32,6 +32,14 @@ var near_station: bool = false:
 
 ## Ocak (14.3) yakinligi: pisirme istasyonu arayuzu. Pisirme tarifleri
 ## yaratik/yiyecek faziyla gelecek; simdilik bayrak hazir (kod tekrari yok).
+## TARIM-2: tas dibek (ogutme istasyonu — un) yakinligi
+var near_dibek: bool = false:
+	set(value):
+		if near_dibek == value:
+			return
+		near_dibek = value
+		station_changed.emit()
+
 var near_hearth: bool = false:
 	set(value):
 		if near_hearth == value:
@@ -63,6 +71,9 @@ func max_craftable(recipe_id: String) -> int:
 	var station: String = recipe["station"]
 	if station == "ocak":
 		if not near_hearth:
+			return 0
+	elif station == "dibek":
+		if not near_dibek:
 			return 0
 	elif station != "" and not near_station:
 		return 0

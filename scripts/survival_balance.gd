@@ -34,6 +34,16 @@ const FOOD_SATIATION: Dictionary = {
 	"mantar": 10.0,      # mevcut toplanabilir
 	"cig_et": 15.0,      # raw_meat (kaynak: hayvan — yaratık fazı)
 	"pismis_et": 40.0,   # cooked_meat (ocak/kamp ateşinde pişer)
+	# --- TARIM-2 (görev tablosu): çiğ ürünler + mutfak yemekleri.
+	# altinbas (Altınbaş) BİLEREK YOK: çiğ yenmez (görev kuralı).
+	# korotu_cicek de yok: malzeme (Korlu Lokma bileşeni).
+	"toprak_elmasi": 15.0,
+	"kozkabagi": 10.0,
+	"sis_mantari": 8.0,
+	"ekmek": 45.0,
+	"koz_corbasi": 35.0,     # + gece boyu buff (tarim_balance.BUFFS)
+	"mantarli_guvec": 50.0,
+	"korlu_lokma": 25.0,     # + 3 dk hızlı yürüme
 }
 ## Çiğ et caydırıcısı: %20 şansla kısa mide bulantısı (açlık 2x hızlı azalır).
 ## Hastalık sistemi YOK — basit tutuldu.

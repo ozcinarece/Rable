@@ -143,4 +143,22 @@ const CRAFT_RECIPES: Dictionary = {
 	# artinca baglanacak (GAME_DESIGN 2); simdilik tek tarif yeter.
 	"pismis_et": {"output": {"pismis_et": 1}, "cost": {"cig_et": 1},
 			"station": "ocak", "category": "pisirme", "time": 3.0},
+	# --- TARIM-2 MUTFAK (gorev tablosu). Su "dolu kova" ile gelir;
+	# bos kova ciktida GERI verilir (kap kaybolmaz).
+	"un": {"output": {"un": 1}, "cost": {"altinbas": 2},
+			"station": "dibek", "category": "pisirme", "time": 3.0},
+	"ekmek": {"output": {"ekmek": 1}, "cost": {"un": 2},
+			"station": "ocak", "category": "pisirme", "time": 4.0},
+	"koz_corbasi": {"output": {"koz_corbasi": 1, "kova": 1},
+			"cost": {"kozkabagi": 1, "kova_dolu": 1},
+			"station": "ocak", "category": "pisirme", "time": 4.0},
+	"mantarli_guvec": {"output": {"mantarli_guvec": 1, "kova": 1},
+			"cost": {"sis_mantari": 1, "cig_et": 1, "kova_dolu": 1},
+			"station": "ocak", "category": "pisirme", "time": 5.0},
+	"korlu_lokma": {"output": {"korlu_lokma": 1},
+			"cost": {"un": 1, "korotu_cicek": 1},
+			"station": "ocak", "category": "pisirme", "time": 3.0},
+	# TAS DIBEK: tek islevi ogutme (arastirma: tarim dali farming_basics)
+	"tas_dibek": {"output": {"tas_dibek": 1}, "cost": {"tas": 3},
+			"station": "tezgah", "category": "tarim", "time": 3.0},
 }
