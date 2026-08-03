@@ -144,9 +144,9 @@ const PLACE_MODELS := {
 	"mesale": {"model": "res://assets/models/tools/campfire-stand.glb",
 			"h": 0.7, "solid": false,
 			"behavior": "torch", "max_hp": 30},
-	# TARIM-2: TAS DIBEK — ogutme istasyonu (un). GLB kancasi dosya-bekler;
-	# gelene kadar proseduerel canak (_build_dibek_visual).
-	"tas_dibek": {"model": "res://assets/models/crops/tas_dibek.glb",
+	# TARIM-2: TAS DIBEK — ogutme istasyonu (un). Model GELDI (paralel
+	# oturum: stone_mortar.glb, dokulu Meshy); proseduerel canak yedek.
+	"tas_dibek": {"model": "res://assets/models/structures/stone_mortar.glb",
 			"h": 0.45, "solid": true, "behavior": "station", "max_hp": 60},
 	# KESIF 16.4: yol koru yere konunca MINI KAMP ATESI olur (isik cemberi
 	# + pisirme + kayit noktasi). Yerlestirme isik kapisina tabidir.
