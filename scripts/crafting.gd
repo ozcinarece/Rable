@@ -54,6 +54,10 @@ var queue: Array = []
 ## Envanter dolu oldugu icin teslim bekleniyor mu? (HUD uyari gosterir)
 var blocked: bool = false
 
+## ACILIS: sinematik baslangicta balta/kazma DEFTERE kadar kilitli
+## (liste bos = etkisiz; world3d yonetir, defter okununca temizlenir).
+var acilis_kilit: Array = []
+
 ## Tarif SU AN 1 adet uretilebilir mi? (istasyon + kaynak kontrolu)
 func can_craft(recipe_id: String) -> bool:
 	return max_craftable(recipe_id) >= 1
@@ -62,6 +66,8 @@ func can_craft(recipe_id: String) -> bool:
 func max_craftable(recipe_id: String) -> int:
 	# Arastirma kapisi: bir arastirma dugumune bagli tarifler yalnizca
 	# dugum acildiginda uretilebilir (bagli olmayanlar serbesttir)
+	if recipe_id in acilis_kilit:
+		return 0  # acilis: defter okunana kadar gizli bilgi
 	var research := get_node_or_null("/root/Research")
 	if research != null and not research.is_recipe_unlocked(recipe_id):
 		return 0
