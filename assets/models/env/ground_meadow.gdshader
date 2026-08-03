@@ -95,13 +95,25 @@ void fragment() {
     col.b *= 1.0 - (wv - 0.5) * 1.2 * warm_variation * m;
 
     // --- İNCE BENEKLER: koyu + açık noktacıklar ---
+    // ANTI-ALIAS: sert step yerine fwidth'li smoothstep (uzakta moire/
+    // cizgi deseni yapmasin) + MESAFE SONUMU: benekler kameradan
+    // uzaklastikca kaybolur (uzakta zaten secilemezler, aliasing biter)
     if (quality > 0) {
-        float n1 = vnoise(w * speckle_scale);
-        float n2 = vnoise(w * speckle_scale * 1.9 + 41.2);
-        float dark_dot = step(1.0 - speckle_density * 0.5, n1);
-        float lite_dot = step(1.0 - speckle_density * 0.35, n2);
-        col *= 1.0 - dark_dot * speckle_amount * m;
-        col *= 1.0 + lite_dot * speckle_amount * 1.2 * m;
+        float cam_d = length(v_world - CAMERA_POSITION_WORLD);
+        float dist_fade = 1.0 - smoothstep(speckle_fade_start, speckle_fade_end, cam_d);
+        if (dist_fade > 0.001) {
+            float n1 = vnoise(w * speckle_scale);
+            float n2 = vnoise(w * speckle_scale * 1.9 + 41.2);
+            float aa1 = fwidth(n1) * 1.5;
+            float aa2 = fwidth(n2) * 1.5;
+            float th1 = 1.0 - speckle_density * 0.5;
+            float th2 = 1.0 - speckle_density * 0.35;
+            float dark_dot = smoothstep(th1 - aa1, th1 + aa1, n1);
+            float lite_dot = smoothstep(th2 - aa2, th2 + aa2, n2);
+            float k = speckle_amount * m * dist_fade;
+            col *= 1.0 - dark_dot * k;
+            col *= 1.0 + lite_dot * k * 1.2;
+        }
     }
 
     // --- GECE ---
