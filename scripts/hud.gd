@@ -2696,6 +2696,18 @@ func acilis_barlari_gizle() -> void:
 func bar_dogdu(ad: String) -> bool:
 	return _stat_rows.has(ad) and (_stat_rows[ad] as Control).visible
 
+## SLICETEST toparlamasi: tum barlari geri getir (animasyonsuz).
+func acilis_barlari_geri() -> void:
+	for ad: String in _stat_rows:
+		(_stat_rows[ad] as Control).visible = true
+
+## SLICETEST sorgulari (dis dunya ic alanlara dokunmasin).
+func todo_gorunur() -> bool:
+	return _todo_kart != null and _todo_kart.visible
+
+func siyah_gorunur() -> bool:
+	return _acilis_fade != null and _acilis_fade.visible
+
 func bar_dogur(ad: String) -> void:
 	if not _stat_rows.has(ad):
 		return

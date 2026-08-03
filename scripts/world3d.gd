@@ -547,7 +547,7 @@ func _setup_screenshot(save_path: String) -> void:
 	# "tam" (varsayilan): butun gorsel akis (kareler + vitrin + sondalar).
 	# Ayrim CI is akisinda RABLE_TEST_LEVEL ile veriliyor.
 	if OS.get_environment("RABLE_TEST_LEVEL") == "hizli":
-		_run_fast_tests()
+		await _run_fast_tests()
 		return
 	# STIL: animasyonlu Meshy karakteri — skinned olcek fix'i (_fix_skinned_scale)
 	# Armature 0.01 olcegini kemik pozlarindan duzeltir.
@@ -1570,6 +1570,7 @@ func _run_fast_tests() -> void:
 	_run_yol_test()
 	_run_kesif_perf()
 	_run_save_load_selftest()
+	await _run_slice_test()
 	print("FASTTESTS: bitti")
 	get_tree().quit()
 
@@ -6129,6 +6130,86 @@ func _acilis_defter_okundu() -> void:
 	hud.todo_goster(AcilisBalance.G1_TODO_BALTA)
 	_acilis_kontrol()
 
+## SLICETEST: acilis sahnesinin IKI modu (gorev sarti). En sonda kosar
+## cunku oyun durumunu (gun, aclik, envanter, HUD) bilincli bozar.
+## 1) HIZLI BASLAT: test/debug yolu — to-do karti ve siyah ekran
+##    GELMEMELI; ocak yanik, tarifler acik, aclik HIZLI_ACLIK.
+## 2) SINEMATIK: tam zincir, sureler TEST_SURE_CARPAN ile kisaltilmis:
+##    Gun 0 (todo "Ocagi yak") -> ocak dokunusu -> Gun 1 (aclik dogumu)
+##    -> meyve 3 -> defter (tarifler acilir) -> balta -> todo kaybolur.
+func _run_slice_test() -> void:
+	var hata := 0
+	# --- Mod 1: hizli baslat -------------------------------------------
+	if _acilis_sinematik_mi():
+		push_error("SLICETEST: test ortaminda sinematik mod secildi")
+		hata += 1
+	_acilis_hizli_baslat()
+	if _acilis_durum != 2 or not Crafting.acilis_kilit.is_empty():
+		push_error("SLICETEST: hizli baslat durum/kilit yanlis")
+		hata += 1
+	if hud.todo_gorunur() or hud.siyah_gorunur():
+		push_error("SLICETEST: hizli baslatta to-do/siyah ekran gorundu")
+		hata += 1
+	var oc := _camp_at("ocak")
+	if oc == Vector2i(-999, -999) or String(_placed.get(oc, "")) != "ocak":
+		push_error("SLICETEST: hizli baslatta kamp ocagi yanik degil")
+		hata += 1
+	var hizli_aclik := Hunger.value
+	if absf(hizli_aclik - AcilisBalance.HIZLI_ACLIK) > 0.5:
+		push_error("SLICETEST: hizli baslat acligi %.0f (beklenen %.0f)"
+				% [hizli_aclik, AcilisBalance.HIZLI_ACLIK])
+		hata += 1
+	# --- Mod 2: sinematik zincir (kisaltilmis surelerle) ----------------
+	# Onceki testlerden (FELLTEST vb.) envanterde balta kalmis olabilir;
+	# zincir balta ADEDINE bakar (gercek yeni oyunda envanter bos) —
+	# simulasyon icin sifirla.
+	var eski_balta := Inventory.get_count("balta")
+	if eski_balta > 0:
+		Inventory.remove_item("balta", eski_balta)
+	_acilis_sure = AcilisBalance.TEST_SURE_CARPAN
+	await _acilis_baslat()
+	if _acilis_durum != 0 or not hud.todo_gorunur():
+		push_error("SLICETEST: Gun 0 kurulamadi (durum=%d)" % _acilis_durum)
+		hata += 1
+	if Crafting.max_craftable("balta") != 0:
+		push_error("SLICETEST: tarif kilidi calismiyor (balta uretilebilir)")
+		hata += 1
+	await _acilis_ocak_dokun()
+	if _acilis_durum != 1 or _acilis_adim != 0 or not _acilis_g01:
+		push_error("SLICETEST: Gun 1'e gecis bozuk (durum=%d adim=%d g01=%s)"
+				% [_acilis_durum, _acilis_adim, str(_acilis_g01)])
+		hata += 1
+	if DayNight.day != 1 or absf(Hunger.value - AcilisBalance.G1_ACLIK_BASLANGIC) > 0.5:
+		push_error("SLICETEST: Gun 1 gunu/acligi yanlis")
+		hata += 1
+	if not hud.bar_dogdu("mide"):
+		push_error("SLICETEST: aclik bari dogmadi")
+		hata += 1
+	Inventory.add_item("meyve", AcilisBalance.G1_YIYECEK_HEDEF)
+	await get_tree().create_timer(0.6).timeout  # todo_tamam animasyonu
+	if _acilis_adim != 1:
+		push_error("SLICETEST: yiyecek adimi gecilmedi (adim=%d)" % _acilis_adim)
+		hata += 1
+	await _acilis_defter_okundu()
+	await get_tree().create_timer(0.6).timeout
+	if _acilis_adim != 2 or not Crafting.acilis_kilit.is_empty():
+		push_error("SLICETEST: defter tarifleri acmadi (adim=%d)" % _acilis_adim)
+		hata += 1
+	Inventory.add_item("balta", 1)
+	await get_tree().create_timer(1.8).timeout  # tamam+son mesaj+gizle
+	if _acilis_durum != 2 or hud.todo_gorunur():
+		push_error("SLICETEST: balta sonrasi kapanis bozuk (durum=%d)"
+				% _acilis_durum)
+		hata += 1
+	print("SLICETEST: hizli(aclik=%.0f todo=%s) sinematik(g01=%s durum=%d) hata=%d"
+			% [hizli_aclik, str(hud.todo_gorunur()), str(_acilis_g01),
+			_acilis_durum, hata])
+	# Toparlama: barlar geri, sure normale, baglanti coz.
+	hud.acilis_barlari_geri()
+	_acilis_sure = 1.0
+	if Inventory.changed.is_connected(_acilis_kontrol):
+		Inventory.changed.disconnect(_acilis_kontrol)
+
 ## KAMP ENKAZI sokumu: dekor dugumu kaldirilir, salvage malzemesi yere
 ## sacilir, hucre kalici isaretlenir (kayit + _build_spawn_camp atlar).
 func _try_enkaz_sok(cell: Vector2i) -> bool:
@@ -6982,10 +7063,15 @@ func _fell_impact(kayit: Dictionary) -> void:
 ## Erime: odunlar SACILIR + govde alpha-fade ile kuculup gomulur.
 func _fell_melt(kayit: Dictionary) -> void:
 	_fell_finish(kayit)
+	# Gorsel, coroutine uyanmadan temizlenmis olabilir (ornegin testler
+	# koşuyu uzatinca FELLTEST agaci coktan silinmis olur). Freed nesneyi
+	# TIPLI degiskene atamak 4.7'de SCRIPT ERROR — once dogrula.
+	if not is_instance_valid(kayit.get("mi")) \
+			or not is_instance_valid(kayit.get("pivot")):
+		_fells.erase(kayit)
+		return
 	var mi: MeshInstance3D = kayit["mi"]
 	var pivot: Node3D = kayit["pivot"]
-	if mi == null or not is_instance_valid(mi):
-		return
 	# Alpha fade: mesh materyalleri PAYLASIMLI (MultiMesh ile ortak) —
 	# yalniz bu kopya icin yuzey override kopyalari acilir.
 	var mats: Array = []
