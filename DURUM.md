@@ -230,3 +230,16 @@ main'in hızlı paketinde her push doğrulanıyor — bu denetimde de yeşil:
 NIGHTTEST beklenen=4 dogan=4 daze/duvar/isik=true safak_kalan=0;
 FELLTEST devrildi/hat/toplandi=true odun=3 eszamanli=5. İki dal artık
 güvenle silinebilir (arşiv istenirse dursun).
+
+## GÜNCEL DURUM NOTU (acilis-sahnesi — dalda, merge bekliyor)
+Açılış sahnesi hazır: Gün 0 "Doğum" (siyah → gece kampı, HUD yok,
+"Neredeyim?", to-do "🔥 Ocağı yak", dokunuşla alev + "…geldin." +
+G-01 bayrağı) ve Gün 1 "Açlık ve emek" (açlık barı İHTİYAÇLA doğar
+%60'ta; yiyecek 0/3 → kampı araştır + not defteri balta/kazma
+tariflerini açar → balta yap → "Artık hazırsın."). Debug F5 = HIZLI
+BAŞLAT (açılış atlanır: ocak yanık, tarifler açık, açlık %80 — test
+akışı BUGÜNKÜYLE AYNI); `--acilis` sinematiği zorlar; release'te
+sinematik varsayılan. Kayıtta durum paketi; Gün 0 yarım kalırsa
+baştan. SLICETEST iki modu da CI'da doğruluyor. Yol boyu iki gizli
+bug düzeldi (devrilme tweeni freed-lambda seli; HUD gizleme listesi).
+Ayrıntı RAPOR_ACILIS.md; sayılar/metinler acilis_balance.gd.
