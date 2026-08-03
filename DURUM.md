@@ -221,3 +221,12 @@ Tarım çeşitliliği yayında: 6 ürün (gece büyüyen korotu, sulamasız
 gölge mantarı dahil), 5 mutfak tarifi + Taş Dibek istasyonu, zamanlı
 buff çerçevesi (çorba gece ışık halkası + sis direnci, lokma hız).
 Ayrıntı RAPOR_TARIM2.md; sayılar tarim_balance.gd.
+
+## DAL DENETİMİ (yaratik-ai + agac-kesim, kullanıcı isteği)
+İki dal da main'e ÇOKTAN merge edilmiş — `origin/main..origin/yaratik-ai`
+ve `origin/main..origin/agac-kesim` fark commit'i: 0 (rebase edilecek
+yeni iş yok; yeniden merge boş işlem olurdu). İçerikleri yayında ve
+main'in hızlı paketinde her push doğrulanıyor — bu denetimde de yeşil:
+NIGHTTEST beklenen=4 dogan=4 daze/duvar/isik=true safak_kalan=0;
+FELLTEST devrildi/hat/toplandi=true odun=3 eszamanli=5. İki dal artık
+güvenle silinebilir (arşiv istenirse dursun).
