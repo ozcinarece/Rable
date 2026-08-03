@@ -654,6 +654,7 @@ func _setup_screenshot(save_path: String) -> void:
 	camera.look_at(Vector3(float(fbase.x) + 1.5, 0.15, float(fbase.y) + 0.5))
 	await get_tree().create_timer(0.5).timeout
 	_snap(save_path.replace(".png", "_tarim.png"))
+	await _run_tarim2_frames(save_path)  # TARIM-2: 6 urun + dibek + corba
 	# YENI OZELLIK KARELERI ONE ALINDI: tur CI zaman butcesini asinca
 	# sondaki kareler hic cekilmiyordu (agac-kesim turunda olculdu —
 	# kesim kareleri bos kaldi). Yeni is her zaman butcenin basinda.
@@ -1550,6 +1551,7 @@ func _run_fast_tests() -> void:
 	_run_uzak_test()
 	_run_cim_test()
 	_run_zemin_test()
+	_run_tarim2_test()
 	_run_night_logic_test()
 	_run_fence_test()
 	_run_fell_test()
@@ -12790,6 +12792,146 @@ func _apply_cim_tier() -> void:
 
 ## CIMTEST (hizli CI): materyal atamasi + TEK draw call korunumu +
 ## blade_height olcumu + kaynak paylasimi.
+## TARIM-2 KARELERI (agir CI): 6 urun OLGUN evrede yan yana (placeholder
+## kimlikleri okunur mu), tas dibek, gece Koz Corbasi isik halkasi.
+func _run_tarim2_frames(save_path: String) -> void:
+	_cam_locked = true
+	var base := _find_open_cell(2, 5, 35)
+	if base == Vector2i(-999, -999):
+		_cam_locked = false
+		return
+	var sira: Array = ["berry_bush", "earth_apple", "golden_wheat",
+			"pumpkin", "korotu", "mist_mushroom"]
+	var kurulan: Array = []
+	for k in sira.size():
+		var c := base + Vector2i(k % 3, k / 3)
+		var cid: String = sira[k]
+		if Farming.plots.has(c) or _objects.has(c) or _placed.has(c):
+			continue
+		if bool(TarimBalance.CROPS[cid].get("field_free", false)):
+			Farming.plant_free(c, cid)
+		else:
+			Farming.till_cell(c)
+			Farming.plant(c, cid)
+		Farming.plots[c].stage = int(TarimBalance.CROPS[cid]["stages"]) - 1
+		_on_plot_changed(c)
+		kurulan.append(c)
+	# Tas dibek yan hucreye
+	var dc := base + Vector2i(-1, 0)
+	if not _placed.has(dc) and not _objects.has(dc) and not Farming.plots.has(dc):
+		_set_placed(dc, "tas_dibek")
+	var merkez := _cell_center(base + Vector2i(1, 0))
+	camera.position = merkez + Vector3(-1.8, 2.4, 3.0)
+	camera.look_at(merkez + Vector3(0, 0.2, 0))
+	await get_tree().create_timer(0.7).timeout
+	_snap(save_path.replace(".png", "_tarim2_urunler.png"))
+	# GECE: Koz Corbasi isik halkasi (buff gorseli + korotu parlamasi)
+	var eski_poz := player.position
+	player.position = merkez + Vector3(1.2, 0, 0.8)
+	PlayerStats.add_buff("koz_corbasi")
+	DayNight.jump_to_night()
+	_clear_creatures()
+	await get_tree().create_timer(1.2).timeout
+	camera.position = player.position + Vector3(-2.0, 2.2, 2.8)
+	camera.look_at(player.position + Vector3(0, 0.5, 0))
+	await get_tree().create_timer(0.4).timeout
+	_snap(save_path.replace(".png", "_tarim2_corba_gece.png"))
+	DayNight.jump_to_day()
+	PlayerStats.end_night_buffs()
+	player.position = eski_poz
+	# Temizlik: kurulan tarlalar kaldirilir (dunya bozulmasin)
+	for c2: Vector2i in kurulan:
+		Farming.plots.erase(c2)
+		_on_plot_changed(c2)
+	if _placed.get(dc, "") == "tas_dibek":
+		_release_structure_cell(dc)
+		if _placed_nodes.has(dc):
+			(_placed_nodes[dc] as Node3D).queue_free()
+			_placed_nodes.erase(dc)
+	camera.position = player.position + _camera_offset()
+	await get_tree().create_timer(0.3).timeout
+	_cam_locked = false
+
+## FARMTEST2 (hizli CI, tarim-2): 6 urun dongusu + ozel kurallar.
+## korotu: gunduz tick ILERLETMEZ, gece tick ilerletir. mantar:
+## tarla/sulama olmadan golge hucrede buyur, hasatta hucre temizlenir.
+func _run_tarim2_test() -> void:
+	var hatalar: Array = []
+	# Tarlali urunler: nights kadar sulanmis tick ile olgunlasmali
+	for cid: String in ["earth_apple", "golden_wheat", "pumpkin"]:
+		var c := _find_open_cell(1, 4, 40)
+		if c == Vector2i(-999, -999):
+			hatalar.append(cid + ":hucre-yok")
+			continue
+		Farming.till_cell(c)
+		Farming.plant(c, cid)
+		var nights: int = int(TarimBalance.CROPS[cid]["nights"])
+		for i in nights:
+			Farming.plots[c].watered_today = true
+			Farming.day_tick()
+		if not Farming.can_harvest(c):
+			hatalar.append(cid + ":olgunlasmadi")
+		Farming.plots.erase(c)
+		_on_plot_changed(c)
+	# KOROTU: gunduz buyumez, gece buyur
+	var kc := _find_open_cell(1, 4, 40)
+	var korotu_ok := false
+	if kc != Vector2i(-999, -999):
+		Farming.till_cell(kc)
+		Farming.plant(kc, "korotu")
+		Farming.plots[kc].watered_today = true
+		Farming.day_tick()   # gunduz tick: ilerletMEmeli (islakligi sifirlar)
+		var gunduz_durdu: bool = int(Farming.plots[kc].stage) == 0
+		Farming.plots[kc].watered_today = true
+		Farming.night_tick()  # gece tick: ilerletmeli
+		korotu_ok = gunduz_durdu and int(Farming.plots[kc].stage) == 1
+		Farming.plots.erase(kc)
+		_on_plot_changed(kc)
+	# SIS MANTARI: golge hucre (agac dibi), tarla + sulama YOK
+	var mc := Vector2i(-999, -999)
+	for oc: Vector2i in _objects:
+		if String(_objects[oc]) != "T":
+			continue
+		for nb: Vector2i in [Vector2i(1, 0), Vector2i(-1, 0), Vector2i(0, 1), Vector2i(0, -1)]:
+			if _mantar_golge_valid(oc + nb):
+				mc = oc + nb
+				break
+		if mc != Vector2i(-999, -999):
+			break
+	var mantar_ok := false
+	var mantar_temiz := false
+	if mc != Vector2i(-999, -999):
+		Farming.plant_free(mc, "mist_mushroom")
+		Farming.day_tick()
+		Farming.day_tick()   # sulamasiz 2 tick -> olgun
+		mantar_ok = Farming.can_harvest(mc)
+		Farming.harvest_clear(mc)
+		mantar_temiz = not Farming.plots.has(mc)  # tarla birakmaz
+		_on_plot_changed(mc)
+	# BUFF cercevesi: hiz carpani + gece-boyu temizligi
+	PlayerStats.add_buff("korlu_lokma")
+	PlayerStats.add_buff("koz_corbasi")
+	var hiz_ok: bool = absf(PlayerStats.speed_mult() - 1.3) < 0.001
+	var corba_var: bool = PlayerStats.has_buff("koz_corbasi")
+	PlayerStats.end_night_buffs()
+	var safak_ok: bool = not PlayerStats.has_buff("koz_corbasi") \
+			and PlayerStats.has_buff("korlu_lokma")
+	PlayerStats.buffs.clear()
+	PlayerStats.buffs_changed.emit()
+	print(("FARMTEST2: urunler=%s korotu_gece=%s mantar=%s mantar_temiz=%s "
+			+ "hiz=%s corba=%s safak=%s") % [
+			"ok" if hatalar.is_empty() else str(hatalar), str(korotu_ok),
+			str(mantar_ok), str(mantar_temiz), str(hiz_ok), str(corba_var),
+			str(safak_ok)])
+	if not hatalar.is_empty():
+		push_error("TARIM2: urun dongusu hatasi: %s" % str(hatalar))
+	if not korotu_ok:
+		push_error("TARIM2: korotu gece kurali bozuk")
+	if not (mantar_ok and mantar_temiz):
+		push_error("TARIM2: mantar tarlasiz/sulamasiz kurali bozuk")
+	if not (hiz_ok and corba_var and safak_ok):
+		push_error("TARIM2: buff cercevesi bozuk")
+
 ## ZEMINTEST (hizli CI): zemin cayir dokusu — shader atanmis mi, maske
 ## mantigi dogru mu (cim=1, kazi/falez/yol=0), gece uniform'u bagli mi.
 func _run_zemin_test() -> void:
