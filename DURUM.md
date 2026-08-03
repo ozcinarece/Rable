@@ -201,3 +201,17 @@ overlay'i — bu denetim sırasında düzeltilip 01:19 APK'da yayınlandı.)
 5. **Ses ilk adımı (vuruş/kırılma SFX):** Veri kancaları hazır; küçük işle
    oyun hissi büyük sıçrar (mobilde önemli). Branch temizliği de (bayat 8
    branch + alet-gorsel-fix kapanışı) bu arada 10 dakikalık iş.
+
+---
+
+## GÜNCEL DURUM NOTU (atmosfer-final sonrası)
+
+Görsel atmosfer katmanı tamamlandı ve main'de:
+- **Su v2.1**: 3 yönlü gerçek dalga + ince/kesikli/yarı saydam köpük +
+  kıyı soluması; parlaklık kullanıcı isteğiyle 0'a yakın
+  (RAPOR_SUSHADER.md).
+- **Zemin çayır dokusu**: ground_meadow.gdshader zemin chunk'larında —
+  benek/leke/sıcak-serin yalnız çayır maskesinde (vertex ALPHA);
+  3D çim (yaprak tarlası/mikro-tutam) BAYRAKLA KAPALI, kod ve
+  grass.gdshader arşivde duruyor (RAPOR_ATMOSFER.md).
+- Gece tonu tek kaynaktan: su + zemin + çiçek + yaratık ışıması.
