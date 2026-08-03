@@ -2729,9 +2729,9 @@ func bar_dogur(ad: String) -> void:
 ## HUD'i topyekun gizle/geri getir (Gun 0: "sadece dunya").
 func set_acilis_gizli(gizli: bool) -> void:
 	var hedefler: Array = [get_node_or_null("StatsPanel"), hotbar_strip,
-			craft_button, research_button, get_node_or_null("BagButton"),
-			get_node_or_null("DayChip"), get_node_or_null("SettingsButton"),
-			get_node_or_null("ActionCluster"), get_node_or_null("MoveButton")]
+			craft_button, research_button, inventory_button, day_pill,
+			reset_button, action_button, attack_button, move_button,
+			_fener_btn]
 	if gizli:
 		_acilis_gizli_liste.clear()
 		for n in hedefler:
@@ -2807,7 +2807,11 @@ func todo_goster(metin: String) -> void:
 		_todo_yazi.add_theme_font_size_override("font_size", 16)
 		_todo_yazi.add_theme_color_override("font_color", Color(0.29, 0.22, 0.16))
 		_todo_kart.add_child(_todo_yazi)
+		# Sag-orta: kart SOLA dogru buyur (varsayilan sag kenardan disari
+		# tasiyordu — ilk karede ekranda gorunmedi).
 		_todo_kart.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+		_todo_kart.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		_todo_kart.offset_right = -14.0
 		add_child(_todo_kart)
 	if not _todo_kart.visible:
 		_todo_kart.visible = true
