@@ -111,6 +111,7 @@ const BUFFS := {
 		"ad": "Köz Çorbası",
 		"gece_boyu": true,          # sure: gece bitene kadar
 		"sis_direnci": true,        # sis/soguk cezalarina bagisiklik
+		"vinyet_carpan": 0.25,      # sis vinyeti bu carpanla kisilir
 		"isik_halka_yaricap": 2.6,  # oyuncu cevresi kucuk isik halkasi (m)
 		"isik_halka_enerji": 0.9,
 		"ikon": "res://assets/items/koz_corbasi.png",

@@ -1169,7 +1169,9 @@ func _physics_process(delta: float) -> void:
 	_exerting_move = running  # efor: kosma aclik carpanini artirir (yasam)
 	if not _swinging:  # saldiri animasyonunu ezme
 		_play(_anim_run if running else _anim_walk)
-	var speed := (RUN_SPEED if running else SPEED) * water_factor * action_factor
+	# TARIM-2: yemek buff'i (korlu_lokma 3 dk hizli yurume) carpani
+	var speed := (RUN_SPEED if running else SPEED) * water_factor \
+			* action_factor * PlayerStats.speed_mult()
 	_try_move(Vector3(dir.x, 0, dir.y) * speed * delta)
 	# Yuruyus yonune yumusakca don (model +Z yonune bakar)
 	var target_angle := atan2(dir.x, dir.y)

@@ -51,7 +51,7 @@ const NODES: Dictionary = {
 			"unlocks": ["furnace"], "hidden": false},  # K2 KAVSAGI
 	"farming_basics": {"branch": "muhendislik", "prereq": "workbench_node",
 			"cost": {"wood": 4, "stone": 2},
-			"unlocks": ["hoe", "watering_pot", "capa", "sulama_kabi"],
+			"unlocks": ["hoe", "watering_pot", "capa", "sulama_kabi", "tas_dibek"],
 			"hidden": false},
 	"brick_making": {"branch": "istasyonlar", "prereq": "furnace_node",
 			"cost": {"clay": 6}, "unlocks": ["brick", "brick_wall"],

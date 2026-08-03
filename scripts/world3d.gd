@@ -144,6 +144,10 @@ const PLACE_MODELS := {
 	"mesale": {"model": "res://assets/models/tools/campfire-stand.glb",
 			"h": 0.7, "solid": false,
 			"behavior": "torch", "max_hp": 30},
+	# TARIM-2: TAS DIBEK — ogutme istasyonu (un). GLB kancasi dosya-bekler;
+	# gelene kadar proseduerel canak (_build_dibek_visual).
+	"tas_dibek": {"model": "res://assets/models/crops/tas_dibek.glb",
+			"h": 0.45, "solid": true, "behavior": "station", "max_hp": 60},
 	# KESIF 16.4: yol koru yere konunca MINI KAMP ATESI olur (isik cemberi
 	# + pisirme + kayit noktasi). Yerlestirme isik kapisina tabidir.
 	"yol_koru": {"model": "res://assets/models/tools/campfire-pit.glb",
@@ -408,6 +412,7 @@ func _ready() -> void:
 	Farming.plot_changed.connect(_on_plot_changed)
 	DayNight.dawn_started.connect(_on_farm_dawn)
 	DayNight.night_started.connect(_on_farm_night)
+	PlayerStats.buffs_changed.connect(_update_buff_gorsel)
 	DayNight.dawn_started.connect(_on_kesif_dawn)  # 16.4 sefer sabahi
 	hud.fener_kisik_toggled.connect(set_fener_kisik)  # 16.5 stealth
 	# GECE DALGASI (minimal): kanca artik BOS degil — gece dogur, safakta erit.
@@ -7834,6 +7839,8 @@ func _build_structure_visual(item_id: String) -> Node3D:
 	# ground_height ile eslesir; oyuncu deck ustunde durur.
 	if item_id == "platform":
 		return _build_platform_visual()
+	if item_id == "tas_dibek" and not ResourceLoader.exists(String(def["model"])):
+		return _build_dibek_visual()
 	if item_id == "merdiven":
 		return _build_ladder_visual()
 	if item_id == "kazik":
@@ -7871,6 +7878,26 @@ func _build_structure_visual(item_id: String) -> Node3D:
 ## bir kenarda basamak (holder donunce basamak yonu secilir). Prosedurel;
 ## boyut ground_height ile eslesir (deck ust yuzu local y=1.5).
 const PLATFORM_HEIGHT := 1.5
+## TARIM-2: tas dibek placeholder — alcak tas canak (govde + oyuk agiz
+## izlenimi veren koyu kapak) + havan eli (yatik silindir).
+func _build_dibek_visual() -> Node3D:
+	var root := Node3D.new()
+	var govde := CylinderMesh.new()
+	govde.top_radius = 0.22
+	govde.bottom_radius = 0.26
+	govde.height = 0.30
+	root.add_child(_crop_part(govde, Color(0.58, 0.56, 0.52), Vector3(0, 0.15, 0)))
+	var agiz := CylinderMesh.new()
+	agiz.top_radius = 0.15
+	agiz.bottom_radius = 0.15
+	agiz.height = 0.03
+	root.add_child(_crop_part(agiz, Color(0.30, 0.28, 0.26), Vector3(0, 0.31, 0)))
+	var el := _crop_cyl(0.045, 0.34)
+	var el_mi := _crop_part(el, Color(0.46, 0.36, 0.26), Vector3(0.16, 0.36, 0.0))
+	el_mi.rotation_degrees = Vector3(0, 0, 55)
+	root.add_child(el_mi)
+	return root
+
 func _build_platform_visual() -> Node3D:
 	var holder := Node3D.new()
 	var wood := Color(0.58, 0.40, 0.24)
@@ -8275,6 +8302,7 @@ func _update_station_proximity() -> void:
 	var near_bench := false
 	var near_res := false
 	var near_hearth := false
+	var near_dibek := false
 	# CIHAZ HATASI ("tezgahin yanindayim ama uzaktasin diyor"): yaricap 3x3
 	# idi. Oyuncu carpisma yaricapi yuzunden tezgaha 1 hucreden fazla
 	# yaklasamiyor; kose/capraz duruslarda hucre farki 2'ye cikip kapi
@@ -8286,6 +8314,8 @@ func _update_station_proximity() -> void:
 					near_bench = true
 				"arastirma_masasi":
 					near_res = true
+				"tas_dibek":
+					near_dibek = true   # TARIM-2 ogutme (un)
 				"ocak":
 					near_hearth = true  # 14.3 pisirme istasyonu (arayuz)
 				"yol_koru":
@@ -8293,6 +8323,7 @@ func _update_station_proximity() -> void:
 	Crafting.near_station = near_bench
 	Crafting.near_research = near_res
 	Crafting.near_hearth = near_hearth
+	Crafting.near_dibek = near_dibek
 	# SU MODELI (11.2): yuzulur hucrede oyuncu yavaslar (tek placeholder)
 	player.water_factor = WaterRules.SWIM_SPEED_FACTOR if is_swimmable(pc) else 1.0
 
@@ -8737,6 +8768,7 @@ func _try_crop_harvest(cell: Vector2i) -> void:
 ## Safak surucusu: ONCE bitisik-su otomatigi (kanal kaz -> tarla kendini
 ## sular; 11.7 kancasi BAGLANDI), SONRA buyume tick'i.
 func _on_farm_dawn() -> void:
+	PlayerStats.end_night_buffs()  # TARIM-2: gece-boyu buff safakta biter
 	for cell: Vector2i in Farming.plots.keys():
 		if has_adjacent_water(cell):
 			Farming.water_free(cell)
@@ -8745,6 +8777,46 @@ func _on_farm_dawn() -> void:
 ## TARIM-2: gece basinda korotu buyume tick'i (yalniz night_grow).
 func _on_farm_night() -> void:
 	Farming.night_tick()
+	_update_buff_gorsel()
+
+# --- TARIM-2 BUFF GORSELLERI: isik halkasi + HUD rozeti -------------------
+var _buff_isik: OmniLight3D = null
+var _buff_rozet: Label = null
+
+## Koz Corbasi: oyuncu cevresinde kucuk isik halkasi (yalniz buff
+## aktifken; yaricap/enerji veride). Rozet: aktif buff adlari HUD'da.
+func _update_buff_gorsel() -> void:
+	var corba: bool = PlayerStats.has_buff("koz_corbasi")
+	if corba and _buff_isik == null:
+		_buff_isik = OmniLight3D.new()
+		var b: Dictionary = TarimBalance.BUFFS["koz_corbasi"]
+		_buff_isik.omni_range = float(b["isik_halka_yaricap"])
+		_buff_isik.light_energy = float(b["isik_halka_enerji"])
+		_buff_isik.light_color = Color(1.0, 0.72, 0.42)
+		_buff_isik.position = Vector3(0, 1.0, 0)
+		player.add_child(_buff_isik)
+	elif not corba and _buff_isik != null:
+		_buff_isik.queue_free()
+		_buff_isik = null
+	# HUD rozeti: kucuk metin pili (aktif buff adlari)
+	var adlar: Array = []
+	for id: String in PlayerStats.buffs:
+		adlar.append(String(TarimBalance.BUFFS[id]["ad"]))
+	if adlar.is_empty():
+		if _buff_rozet != null:
+			_buff_rozet.queue_free()
+			_buff_rozet = null
+		return
+	if _buff_rozet == null:
+		_buff_rozet = Label.new()
+		_buff_rozet.add_theme_font_size_override("font_size", 14)
+		_buff_rozet.add_theme_color_override("font_color", Color(1.0, 0.85, 0.55))
+		_buff_rozet.add_theme_color_override("font_shadow_color", Color(0, 0, 0, 0.6))
+		_buff_rozet.add_theme_constant_override("shadow_offset_y", 1)
+		_buff_rozet.set_anchors_preset(Control.PRESET_CENTER_TOP)
+		_buff_rozet.position = Vector2(-80, 64)
+		hud.add_child(_buff_rozet)
+	_buff_rozet.text = "✦ " + " • ".join(adlar)
 
 ## TARIM-2: sis mantari golge kurali — agac dibi (1 hucre komsulukta
 ## agac) YA DA ic mekan. Sayilar tarim_balance'ta.
@@ -11388,8 +11460,14 @@ func _update_kesif() -> void:
 	if gorunur != _fener_ui_son:
 		_fener_ui_son = gorunur
 		hud.set_fener_gorunur(gorunur)
+	# TARIM-2: Koz Corbasi gece boyu sis direnci — isik acigi affedilir,
+	# vinyet veri carpaniyla kisilir (tarim_balance.BUFFS).
+	if PlayerStats.has_buff("koz_corbasi"):
+		_isik_acik = 0
 	var v: float = KesifBalance.vinyet(_sis_yogun, _isik_acik,
 			_fener_kisik and isik >= 2)
+	if PlayerStats.has_buff("koz_corbasi"):
+		v *= float(TarimBalance.BUFFS["koz_corbasi"].get("vinyet_carpan", 1.0))
 	# KESIF 16.6 Kul Firtinasi: gorus zorla kapanir; siginakta yari.
 	if _firtina_kalan > 0.0:
 		v = KesifBalance.FIRTINA_VINYET
