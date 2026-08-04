@@ -42,6 +42,8 @@ uniform float night_mix : hint_range(0.0, 1.0) = 0.0;
 uniform vec3 night_tint : source_color = vec3(0.30, 0.36, 0.55);
 
 uniform int quality : hint_range(0, 1) = 1;
+uniform float speckle_fade_start = 14.0;
+uniform float speckle_fade_end = 26.0;
 // ENTEGRASYON: kenar gecisi yumusatma — maske 0-1 arasi interpolasyonda
 // (zemin turu siniri) noise sallantisi, duz cizgi organiklesir.
 uniform float mask_noise : hint_range(0.0, 0.6) = 0.25;
