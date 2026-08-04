@@ -148,6 +148,10 @@ const PLACE_MODELS := {
 	# oturum: stone_mortar.glb, dokulu Meshy); proseduerel canak yedek.
 	"tas_dibek": {"model": "res://assets/models/structures/stone_mortar.glb",
 			"h": 0.45, "solid": true, "behavior": "station", "max_hp": 60},
+	# TARIM-GLB-2: SUS KABAGI — kabak hasadinin %30 sans bonus dekoru
+	# (baglanti tarim-2'de). Yerlestirilebilir salt dekor, davranissiz.
+	"pumpkin_decor": {"model": "res://assets/models/crops/pumpkin_decor.glb",
+			"h": 0.32, "solid": false, "max_hp": 20},
 	# KESIF 16.4: yol koru yere konunca MINI KAMP ATESI olur (isik cemberi
 	# + pisirme + kayit noktasi). Yerlestirme isik kapisina tabidir.
 	"yol_koru": {"model": "res://assets/models/tools/campfire-pit.glb",
@@ -4707,6 +4711,13 @@ func _update_water_night() -> void:
 	for cr in _creatures:
 		if is_instance_valid(cr) and cr.has_method("set_night"):
 			cr.set_night(night)
+	# KOROTU GLB isiltisi da ayni kaynaktan guclenir (tarim-glb-2)
+	var kge: float = TarimBalance.KOROTU_GLB_ENERJI_GECE if night \
+			else TarimBalance.KOROTU_GLB_ENERJI_GUNDUZ
+	for n in _crop_nodes.values():
+		if is_instance_valid(n) and (n as Node).has_meta("korotu_mats"):
+			for m in (n as Node).get_meta("korotu_mats"):
+				(m as StandardMaterial3D).emission_energy_multiplier = kge
 
 # Bos cim hucrelerinin bir kismina sus otu serpistirir (toplanmaz).
 var _decor_nodes: Array = []
@@ -8954,15 +8965,30 @@ func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 	var kova: int = 0 if stage <= 0 else (2 if stage >= max_stage0 else 1)
 	var paths: Array = CROP_STAGE_GLB.get(crop_id, [])
 	var glb: String = String(paths[kova]) if kova < paths.size() else ""
-	# Olgun evrede kullanici GLB kancasi (crops/ klasoru) varsa onu kullan
-	if glb == "" and kova == 2:
-		glb = String(TarimBalance.CROP_GLB_KANCA.get(crop_id, ""))
+	# TARIM-GLB-2: gercek urun modeli (crops/) olgun evrede dogrudan,
+	# fide evresinde olgunun FIDE_ORAN'i (mevcut kural). Filiz ortak.
+	var kanca := false
+	if glb == "" and kova >= 1:
+		var kglb := String(TarimBalance.CROP_GLB_KANCA.get(crop_id, ""))
+		if kglb != "" and ResourceLoader.exists(kglb):
+			glb = kglb
+			kanca = true
 	if glb != "" and ResourceLoader.exists(glb):
 		var inst: Node3D = load(glb).instantiate()
 		root.add_child(inst)
 		_tame_meshy_materials(inst, TarimBalance.CROP_TINT)  # isima kapali + ton
 		var aabb := _scene_aabb(inst)
-		if aabb.size.y > 0.01:
+		if kanca:
+			# Boy IMPORT root_scale'den (node scale yasak — kural);
+			# fide orani goreli oyun kurali. Tumsekli modeller 1-2 cm
+			# gomulur: tumsek kenari cim/tarla ile bulusur.
+			var s2: float = TarimBalance.FIDE_ORAN if kova == 1 else 1.0
+			inst.scale = Vector3(s2, s2, s2)
+			inst.position.y = -aabb.position.y * s2 \
+					- float(TarimBalance.CROP_GLB_GOM.get(crop_id, 0.0)) * s2
+			if crop_id == "korotu":
+				_korotu_glb_isilti(root, inst)
+		elif aabb.size.y > 0.01:
 			var s: float = CROP_STAGE_H[mini(stage, CROP_STAGE_H.size() - 1)] \
 					/ aabb.size.y
 			inst.scale = Vector3(s, s, s)
@@ -9074,6 +9100,26 @@ func _crop_cyl(r: float, h: float) -> CylinderMesh:
 
 ## Meshy GLB'leri emissive (isima) haritasiyla gelir -> sahne isigini
 ## dinlemeyip PARLAK gorunur. Isima kapatilir, puruzluluk toparlanir.
+## KOROTU GLB isiltisi: modelin emissive DOKUSU kanal olarak kalir
+## (tame kapatmisti) — soluk turkuaz tonla geri acilir; gece
+## _update_water_night ayni gece kaynagindan guclendirir (meta liste).
+func _korotu_glb_isilti(root: Node3D, inst: Node3D) -> void:
+	var mats: Array = []
+	var night: bool = DayNight.phase in ["night", "dusk"]
+	for mi: MeshInstance3D in inst.find_children("*", "MeshInstance3D", true, false):
+		if mi.mesh == null:
+			continue
+		for i in mi.mesh.get_surface_count():
+			var m := mi.get_surface_override_material(i)
+			if m is StandardMaterial3D:
+				m.emission_enabled = true
+				m.emission = TarimBalance.KOROTU_EMISSION
+				m.emission_energy_multiplier = \
+						TarimBalance.KOROTU_GLB_ENERJI_GECE if night \
+						else TarimBalance.KOROTU_GLB_ENERJI_GUNDUZ
+				mats.append(m)
+	root.set_meta("korotu_mats", mats)
+
 func _tame_meshy_materials(root: Node, tint: Color = Color.WHITE) -> void:
 	for mi: MeshInstance3D in root.find_children("*", "MeshInstance3D", true, false):
 		if mi.mesh == null:

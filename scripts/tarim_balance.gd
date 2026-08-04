@@ -85,9 +85,11 @@ static func crop_of_seed(seed_item: String) -> String:
 			return cid
 	return ""
 
-## GLB KANCALARI (crops/ klasoru — modeller GELMEDI; dosya gelince
-## CROP_STAGE_GLB'ye baglanir, o zamana kadar ayirt edilebilir
-## proseduerel placeholder cizilir; world3d._crop_placeholder).
+## GLB KANCALARI (crops/ klasoru). TARIM-GLB-2: ILK UCLU GELDI —
+## pumpkin(+decor), korotu_flower, earth_apple (dokulu Meshy, 1024'e
+## indirildi). golden_wheat + mist_mushroom HENUZ YOK: dosya yoksa
+## ayirt edilebilir proseduerel placeholder cizilir (fallback kurali;
+## world3d._crop_placeholder).
 const CROP_GLB_KANCA := {
 	"earth_apple": "res://assets/models/crops/earth_apple.glb",
 	"golden_wheat": "res://assets/models/crops/golden_wheat.glb",
@@ -99,6 +101,20 @@ const CROP_GLB_KANCA := {
 ## Korotu placeholder emission'u (gece parlar — kimligi bu).
 const KOROTU_EMISSION := Color(0.30, 0.95, 0.85)
 const KOROTU_EMISSION_ENERJI := 1.2
+
+## TARIM-GLB-2 olculeri. OLCEK IMPORT root_scale ILE (node scale
+## yasak; carpanlar .glb.import dosyalarinda) — buradaki hedef boylar
+## belge + dogrulama: diz boyu bandi 0.35-0.5, kabak iri kalabilir.
+## Dogal boylar olculdu: pumpkin 0.617, earth_apple 0.662, korotu 1.0.
+const CROP_GLB_BOY := {"pumpkin": 0.55, "earth_apple": 0.38, "korotu": 0.45}
+## Toprak tumsekli modeller zemine gomulur (kenar cimle bulussun).
+const CROP_GLB_GOM := {"pumpkin": 0.015, "earth_apple": 0.02, "korotu": 0.015}
+## Fide evresi: olgun modelin bu orani (mevcut kural).
+const FIDE_ORAN := 0.5
+## Korotu GLB isiltisi: Meshy emissive dokusu kanaliyla; gece
+## _update_water_night ayni gece kaynagindan guclendirir.
+const KOROTU_GLB_ENERJI_GUNDUZ := 0.25
+const KOROTU_GLB_ENERJI_GECE := 1.6
 
 ## MANTAR GOLGE KURALI: hucre "los" sayilir eger agac dibi (1 hucre
 ## komsulukta agac) YA DA ic mekan (cati alti) ise.
