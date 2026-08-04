@@ -230,3 +230,13 @@ main'in hızlı paketinde her push doğrulanıyor — bu denetimde de yeşil:
 NIGHTTEST beklenen=4 dogan=4 daze/duvar/isik=true safak_kalan=0;
 FELLTEST devrildi/hat/toplandi=true odun=3 eszamanli=5. İki dal artık
 güvenle silinebilir (arşiv istenirse dursun).
+
+## GÜNCEL DURUM NOTU (tarim-glb-2)
+Tarım GLB ilk üçlü bağlandı: kabak (0.55 boy — iri, kişiliği), toprak
+elması (0.38), korotu çiçeği (0.45, Meshy emissive dokusuyla GERÇEK
+gece parlaması — tek gece kaynağından gündüz 0.25/gece 1.6) + Süs
+Kabağı yerleştirilebilir dekor oldu (PLACE_MODELS h 0.32). Ölçekler
+import root_scale ile; tümsekli modeller 1.5-2 cm gömük; fide=olgun
+%50 tek kod yolundan. Dokular 2048→1024 (GLB'ler 16.7→1.6 MB).
+Buğday+mantar placeholder'da (dosya bekliyor; kanca hazır). FARMTEST2
+yeşil. Ayrıntı RAPOR_TARIMGLB2.md.
