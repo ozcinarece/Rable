@@ -113,3 +113,16 @@ bağlandı:
   başına 4 doku × 1024² ≈ 5.3 MB ham RGB eşdeğeri (mip dahil).
 - FARMTEST2 yeşil; kareler: gündüz (olgun+fide), altın saat (erken
   akşam), karakter tarlada (ölçek), hasat sonrası düşen demet.
+
+---
+
+## EK 2 — golden_wheat ara evre modeli (bugday-stage2)
+
+`golden_wheat_stage2.glb` (yarı gelişmiş yeşil başak) fide evresine
+bağlandı: fide artık "%50 küçültülmüş olgun" yerine GERÇEK ara model
+(CROP_GLB_FIDE tablosu; başka ürünlere de aynı kancadan eklenebilir).
+Yeşil ton kayması bu modele uygulanmıyor (dokusu zaten genç/yeşil) —
+%50 kuralı ve ton, ara modeli olmayan ürünler için fallback olarak
+duruyor. Dokular 2048→1024 (6.0 → 0.84 MB); doğal boy 0.516 → hedef
+0.35 (root_scale 0.6785 — filiz 0.22 ile olgun 0.55 arasında).
+Doğrulama karesi: 2 olgun + 2 ara evre yan yana. Testler yeşil.

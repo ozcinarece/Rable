@@ -119,8 +119,15 @@ const CROP_GLB_YROT := ["golden_wheat"]
 ## Fide evresinde yesil ton kaymasi alan modeller (genc basak yesili).
 const CROP_GLB_FIDE_YESIL := ["golden_wheat"]
 const FIDE_YESIL_TON := Color(0.72, 1.0, 0.62)
-## Fide evresi: olgun modelin bu orani (mevcut kural).
+## Fide evresi: olgun modelin bu orani (GERCEK ara model yoksa).
 const FIDE_ORAN := 0.5
+## GERCEK ara evre modeli olan urunler: fide %50-olgun yerine bu
+## model TAM olcekle cizilir (root_scale .import'ta; yesil ton
+## gerekmez — model zaten genc/yesil). Hedef boy 0.35 (dogal 0.516,
+## root_scale 0.6785).
+const CROP_GLB_FIDE := {
+	"golden_wheat": "res://assets/models/crops/golden_wheat_stage2.glb",
+}
 # --- KOROTU ISIK SISTEMI (korotu-isik) ---------------------------------
 ## Iki katman: EMISSION (Meshy emissive dokusu YALNIZ cicek canini
 ## kapliyor — sap/yaprak haritada karanlik, sizma yok) + GERCEK

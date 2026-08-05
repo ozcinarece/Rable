@@ -277,3 +277,8 @@ söner + turkuaz veda zerreleri; buğday sap-dalga kancası dosya-bekler
 (v2 tek mesh). Emilişte HUD sayaç zıplaması + harvest_pop sfx kancası;
 envanter doluysa yere düşer. Kalite Düşük: parçacıksız + yarı süre.
 Hızlı testler eski anlık yolda (determinizm). RAPOR_HASATANIM.md.
+
+## GÜNCEL DURUM NOTU (bugday-stage2)
+Buğday fide evresi gerçek ara modelle (golden_wheat_stage2) çiziliyor —
+CROP_GLB_FIDE kancası diğer ürünlerin ara modelleri için de hazır;
+%50+yeşil-ton kuralı fallback olarak duruyor. Doku 1024 (6→0.84 MB).
