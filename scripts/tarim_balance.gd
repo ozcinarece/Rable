@@ -108,14 +108,22 @@ const KOROTU_EMISSION_ENERJI := 1.2
 ## belge + dogrulama: diz boyu bandi 0.35-0.5, kabak iri kalabilir.
 ## Dogal boylar olculdu: pumpkin 0.617, earth_apple 0.662, korotu 1.0.
 const CROP_GLB_BOY := {"pumpkin": 0.55, "earth_apple": 0.38, "korotu": 0.45,
-		"golden_wheat": 0.55}   # dogal boy 0.553 — root_scale 1.0 yeterli
+		"golden_wheat": 0.55,   # dogal boy 0.553 — root_scale 1.0 yeterli
+		"mist_mushroom": 0.35}  # olgun kume (dogal 0.996 -> 0.3514)
 ## Toprak tumsekli modeller zemine gomulur (kenar cimle bulussun).
 const CROP_GLB_GOM := {"pumpkin": 0.015, "earth_apple": 0.02, "korotu": 0.015,
-		"golden_wheat": 0.02}   # koyu taban tarla karosuna otursun
+		"golden_wheat": 0.02,   # koyu taban tarla karosuna otursun
+		"mist_mushroom": 0.01}
 ## HUCRE KOMPOZISYONLU modeller (tek GLB'de cok sap): hucrede
 ## rastgele Y-rotasyon tekduzeligi kirar — YALNIZ 90 derecenin
 ## katlari (kullanici kurali: serbest aci karo hizasini bozuyor).
 const CROP_GLB_YROT := ["golden_wheat"]
+## Yuvarlak tumsekli modeller: SERBEST Y-rotasyon (karo hizasi derdi
+## yok — bugday kurali yalniz kare tabanlilarda).
+const CROP_GLB_SERBEST_ROT := ["pumpkin", "earth_apple", "korotu",
+		"mist_mushroom"]
+## Evre gecisi: eski gorsel erirken yenisi belirir (capraz solma).
+const EVRE_GECIS_SN := 0.3
 ## Fide evresinde yesil ton kaymasi alan modeller (genc basak yesili).
 const CROP_GLB_FIDE_YESIL := ["golden_wheat"]
 const FIDE_YESIL_TON := Color(0.72, 1.0, 0.62)
@@ -127,7 +135,15 @@ const FIDE_ORAN := 0.5
 ## root_scale 0.6785).
 const CROP_GLB_FIDE := {
 	"golden_wheat": "res://assets/models/crops/golden_wheat_stage2.glb",
+	# TARIM-EVRE: stage2 seti geldi — %50 hilesi bu urunlerde emekli.
+	"pumpkin": "res://assets/models/crops/pumpkin_stage2.glb",
+	"earth_apple": "res://assets/models/crops/earth_apple_stage2.glb",
+	"korotu": "res://assets/models/crops/korotu_stage2.glb",
+	"mist_mushroom": "res://assets/models/crops/mist_mushroom_stage2.glb",
 }
+## Stage2 hedef boylar (olgunun ~%60-70'i; ayri uretim — OLCULDU):
+## pumpkin 0.36, earth_apple 0.25, korotu 0.29, mist_mushroom 0.22,
+## golden_wheat 0.35. Carpanlar .glb.import root_scale'da.
 # --- KOROTU ISIK SISTEMI (korotu-isik) ---------------------------------
 ## Iki katman: EMISSION (Meshy emissive dokusu YALNIZ cicek canini
 ## kapliyor — sap/yaprak haritada karanlik, sizma yok) + GERCEK
