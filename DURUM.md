@@ -268,3 +268,12 @@ kompozisyon, root_scale 1.0, rastgele Y-rot, fide yeşil ton, doku 1024
 EK (bugday-v2): golden_wheat v2 yeni üretimle değişti — yeniden 1024'e
 paketlendi (8.1→0.95 MB, 2548 üçgen, boy 0.578 → root_scale 1.0);
 taban v2'de de uyumlu, kancalar kod değişmeden çalıştı.
+
+## GÜNCEL DURUM NOTU (hasat-anim — dalda, merge bekliyor)
+Hasat sunumu: "Sallan (0.15) → Fırla+Pop (0.3) → Uç (0.4)" — mantık
+değişmedi, oyuncu bloklanmaz, süreler hasat_anim_balance'ta. Kişilikler:
+kabak yerinde tombul zıplar + 1.6x yavaş uçar; korotu ışığı fırlamada
+söner + turkuaz veda zerreleri; buğday sap-dalga kancası dosya-bekler
+(v2 tek mesh). Emilişte HUD sayaç zıplaması + harvest_pop sfx kancası;
+envanter doluysa yere düşer. Kalite Düşük: parçacıksız + yarı süre.
+Hızlı testler eski anlık yolda (determinizm). RAPOR_HASATANIM.md.
