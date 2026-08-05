@@ -15,6 +15,7 @@ const MapData = preload("res://scripts/map_data.gd")
 const MapGen = preload("res://scripts/map_gen.gd")       # harita-v2: noise ureteci
 const MapBalance = preload("res://scripts/map_balance.gd")
 const TimeBalance = preload("res://scripts/time_balance.gd")  # gunduz/gece
+const HasatAnim = preload("res://scripts/hasat_anim_balance.gd")  # hasat sunumu
 const Player3DScript = preload("res://scripts/player3d.gd")
 const DigRules = preload("res://scripts/dig_rules.gd")
 const EnvModels = preload("res://scripts/env_models.gd")
@@ -8766,10 +8767,21 @@ func _try_water_plot(cell: Vector2i) -> void:
 				Farming.watering_can_left, Color(0.6, 0.85, 1.0))
 
 func _try_crop_harvest(cell: Vector2i) -> void:
+	if not Farming.can_harvest(cell):
+		return
+	# HASAT-ANIM: bitki gorselini plot_changed yikimindan ONCE devral
+	# (animasyon icin); mantik (verim/iade) asagida DEGISMEDEN durur.
+	var cid := String(Farming.plots[cell].crop_id)
+	var gorsel: Node3D = null
+	if _crop_nodes.has(cell):
+		gorsel = _crop_nodes[cell]
+		_crop_nodes.erase(cell)
 	var crop: Dictionary = Farming.harvest_clear(cell)
 	if crop.is_empty():
+		if gorsel != null:
+			_crop_nodes[cell] = gorsel
 		return
-	# Urun YERE SACILIR (loot hissi) + tohum iade sansi
+	# Urun + tohum iade sansi (mantik ayni)
 	var n := randi_range(int(crop.yield_min), int(crop.yield_max))
 	var drops := {String(crop.yield_item): n}
 	# TARIM-2: iade sansi urun tablosundan; kabakta %30 sus kabagi bonusu
@@ -8779,9 +8791,193 @@ func _try_crop_harvest(cell: Vector2i) -> void:
 	var bonus: Dictionary = crop.get("bonus_drop", {})
 	if not bonus.is_empty() and randf() < float(bonus.chance):
 		drops[String(bonus.item)] = int(drops.get(String(bonus.item), 0)) + 1
-	_scatter_drops(cell, drops)
 	_play_sfx(String(TarimBalance.SFX["harvest"]))
-	_spawn_floating_text(cell, "Hasat!", Color(0.8, 1.0, 0.8))
+	# HIZLI TEST katmani deterministik kalir: eski anlik yol (sacilim).
+	# Gorsel yoksa da (kenar durum) eski yol.
+	if OS.get_environment("RABLE_TEST_LEVEL") == "hizli" or gorsel == null:
+		if gorsel != null:
+			gorsel.queue_free()
+		_scatter_drops(cell, drops)
+		_spawn_floating_text(cell, "Hasat!", Color(0.8, 1.0, 0.8))
+		return
+	_hasat_anim(cell, cid, gorsel, drops)  # async SUNUM; oyuncu bloklanmaz
+
+# ==========================================================================
+# HASAT ANIMASYONU (hasat-anim): "Sallan, Firla, Uc" — yalniz sunum.
+# Sureler/egriler hasat_anim_balance'ta. Her hucre KENDI animasyonunu
+# bagimsiz oynar (yerel durum; paylasilan sayac yok). Tum tween'ler
+# ILGILI DUGUME bagli: dugum giderse tween da gider (freed-lambda dersi).
+# ==========================================================================
+
+## Ana akis: sallan -> (korotu vedasi) -> pop + parcaciklar; item'lar
+## ayri coroutine'lerle firlar ve oyuncuya doner.
+func _hasat_anim(cell: Vector2i, cid: String, gorsel: Node3D,
+		drops: Dictionary) -> void:
+	var hiz: float = HasatAnim.DUSUK_SURE_CARPAN \
+			if _quality_tier == "dusuk" else 1.0
+	var puf: bool = bool(PerfBalance.tier(_quality_tier).get("particles", true))
+	var merkez := _cell_center(cell)
+	# Item akislarini hemen baslat (sallanmayla ortusen ritim degil:
+	# firlama sallanma bitince — akislarin icinde beklenir)
+	var sira := 0
+	for id: String in drops:
+		for k in int(drops[id]):
+			_hasat_item_akisi(cell, id, cid, sira, hiz, puf)
+			sira += 1
+	# 1) SALLAN: kokten 2 salinim, sonumlu
+	var aci := deg_to_rad(HasatAnim.SALLAN_ACI_DERECE)
+	var t4 := HasatAnim.SALLAN_SN * hiz / 4.0
+	var so := HasatAnim.SALLAN_SONUM
+	var tw := gorsel.create_tween()
+	tw.tween_property(gorsel, "rotation:z", aci, t4)
+	tw.tween_property(gorsel, "rotation:z", -aci * so, t4)
+	tw.tween_property(gorsel, "rotation:z", aci * so * so, t4)
+	tw.tween_property(gorsel, "rotation:z", 0.0, t4)
+	await tw.finished
+	if not is_instance_valid(gorsel):
+		return
+	# KOROTU: isik firlama aninda soner + turkuaz veda zerreleri
+	if cid == "korotu":
+		var l: Variant = gorsel.get_meta("korotu_isik", null)
+		if l != null and is_instance_valid(l):
+			(l as OmniLight3D).visible = false
+		_korotu_tarama_t = 0.0
+		_hasat_korotu_zerre(merkez, hiz)
+	# 2) POP: squash&stretch ile kaybolus + parcaciklar
+	if puf:
+		_spawn_particles(merkez + Vector3(0, 0.35, 0),
+				_hasat_yaprak_rengi(cid),
+				randi_range(HasatAnim.YAPRAK_KIRPIK_MIN,
+						HasatAnim.YAPRAK_KIRPIK_MAX))
+		_spawn_particles(merkez + Vector3(0, 0.12, 0),
+				HasatAnim.TOPRAK_PUF_RENK, HasatAnim.TOPRAK_PUF_ADET)
+	var pt := gorsel.create_tween()
+	pt.tween_property(gorsel, "scale",
+			Vector3.ONE * HasatAnim.POP_SIS_ORAN, HasatAnim.POP_SIS_SN * hiz)
+	pt.tween_property(gorsel, "scale", Vector3.ONE * 0.01,
+			HasatAnim.POP_COKUS_SN * hiz) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	pt.tween_callback(gorsel.queue_free)
+
+## Tek item akisi: firla (parabol + tek sekme; kabak yerinde tombul
+## ziplar) -> bekle -> oyuncuya kavisle uc -> emilis (envanter + pop).
+func _hasat_item_akisi(cell: Vector2i, id: String, cid: String,
+		sira: int, hiz: float, puf: bool) -> void:
+	var kisilik: Dictionary = HasatAnim.KISILIK.get(cid, {})
+	# Firlama sallanma bitince baslar
+	await get_tree().create_timer(HasatAnim.SALLAN_SN * hiz).timeout
+	var nod := _ground_item_visual(id, 1)
+	var start := _cell_center(cell) + Vector3(0, 0.35, 0)
+	nod.position = start
+	add_child(nod)
+	var konum := start
+	if bool(kisilik.get("firlamaz", false)):
+		# KABAK: agir — yerinde bir kez tombul ziplama (squash)
+		var t := HasatAnim.FIRLA_SN * hiz
+		var twk := nod.create_tween()
+		twk.tween_property(nod, "scale", Vector3(1.25, 0.72, 1.25), t * 0.35)
+		twk.tween_property(nod, "scale", Vector3(0.88, 1.18, 0.88), t * 0.3)
+		twk.tween_property(nod, "scale", Vector3.ONE, t * 0.35)
+		await twk.finished
+	else:
+		# Parabol: rastgele yonde yukari-disa + havada donus + tek sekme
+		var yon := randf() * TAU
+		var mesafe := randf_range(HasatAnim.FIRLA_MESAFE_MIN,
+				HasatAnim.FIRLA_MESAFE_MAX)
+		var hedef := start + Vector3(cos(yon) * mesafe, 0.0, sin(yon) * mesafe)
+		var cb := func(t: float) -> void:
+			if not is_instance_valid(nod):
+				return
+			var pp := start.lerp(hedef, t)
+			pp.y = start.y + HasatAnim.FIRLA_YUKSEK * 4.0 * t * (1.0 - t)
+			nod.position = pp
+			nod.rotation.x = TAU * HasatAnim.FIRLA_DONUS_TUR * t
+		var twf := nod.create_tween()
+		twf.tween_method(cb, 0.0, 1.0, HasatAnim.FIRLA_SN * hiz)
+		# tek sekme
+		var cb2 := func(t: float) -> void:
+			if not is_instance_valid(nod):
+				return
+			nod.position.y = hedef.y \
+					+ HasatAnim.SEKME_YUKSEK * 4.0 * t * (1.0 - t)
+		twf.tween_method(cb2, 0.0, 1.0, HasatAnim.SEKME_SN * hiz)
+		await twf.finished
+		konum = hedef
+	if not is_instance_valid(nod):
+		return
+	# 3) UC: bekle + ardisik ritim, sonra oyuncuya kavis (hedef CANLI:
+	# oyuncu yurumeye devam edebilir — her karede yeniden orneklenir)
+	await get_tree().create_timer((HasatAnim.UC_BEKLE_SN \
+			+ float(sira) * HasatAnim.UCUS_ITEM_ARA_SN) * hiz).timeout
+	if not is_instance_valid(nod):
+		return
+	var ucus := HasatAnim.UCUS_SN * hiz \
+			* float(kisilik.get("ucus_carpani", 1.0))
+	var s0 := konum
+	var cb3 := func(t: float) -> void:
+		if not is_instance_valid(nod):
+			return
+		var hedef2: Vector3 = player.position + Vector3(0, 0.55, 0)
+		var pp := s0.lerp(hedef2, t)
+		pp.y += HasatAnim.UCUS_KAVIS * 4.0 * t * (1.0 - t)
+		nod.position = pp
+	var twu := nod.create_tween()
+	twu.tween_method(cb3, 0.0, 1.0, ucus) \
+			.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	await twu.finished
+	if not is_instance_valid(nod):
+		return
+	# EMILIS: envanter + sayac ziplamasi + minik pop + sfx kancasi.
+	# Envanter doluysa mevcut yer-esyasi sistemine duser (kayip yok).
+	if Inventory.add_item(id, 1):
+		if hud != null and hud.has_method("fly_pickup"):
+			hud.fly_pickup(id, camera.unproject_position(
+					player.position + Vector3(0, 0.6, 0)))
+		if puf:
+			_spawn_particles(player.position + Vector3(0, 0.6, 0),
+					_item_category_color(id), 4)
+		_play_sfx(HasatAnim.EMILIS_SFX)
+	else:
+		_add_ground_item(cell, id, 1)
+	nod.queue_free()
+
+## Korotu vedasi: 2-3 turkuaz isik zerresi yukari suzulup erir.
+func _hasat_korotu_zerre(merkez: Vector3, hiz: float) -> void:
+	for i in HasatAnim.KOROTU_ZERRE_ADET:
+		var z := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.03
+		sm.height = 0.06
+		z.mesh = sm
+		var m := StandardMaterial3D.new()
+		m.albedo_color = TarimBalance.KOROTU_EMISSION
+		m.emission_enabled = true
+		m.emission = TarimBalance.KOROTU_EMISSION
+		m.emission_energy_multiplier = 1.6
+		z.material_override = m
+		z.position = merkez + Vector3(randf_range(-0.12, 0.12), 0.3,
+				randf_range(-0.12, 0.12))
+		add_child(z)
+		var zt := z.create_tween()
+		zt.tween_property(z, "position:y",
+				z.position.y + HasatAnim.KOROTU_ZERRE_YUKSEK,
+				HasatAnim.KOROTU_ZERRE_SN * hiz) \
+				.set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+		zt.parallel().tween_property(z, "transparency", 1.0,
+				HasatAnim.KOROTU_ZERRE_SN * hiz)
+		zt.tween_callback(z.queue_free)
+
+## Yaprak kirpigi rengi: urun kimliginden kaba yesil/altin ton.
+func _hasat_yaprak_rengi(cid: String) -> Color:
+	match cid:
+		"golden_wheat":
+			return Color(0.85, 0.72, 0.32)
+		"korotu":
+			return Color(0.35, 0.62, 0.52)
+		"pumpkin":
+			return Color(0.45, 0.58, 0.28)
+		_:
+			return Color(0.38, 0.58, 0.30)
 
 ## Safak surucusu: ONCE bitisik-su otomatigi (kanal kaz -> tarla kendini
 ## sular; 11.7 kancasi BAGLANDI), SONRA buyume tick'i.
