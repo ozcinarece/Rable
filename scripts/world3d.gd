@@ -9503,6 +9503,13 @@ func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 	# TARIM-GLB-2: gercek urun modeli (crops/) olgun evrede dogrudan,
 	# fide evresinde olgunun FIDE_ORAN'i (mevcut kural). Filiz ortak.
 	var kanca := false
+	var kanca_fide := false  # gercek ara evre modeli (stage2)
+	if glb == "" and kova == 1:
+		var fglb := String(TarimBalance.CROP_GLB_FIDE.get(crop_id, ""))
+		if fglb != "" and ResourceLoader.exists(fglb):
+			glb = fglb
+			kanca = true
+			kanca_fide = true
 	if glb == "" and kova >= 1:
 		var kglb := String(TarimBalance.CROP_GLB_KANCA.get(crop_id, ""))
 		if kglb != "" and ResourceLoader.exists(kglb):
@@ -9517,7 +9524,10 @@ func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 			# Boy IMPORT root_scale'den (node scale yasak — kural);
 			# fide orani goreli oyun kurali. Tumsekli modeller 1-2 cm
 			# gomulur: tumsek kenari cim/tarla ile bulusur.
-			var s2: float = TarimBalance.FIDE_ORAN if kova == 1 else 1.0
+			# Gercek ara model TAM olcek (boyu import'tan); %50 kurali
+			# yalniz olgun-modelden kucultulen fallback fide icin.
+			var s2: float = TarimBalance.FIDE_ORAN \
+					if (kova == 1 and not kanca_fide) else 1.0
 			inst.scale = Vector3(s2, s2, s2)
 			inst.position.y = -aabb.position.y * s2 \
 					- float(TarimBalance.CROP_GLB_GOM.get(crop_id, 0.0)) * s2
@@ -9527,8 +9537,10 @@ func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 			# yine kirar (evre gecisinde yeniden secilir).
 			if crop_id in TarimBalance.CROP_GLB_YROT:
 				inst.rotation.y = float(randi_range(0, 3)) * (TAU / 4.0)
-			# Fide: genc basak yesili (albedo ton kaymasi)
-			if kova == 1 and crop_id in TarimBalance.CROP_GLB_FIDE_YESIL:
+			# Fide yesil tonu yalniz FALLBACK fidede (gercek ara model
+			# zaten genc/yesil dokulu)
+			if kova == 1 and not kanca_fide \
+					and crop_id in TarimBalance.CROP_GLB_FIDE_YESIL:
 				for fmi: MeshInstance3D in inst.find_children("*",
 						"MeshInstance3D", true, false):
 					for fi in fmi.mesh.get_surface_count():
