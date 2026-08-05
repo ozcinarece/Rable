@@ -282,3 +282,12 @@ Hızlı testler eski anlık yolda (determinizm). RAPOR_HASATANIM.md.
 Buğday fide evresi gerçek ara modelle (golden_wheat_stage2) çiziliyor —
 CROP_GLB_FIDE kancası diğer ürünlerin ara modelleri için de hazır;
 %50+yeşil-ton kuralı fallback olarak duruyor. Doku 1024 (6→0.84 MB).
+
+## GÜNCEL DURUM NOTU (tarim-evre)
+Evre zinciri 5 üründe tam: filiz → GERÇEK stage2 → olgun (buğday,
+kabak, toprak elması, korotu, mantar; berry revizyon bekliyor).
+Mantar olgun placeholder'ı emekli (mist_mushroom.glb bağlandı; dosya
+adları ölçümle doğrulandı — takas gerekmedi). Evre geçişi 0.3 sn
+çapraz solma (tüm ürünler). Korotu tomurcuğu çok soluk sızıntılı,
+ışık olgunlukta. Rotasyon: buğday 90° katları, yuvarlak tümsekliler
+serbest. 5 doku seti 1024 (20.7→2.3 MB). RAPOR_TARIMEVRE.md.

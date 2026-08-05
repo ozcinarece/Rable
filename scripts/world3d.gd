@@ -9469,17 +9469,36 @@ func _build_mound_from(cfg: Dictionary) -> Node3D:
 	return root
 
 func _update_crop_node(cell: Vector2i) -> void:
+	var eski: Variant = null
 	if _crop_nodes.has(cell):
-		_crop_nodes[cell].queue_free()
+		eski = _crop_nodes[cell]
 		_crop_nodes.erase(cell)
 	var plot: Variant = Farming.plots.get(cell)
 	if plot == null or String(plot.crop_id) == "":
+		if eski != null and is_instance_valid(eski):
+			(eski as Node).queue_free()
 		return
 	var node := _build_crop_visual(String(plot.crop_id), int(plot.stage))
 	var h := float(_cell_props(cell.x, cell.y)[0])
 	node.position = Vector3(float(cell.x) + 0.5, h, float(cell.y) + 0.5)
 	add_child(node)
 	_crop_nodes[cell] = node
+	# TARIM-EVRE: evre gecisi CAPRAZ SOLMA (EVRE_GECIS_SN) — yalniz
+	# iki gorsel de varken (buyume); ekim/yukleme/hasat anlik kalir.
+	if eski != null and is_instance_valid(eski):
+		_evre_gecis_solma(eski as Node3D, node)
+
+## Capraz solma: eski erir, yeni belirir; tween'ler dugumlere bagli.
+func _evre_gecis_solma(eski: Node3D, yeni: Node3D) -> void:
+	var sn := TarimBalance.EVRE_GECIS_SN
+	for mi: MeshInstance3D in yeni.find_children("*", "MeshInstance3D", true, false):
+		mi.transparency = 1.0
+		mi.create_tween().tween_property(mi, "transparency", 0.0, sn)
+	for mi2: MeshInstance3D in eski.find_children("*", "MeshInstance3D", true, false):
+		mi2.create_tween().tween_property(mi2, "transparency", 1.0, sn)
+	var bt := eski.create_tween()
+	bt.tween_interval(sn + 0.02)
+	bt.tween_callback(eski.queue_free)
 
 ## Evre gorseli: kullanicinin Meshy GLB'leri (CROP_STAGE_GLB) varsa onlar
 ## (boy CROP_STAGE_H'ye normalize edilir, zemine oturtulur); yoksa
@@ -9537,6 +9556,8 @@ func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 			# yine kirar (evre gecisinde yeniden secilir).
 			if crop_id in TarimBalance.CROP_GLB_YROT:
 				inst.rotation.y = float(randi_range(0, 3)) * (TAU / 4.0)
+			elif crop_id in TarimBalance.CROP_GLB_SERBEST_ROT:
+				inst.rotation.y = randf() * TAU  # yuvarlak tumsek: serbest
 			# Fide yesil tonu yalniz FALLBACK fidede (gercek ara model
 			# zaten genc/yesil dokulu)
 			if kova == 1 and not kanca_fide \
