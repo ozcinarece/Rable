@@ -1439,6 +1439,7 @@ func _make_stat_bar(icon_name: String, fill_color: Color) -> ProgressBar:
 	bar.add_theme_stylebox_override("fill", fill)
 	row.add_child(bar)
 	stats_box.add_child(row)
+	_stat_rows[icon_name] = row  # ACILIS: bar dogumu gorunurluk kontrolu
 	return bar
 
 # R6: bar degisiminde (hasar/yeme) 0.3 sn nabiz — kutu olmadan da dikkat ceker.
@@ -2668,3 +2669,218 @@ func set_fener_gorunur(on: bool) -> void:
 			fener_kisik_toggled.emit(pressed))
 		add_child(_fener_btn)
 	_fener_btn.visible = on
+
+
+# ==========================================================================
+# ACILIS SAHNESI (acilis-sahnesi) — HUD yardimcilari. Sureler/metinler
+# AcilisBalance'ta; burada yalniz gorsel is.
+# ==========================================================================
+const AcilisBalance = preload("res://scripts/acilis_balance.gd")
+
+var _stat_rows: Dictionary = {}      # "kalp"/"mide"/"damla" -> HBox satiri
+var _acilis_fade: ColorRect = null
+var _acilis_fade_yazi: Label = null
+var _fisilti_label: Label = null
+var _todo_kart: PanelContainer = null
+var _todo_yazi: Label = null
+var _defter_panel: Control = null
+var _acilis_gizli_liste: Array = []
+
+## Barlar "ihtiyacla dogar": acilis modunda hepsi gizli baslar,
+## bar_dogur() soldan kaydirip nabizla gosterir. Normal oyunda hepsi
+## dogmus sayilir (davranis degismez).
+func acilis_barlari_gizle() -> void:
+	for ad: String in _stat_rows:
+		(_stat_rows[ad] as Control).visible = false
+
+func bar_dogdu(ad: String) -> bool:
+	return _stat_rows.has(ad) and (_stat_rows[ad] as Control).visible
+
+## SLICETEST toparlamasi: tum barlari geri getir (animasyonsuz).
+func acilis_barlari_geri() -> void:
+	for ad: String in _stat_rows:
+		(_stat_rows[ad] as Control).visible = true
+
+## SLICETEST sorgulari (dis dunya ic alanlara dokunmasin).
+func todo_gorunur() -> bool:
+	return _todo_kart != null and _todo_kart.visible
+
+func siyah_gorunur() -> bool:
+	return _acilis_fade != null and _acilis_fade.visible
+
+func bar_dogur(ad: String) -> void:
+	if not _stat_rows.has(ad):
+		return
+	var row := _stat_rows[ad] as Control
+	if row.visible:
+		return
+	row.visible = true
+	row.modulate.a = 0.0
+	var x0 := row.position.x
+	row.position.x = x0 - 60.0
+	var tw := create_tween()
+	tw.set_parallel(true)
+	tw.tween_property(row, "modulate:a", 1.0, AcilisBalance.BAR_KAYMA_SN)
+	tw.tween_property(row, "position:x", x0, AcilisBalance.BAR_KAYMA_SN) \
+			.set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tw.chain().tween_property(row, "modulate:a", 0.55, AcilisBalance.BAR_NABIZ_SN * 0.5)
+	tw.chain().tween_property(row, "modulate:a", 1.0, AcilisBalance.BAR_NABIZ_SN * 0.5)
+
+## HUD'i topyekun gizle/geri getir (Gun 0: "sadece dunya").
+func set_acilis_gizli(gizli: bool) -> void:
+	var hedefler: Array = [get_node_or_null("StatsPanel"), hotbar_strip,
+			craft_button, research_button, inventory_button, day_pill,
+			reset_button, action_button, attack_button, move_button,
+			_fener_btn]
+	if gizli:
+		_acilis_gizli_liste.clear()
+		for n in hedefler:
+			if n != null and (n as CanvasItem).visible:
+				_acilis_gizli_liste.append(n)
+				(n as CanvasItem).visible = false
+	else:
+		for n in _acilis_gizli_liste:
+			if is_instance_valid(n):
+				(n as CanvasItem).visible = true
+		_acilis_gizli_liste.clear()
+
+## Siyah ekran + ortada soluk etiket ("Gun 0"/"Gun 1").
+func acilis_siyah(etiket: String) -> void:
+	if _acilis_fade == null:
+		_acilis_fade = ColorRect.new()
+		_acilis_fade.color = Color(0, 0, 0, 1)
+		_acilis_fade.set_anchors_preset(Control.PRESET_FULL_RECT)
+		_acilis_fade.mouse_filter = Control.MOUSE_FILTER_STOP
+		add_child(_acilis_fade)
+		_acilis_fade_yazi = Label.new()
+		_acilis_fade_yazi.add_theme_font_size_override("font_size", 30)
+		_acilis_fade_yazi.add_theme_color_override("font_color",
+				Color(0.85, 0.82, 0.75, 0.85))
+		_acilis_fade_yazi.set_anchors_preset(Control.PRESET_CENTER)
+		_acilis_fade.add_child(_acilis_fade_yazi)
+	_acilis_fade.visible = true
+	_acilis_fade.color.a = 1.0
+	_acilis_fade_yazi.text = etiket
+	_acilis_fade_yazi.visible = etiket != ""
+
+## Siyahtan dunyaya yavas acilma. await edilebilir.
+func acilis_fade_in(sure: float) -> void:
+	if _acilis_fade == null:
+		return
+	_acilis_fade_yazi.visible = false
+	var tw := create_tween()
+	tw.tween_property(_acilis_fade, "color:a", 0.0, sure)
+	await tw.finished
+	_acilis_fade.visible = false
+
+## Ekran altinda ince, yari saydam fisilti yazisi.
+func fisilti(metin: String, sure: float) -> void:
+	if _fisilti_label == null:
+		_fisilti_label = Label.new()
+		_fisilti_label.add_theme_font_size_override("font_size", 16)
+		_fisilti_label.add_theme_color_override("font_color",
+				Color(0.9, 0.88, 0.8, 0.0))
+		_fisilti_label.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
+		_fisilti_label.position.y -= 110
+		add_child(_fisilti_label)
+	_fisilti_label.text = metin
+	var tw := create_tween()
+	tw.tween_property(_fisilti_label, "theme_override_colors/font_color:a",
+			0.75, 0.6)
+	tw.tween_interval(maxf(0.2, sure - 1.2))
+	tw.tween_property(_fisilti_label, "theme_override_colors/font_color:a",
+			0.0, 0.6)
+
+## Sagdan kayan sade TO-DO karti (tek madde).
+func todo_goster(metin: String) -> void:
+	if _todo_kart == null:
+		_todo_kart = PanelContainer.new()
+		var sb := StyleBoxFlat.new()
+		sb.bg_color = Color(0.96, 0.93, 0.84, 0.94)
+		sb.set_corner_radius_all(12)
+		sb.content_margin_left = 14
+		sb.content_margin_right = 14
+		sb.content_margin_top = 8
+		sb.content_margin_bottom = 8
+		_todo_kart.add_theme_stylebox_override("panel", sb)
+		_todo_yazi = Label.new()
+		_todo_yazi.add_theme_font_size_override("font_size", 16)
+		_todo_yazi.add_theme_color_override("font_color", Color(0.29, 0.22, 0.16))
+		_todo_kart.add_child(_todo_yazi)
+		# Sag-orta: kart SOLA dogru buyur (varsayilan sag kenardan disari
+		# tasiyordu — ilk karede ekranda gorunmedi).
+		_todo_kart.set_anchors_preset(Control.PRESET_CENTER_RIGHT)
+		_todo_kart.grow_horizontal = Control.GROW_DIRECTION_BEGIN
+		_todo_kart.offset_right = -14.0
+		add_child(_todo_kart)
+	if not _todo_kart.visible:
+		_todo_kart.visible = true
+		var hedef_x := _todo_kart.position.x
+		_todo_kart.position.x = hedef_x + 220.0
+		create_tween().tween_property(_todo_kart, "position:x",
+				hedef_x, 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	_todo_yazi.text = metin
+
+## ✓ animasyonu — await edilebilir; kart gorunur kalir (zincir surerse
+## todo_goster ile metin degisir; bitiste todo_gizle).
+func todo_tamam() -> void:
+	if _todo_kart == null or not _todo_kart.visible:
+		return
+	_todo_yazi.text = "✓ " + _todo_yazi.text
+	var tw := create_tween()
+	tw.tween_property(_todo_kart, "scale", Vector2(1.12, 1.12), 0.15)
+	tw.tween_property(_todo_kart, "scale", Vector2.ONE, 0.15)
+	await tw.finished
+
+func todo_gizle() -> void:
+	if _todo_kart != null:
+		var tw := create_tween()
+		tw.tween_property(_todo_kart, "modulate:a", 0.0, 0.6)
+		await tw.finished
+		_todo_kart.visible = false
+		_todo_kart.modulate.a = 1.0
+
+## Not defteri: basit tam ekran panel (defter dokusu + metin + kapat).
+signal defter_kapandi
+func not_defteri_ac(metin: String) -> void:
+	if _defter_panel != null:
+		return
+	_defter_panel = ColorRect.new()
+	(_defter_panel as ColorRect).color = Color(0, 0, 0, 0.55)
+	_defter_panel.set_anchors_preset(Control.PRESET_FULL_RECT)
+	_defter_panel.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(_defter_panel)
+	var panel := PanelContainer.new()
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.93, 0.88, 0.76)
+	sb.set_corner_radius_all(16)
+	sb.content_margin_left = 26
+	sb.content_margin_right = 26
+	sb.content_margin_top = 22
+	sb.content_margin_bottom = 22
+	panel.add_theme_stylebox_override("panel", sb)
+	panel.set_anchors_preset(Control.PRESET_CENTER)
+	panel.custom_minimum_size = Vector2(430, 0)
+	_defter_panel.add_child(panel)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 14)
+	panel.add_child(vb)
+	var baslik := Label.new()
+	baslik.text = "📓 Not Defteri"
+	baslik.add_theme_font_size_override("font_size", 22)
+	baslik.add_theme_color_override("font_color", Color(0.29, 0.22, 0.16))
+	vb.add_child(baslik)
+	var govde := Label.new()
+	govde.text = metin
+	govde.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	govde.custom_minimum_size = Vector2(380, 0)
+	govde.add_theme_font_size_override("font_size", 16)
+	govde.add_theme_color_override("font_color", Color(0.35, 0.28, 0.2))
+	vb.add_child(govde)
+	var kapat := Button.new()
+	kapat.text = "Kapat"
+	kapat.pressed.connect(func():
+		_defter_panel.queue_free()
+		_defter_panel = null
+		defter_kapandi.emit())
+	vb.add_child(kapat)
