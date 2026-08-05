@@ -92,3 +92,24 @@ fenerlerin yakıtı) oyunda görünür. Tüm sayılar `tarim_balance.gd` +
 - Fener yakıtı ekonomisi (korotu → fener) ayrı görev — bu görev
   yalnız ışık kimliğini kurdu.
 - Mobil cihazda 8-ışık FPS doğrulaması (perf aşama 3 turuna eklendi).
+
+---
+
+## EK — golden_wheat v2 (bugday-v2 mini görevi, aynı dalda)
+
+Yeni üretim modeli eskisinin üzerine yazıldı; yeniden paketlenip
+bağlandı:
+
+- Dokular 2048→1024: dosya ham 8.1 MB → **0.95 MB**; 2548 üçgen
+  (v1: 1525 — hâlâ mobil dostu).
+- Doğal boy 0.578 = diz-bel bandının içi → root_scale 1.0, Y-up,
+  döndürme yok. Rastgele Y-rotasyon + fide %50 + yeşil ton v1
+  kancalarından aynen çalışıyor (kod değişikliği gerekmedi).
+- Koyu toprak taban v2'de de tek mesh'in parçası; görsel kontrolde
+  tarla karosuyla uyumlu — KALDI.
+- crops/ klasörü toplamı şu an ~14 MB; bunun ~4.7 MB'ı hâlâ
+  2048'lik planting_mound.glb (ayrı küçük iş: o da 1024'e inebilir).
+  Yeni ürün GLB'lerinin tamamı 0.3-1.0 MB bandında. Bellek: model
+  başına 4 doku × 1024² ≈ 5.3 MB ham RGB eşdeğeri (mip dahil).
+- FARMTEST2 yeşil; kareler: gündüz (olgun+fide), altın saat (erken
+  akşam), karakter tarlada (ölçek), hasat sonrası düşen demet.
