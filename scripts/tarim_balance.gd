@@ -99,22 +99,55 @@ const CROP_GLB_KANCA := {
 	"mist_mushroom": "res://assets/models/crops/mist_mushroom.glb",
 }
 ## Korotu placeholder emission'u (gece parlar — kimligi bu).
-const KOROTU_EMISSION := Color(0.30, 0.95, 0.85)
+## KOROTU-ISIK: ton goreve gore #7FEFE0 civari soluk turkuaz.
+const KOROTU_EMISSION := Color(0.498, 0.937, 0.878)
 const KOROTU_EMISSION_ENERJI := 1.2
 
 ## TARIM-GLB-2 olculeri. OLCEK IMPORT root_scale ILE (node scale
 ## yasak; carpanlar .glb.import dosyalarinda) — buradaki hedef boylar
 ## belge + dogrulama: diz boyu bandi 0.35-0.5, kabak iri kalabilir.
 ## Dogal boylar olculdu: pumpkin 0.617, earth_apple 0.662, korotu 1.0.
-const CROP_GLB_BOY := {"pumpkin": 0.55, "earth_apple": 0.38, "korotu": 0.45}
+const CROP_GLB_BOY := {"pumpkin": 0.55, "earth_apple": 0.38, "korotu": 0.45,
+		"golden_wheat": 0.55}   # dogal boy 0.553 — root_scale 1.0 yeterli
 ## Toprak tumsekli modeller zemine gomulur (kenar cimle bulussun).
-const CROP_GLB_GOM := {"pumpkin": 0.015, "earth_apple": 0.02, "korotu": 0.015}
+const CROP_GLB_GOM := {"pumpkin": 0.015, "earth_apple": 0.02, "korotu": 0.015,
+		"golden_wheat": 0.02}   # koyu taban tarla karosuna otursun
+## HUCRE KOMPOZISYONLU modeller (tek GLB'de cok sap): kompozisyon
+## yonsuz — hucrede rastgele Y-rotasyon tekduzeligi kirar.
+const CROP_GLB_YROT := ["golden_wheat"]
+## Fide evresinde yesil ton kaymasi alan modeller (genc basak yesili).
+const CROP_GLB_FIDE_YESIL := ["golden_wheat"]
+const FIDE_YESIL_TON := Color(0.72, 1.0, 0.62)
 ## Fide evresi: olgun modelin bu orani (mevcut kural).
 const FIDE_ORAN := 0.5
-## Korotu GLB isiltisi: Meshy emissive dokusu kanaliyla; gece
-## _update_water_night ayni gece kaynagindan guclendirir.
-const KOROTU_GLB_ENERJI_GUNDUZ := 0.25
-const KOROTU_GLB_ENERJI_GECE := 1.6
+# --- KOROTU ISIK SISTEMI (korotu-isik) ---------------------------------
+## Iki katman: EMISSION (Meshy emissive dokusu YALNIZ cicek canini
+## kapliyor — sap/yaprak haritada karanlik, sizma yok) + GERCEK
+## OmniLight (yalniz OLGUN evre). Hikaye: isik bitkisi, fener yakiti.
+## Gunduz cok hafif (bagirmaz), gece ~3.75x (gorev bandi 3-4x).
+const KOROTU_GLB_ENERJI_GUNDUZ := 0.4
+const KOROTU_GLB_ENERJI_GECE := 1.5
+## Fide: isik YOK, emission iyice soluk (parlama = olgunluk sinyali;
+## hasat zamani = parlama zamani).
+const KOROTU_FIDE_EMISSION_CARPAN := 0.35
+## OmniLight: bu bir BITKI, fener degil — Ocak(6.0)/mesale(4.5)
+## alanlarindan belirgin kucuk. Golge KAPALI (mobil kurali).
+const KOROTU_ISIK_RENK := Color(0.72, 0.97, 0.93)   # turkuaz-beyaz
+const KOROTU_ISIK_MENZIL := 2.5                     # hucre (~m)
+const KOROTU_ISIK_ENERJI_GECE := 0.85               # gunduz 0 (gorunmez)
+## Ayni anda en fazla bu kadar OmniLight; fazlasi varsa oyuncuya EN
+## YAKIN olanlar isikli, gerisi yalniz emission. Kalite Dusuk'te
+## OmniLight tamamen kapali (perf_balance "korotu_isik").
+const KOROTU_ISIK_MAX := 8
+## NEFES: cok yavas sinus — canli organizma hissi. Mesalenin hizli
+## titrek atesinden FARKLI karakter (o titrek, bu sakin).
+const KOROTU_NEFES_PERIYOT_SN := 4.0
+const KOROTU_NEFES_ORAN := 0.15                     # ±%15
+## Yaratik Isik Kurami: korotu alani da "isik alani" sayilir
+## (icine giren yaratik LIGHT_SLOW ile yavaslar).
+const KOROTU_ISIK_ALAN := 2.5
+## Yere dusen korotu cicegi de hafif isir (yasayan isik hissi).
+const KOROTU_ITEM_EMISSION_ENERJI := 0.9
 
 ## MANTAR GOLGE KURALI: hucre "los" sayilir eger agac dibi (1 hucre
 ## komsulukta agac) YA DA ic mekan (cati alti) ise.

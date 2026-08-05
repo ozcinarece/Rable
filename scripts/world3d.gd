@@ -2126,6 +2126,7 @@ func _process(delta: float) -> void:
 		var ht := Time.get_ticks_msec() / 1000.0
 		_hearth_light.light_energy = 3.0 * (0.9 + 0.1 * sin(ht * 8.0))
 	_tick_regrow(delta)
+	_korotu_process(delta)  # korotu-isik: nefes + en-yakin-8 secimi
 	_update_daylight()  # gunduz/gece: güneş/gökyüzü/ambient eğrisi (yumuşak)
 	# CIM SHADER V1: oyuncu ezmesi — tek uniform, her kare (sozlesme).
 	# quality 0'da guncelleme de atlanir (_cim_ezme_on bayragi).
@@ -4711,13 +4712,9 @@ func _update_water_night() -> void:
 	for cr in _creatures:
 		if is_instance_valid(cr) and cr.has_method("set_night"):
 			cr.set_night(night)
-	# KOROTU GLB isiltisi da ayni kaynaktan guclenir (tarim-glb-2)
-	var kge: float = TarimBalance.KOROTU_GLB_ENERJI_GECE if night \
-			else TarimBalance.KOROTU_GLB_ENERJI_GUNDUZ
-	for n in _crop_nodes.values():
-		if is_instance_valid(n) and (n as Node).has_meta("korotu_mats"):
-			for m in (n as Node).get_meta("korotu_mats"):
-				(m as StandardMaterial3D).emission_energy_multiplier = kge
+	# KOROTU: gece gecisinde secim/enerji tazelenir (sahibi
+	# _korotu_process — nefes + en-yakin-8 orada; tek kaynak korunur).
+	_korotu_tarama_t = 0.0
 
 # Bos cim hucrelerinin bir kismina sus otu serpistirir (toplanmaz).
 var _decor_nodes: Array = []
@@ -8565,6 +8562,13 @@ func _ground_item_visual(item_id: String, count: int = 1) -> Node3D:
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = _item_category_color(item_id)
 	mat.roughness = 0.7
+	# KOROTU-ISIK: dusen korotu cicegi hafif isir (yasayan isik hissi;
+	# envanter ikonu 2D — dokunus yer esyasinda).
+	if item_id == "korotu_cicek":
+		mat.albedo_color = TarimBalance.KOROTU_EMISSION.darkened(0.25)
+		mat.emission_enabled = true
+		mat.emission = TarimBalance.KOROTU_EMISSION
+		mat.emission_energy_multiplier = TarimBalance.KOROTU_ITEM_EMISSION_ENERJI
 	mi.material_override = mat
 	root.add_child(mi)
 	return root
@@ -8594,7 +8598,8 @@ func _item_category_color(item_id: String) -> Color:
 
 ## Yuvarlak govde alan (kure) esyalar: yiyecek/toplanabilir.
 func _item_is_round(item_id: String) -> bool:
-	return item_id in ["meyve", "mantar", "altin", "bakir", "cakil"]
+	return item_id in ["meyve", "mantar", "altin", "bakir", "cakil",
+			"korotu_cicek"]
 
 ## Dususleri hucre cevresine sacar (agac/kaya hasadi + yikim ayni sistem #1).
 ## Her (id,adet) merkeze yakin, mumkunse bos bir yer-esyasi hucresine konur.
@@ -8849,6 +8854,12 @@ func _mantar_golge_valid(cell: Vector2i) -> bool:
 
 ## Veri->gorsel koprusu: zemin parcasi + bitki dugumu yenilenir
 var _crop_nodes: Dictionary = {}  # cell -> Node3D
+# KOROTU ISIK durumu (korotu-isik): 0.5 sn'de bir taranan kayitlar +
+# gorunur isiklarin hucreleri (yaratik isik alani icin).
+var _korotu_guncel: Array = []
+var _korotu_isik_hucreler: Array = []
+var _korotu_nefes_t: float = 0.0
+var _korotu_tarama_t: float = 0.0
 
 func _on_plot_changed(cell: Vector2i) -> void:
 	_refresh_terrain_at(cell)
@@ -8986,8 +8997,21 @@ func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 			inst.scale = Vector3(s2, s2, s2)
 			inst.position.y = -aabb.position.y * s2 \
 					- float(TarimBalance.CROP_GLB_GOM.get(crop_id, 0.0)) * s2
+			# Hucre kompozisyonlu modeller yonsuz: rastgele Y-rotasyon
+			# tekduzeligi kirar (yalniz evre gecisinde yeniden secilir).
+			if crop_id in TarimBalance.CROP_GLB_YROT:
+				inst.rotation.y = randf() * TAU
+			# Fide: genc basak yesili (albedo ton kaymasi)
+			if kova == 1 and crop_id in TarimBalance.CROP_GLB_FIDE_YESIL:
+				for fmi: MeshInstance3D in inst.find_children("*",
+						"MeshInstance3D", true, false):
+					for fi in fmi.mesh.get_surface_count():
+						var fm := fmi.get_surface_override_material(fi)
+						if fm is StandardMaterial3D:
+							fm.albedo_color = fm.albedo_color \
+									* TarimBalance.FIDE_YESIL_TON
 			if crop_id == "korotu":
-				_korotu_glb_isilti(root, inst)
+				_korotu_glb_isilti(root, inst, kova)
 		elif aabb.size.y > 0.01:
 			var s: float = CROP_STAGE_H[mini(stage, CROP_STAGE_H.size() - 1)] \
 					/ aabb.size.y
@@ -9100,12 +9124,80 @@ func _crop_cyl(r: float, h: float) -> CylinderMesh:
 
 ## Meshy GLB'leri emissive (isima) haritasiyla gelir -> sahne isigini
 ## dinlemeyip PARLAK gorunur. Isima kapatilir, puruzluluk toparlanir.
-## KOROTU GLB isiltisi: modelin emissive DOKUSU kanal olarak kalir
-## (tame kapatmisti) — soluk turkuaz tonla geri acilir; gece
-## _update_water_night ayni gece kaynagindan guclendirir (meta liste).
-func _korotu_glb_isilti(root: Node3D, inst: Node3D) -> void:
+## KOROTU nefesi: cok yavas sinusle emission + isik enerjisi soluk
+## alip verir (~4 sn, ±%15) — mesalenin hizli titremesinden farkli,
+## sakin bir "canli organizma" ritmi. Kayit listesi 0.5 sn'de bir
+## _korotu_tara ile tazelenir (hasat/euyume/oyuncu hareketi).
+func _korotu_process(delta: float) -> void:
+	_korotu_tarama_t -= delta
+	if _korotu_tarama_t <= 0.0:
+		_korotu_tarama_t = 0.5
+		_korotu_tara()
+	if _korotu_guncel.is_empty():
+		return
+	_korotu_nefes_t += delta
+	var night: bool = DayNight.phase in ["night", "dusk"]
+	var nefes := 1.0 + TarimBalance.KOROTU_NEFES_ORAN \
+			* sin(TAU * _korotu_nefes_t / TarimBalance.KOROTU_NEFES_PERIYOT_SN)
+	var em_taban: float = TarimBalance.KOROTU_GLB_ENERJI_GECE if night \
+			else TarimBalance.KOROTU_GLB_ENERJI_GUNDUZ
+	for kayit: Dictionary in _korotu_guncel:
+		for m in kayit["mats"]:
+			(m as StandardMaterial3D).emission_energy_multiplier = \
+					em_taban * nefes * float(kayit["carpan"])
+		var l = kayit["light"]
+		if l != null and is_instance_valid(l) and (l as OmniLight3D).visible:
+			(l as OmniLight3D).light_energy = \
+					TarimBalance.KOROTU_ISIK_ENERJI_GECE * nefes
+
+## Kayit taramasi + ISIK SECIMI. Kurallar (veride): isik yalniz gece;
+## kalite Dusuk'te hic (mobil sigortasi — emission yine gorunur);
+## MAX'tan fazlasi varsa oyuncuya EN YAKIN olanlar yanar.
+func _korotu_tara() -> void:
+	_korotu_guncel.clear()
+	_korotu_isik_hucreler.clear()
+	var adaylar: Array = []
+	for cell: Vector2i in _crop_nodes:
+		var n = _crop_nodes[cell]
+		if not is_instance_valid(n) or not (n as Node).has_meta("korotu_mats"):
+			continue
+		var kayit := {"cell": cell,
+				"mats": (n as Node).get_meta("korotu_mats"),
+				"carpan": float((n as Node).get_meta("korotu_carpan", 1.0)),
+				"light": (n as Node).get_meta("korotu_isik", null)}
+		_korotu_guncel.append(kayit)
+		if kayit["light"] != null and is_instance_valid(kayit["light"]):
+			adaylar.append(kayit)
+	if adaylar.is_empty():
+		return
+	var night: bool = DayNight.phase in ["night", "dusk"]
+	var izinli: bool = night and bool(PerfBalance.tier(_quality_tier) \
+			.get("korotu_isik", true))
+	var pc := _player_cell()
+	adaylar.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		return (Vector2i(a["cell"]) - pc).length_squared() \
+				< (Vector2i(b["cell"]) - pc).length_squared())
+	for i in adaylar.size():
+		var l: OmniLight3D = adaylar[i]["light"]
+		var yan: bool = izinli and i < TarimBalance.KOROTU_ISIK_MAX
+		l.visible = yan
+		if yan:
+			_korotu_isik_hucreler.append(adaylar[i]["cell"])
+		else:
+			l.light_energy = 0.0
+
+## KOROTU ISIK (korotu-isik): iki katman. EMISSION — modelin emissive
+## DOKUSU kanal olarak kalir (yalniz cicek canini kapliyor; sap/yaprak
+## haritada karanlik, sizma yok), soluk turkuaz tonla acilir. GERCEK
+## ISIK — yalniz OLGUN evrede kucuk golgesiz OmniLight dogar ("hasat
+## zamani = parlama zamani"); hasat edilince dugumle birlikte soner
+## (oyuncunun "hasat mi, fener mi" ikilemi). Nefes/gece/en-yakin-8
+## secimi _korotu_process + _korotu_tara'da.
+func _korotu_glb_isilti(root: Node3D, inst: Node3D, kova: int) -> void:
 	var mats: Array = []
 	var night: bool = DayNight.phase in ["night", "dusk"]
+	var carpan: float = TarimBalance.KOROTU_FIDE_EMISSION_CARPAN \
+			if kova < 2 else 1.0
 	for mi: MeshInstance3D in inst.find_children("*", "MeshInstance3D", true, false):
 		if mi.mesh == null:
 			continue
@@ -9114,11 +9206,23 @@ func _korotu_glb_isilti(root: Node3D, inst: Node3D) -> void:
 			if m is StandardMaterial3D:
 				m.emission_enabled = true
 				m.emission = TarimBalance.KOROTU_EMISSION
-				m.emission_energy_multiplier = \
-						TarimBalance.KOROTU_GLB_ENERJI_GECE if night \
-						else TarimBalance.KOROTU_GLB_ENERJI_GUNDUZ
+				m.emission_energy_multiplier = carpan * \
+						(TarimBalance.KOROTU_GLB_ENERJI_GECE if night \
+						else TarimBalance.KOROTU_GLB_ENERJI_GUNDUZ)
 				mats.append(m)
 	root.set_meta("korotu_mats", mats)
+	root.set_meta("korotu_carpan", carpan)
+	if kova == 2:
+		var l := OmniLight3D.new()
+		l.light_color = TarimBalance.KOROTU_ISIK_RENK
+		l.omni_range = TarimBalance.KOROTU_ISIK_MENZIL
+		l.light_energy = 0.0
+		l.shadow_enabled = false  # mobil: nokta isik golgesi pahali
+		l.position = Vector3(0, 0.35, 0)
+		l.visible = false  # _korotu_tara acar (gece + en yakin 8 + kalite)
+		root.add_child(l)
+		root.set_meta("korotu_isik", l)
+	_korotu_tarama_t = 0.0  # yeni bitki: secimi hemen tazele
 
 func _tame_meshy_materials(root: Node, tint: Color = Color.WHITE) -> void:
 	for mi: MeshInstance3D in root.find_children("*", "MeshInstance3D", true, false):
@@ -10222,6 +10326,13 @@ func _pos_in_light(pos: Vector3) -> bool:
 		var tp := _cell_center(c)
 		if Vector2(pos.x - tp.x, pos.z - tp.z).length() \
 				<= CreatureBalance.LIGHT_RANGE_TORCH:
+			return true
+	# KOROTU (korotu-isik): isigi YANAN olgun bitkiler de isik alanidir
+	# — Isik Kurami ayni kural setinden isler (%10 yavaslama vb.).
+	for kc: Vector2i in _korotu_isik_hucreler:
+		var kp := _cell_center(kc)
+		if Vector2(pos.x - kp.x, pos.z - kp.z).length() \
+				<= TarimBalance.KOROTU_ISIK_ALAN:
 			return true
 	return false
 
@@ -12618,6 +12729,9 @@ func _run_kesif_frames(save_path: String) -> void:
 ## cagrilir (_activate_hearth / _add_torch_light / yapi sokumu) —
 ## sozlesmenin performans sarti.
 func _update_water_warm_lights() -> void:
+	# KOROTU GIRMEZ: warm_lights SICAK turuncu yansima (Ocak/mesale);
+	# korotu SOGUK isik — sudaki turkuaz yansima icin ileride ayri
+	# "cool_lights" dizisi (TODO kanca; simdilik bilerek yok).
 	if not DigWaterVisual.SU_SHADER_V1 or _lake_mat == null:
 		return
 	var adaylar: Array = []
