@@ -240,3 +240,15 @@ import root_scale ile; tümsekli modeller 1.5-2 cm gömük; fide=olgun
 %50 tek kod yolundan. Dokular 2048→1024 (GLB'ler 16.7→1.6 MB).
 Buğday+mantar placeholder'da (dosya bekliyor; kanca hazır). FARMTEST2
 yeşil. Ayrıntı RAPOR_TARIMGLB2.md.
+
+## GÜNCEL DURUM NOTU (korotu-isik — dalda, merge bekliyor)
+Korotu hakiki ışık kaynağı oldu: emission (yalnız çiçek çanı, #7FEFE0;
+gündüz 0.4 / gece 1.5) + olgun evrede gerçek OmniLight (menzil 2.5,
+gölgesiz, gece 0.85) + 4 sn'lik sakin nefes (±%15, meşale titremesinden
+farklı). Işık olgunlukta doğar, hasatta söner (fener-mi-hasat-mı
+ikilemi); düşen çiçek hafif ışır. Sigortalar: max 8 ışık (en yakın),
+kalite Düşük'te ışık kapalı emission açık. Yaratık Işık Kuramı korotu
+alanını da sayıyor (%10 yavaş + çatlak sönmesi); su warm_lights'a
+bilerek girmedi (cool_lights TODO). golden_wheat de bağlandı (tek mesh
+kompozisyon, root_scale 1.0, rastgele Y-rot, fide yeşil ton, doku 1024
+— 6.5→0.65 MB). FARMTEST2 yeşil. Ayrıntı RAPOR_KOROTUISIK.md.

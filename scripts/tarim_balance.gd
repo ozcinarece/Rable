@@ -147,7 +147,7 @@ const KOROTU_NEFES_ORAN := 0.15                     # ±%15
 ## (icine giren yaratik LIGHT_SLOW ile yavaslar).
 const KOROTU_ISIK_ALAN := 2.5
 ## Yere dusen korotu cicegi de hafif isir (yasayan isik hissi).
-const KOROTU_ITEM_EMISSION_ENERJI := 0.9
+const KOROTU_ITEM_EMISSION_ENERJI := 0.45  # 0.9 kure gibi bagiriyordu (kare)
 
 ## MANTAR GOLGE KURALI: hucre "los" sayilir eger agac dibi (1 hucre
 ## komsulukta agac) YA DA ic mekan (cati alti) ise.
