@@ -253,3 +253,18 @@ sinematik varsayılan. Kayıtta durum paketi; Gün 0 yarım kalırsa
 baştan. SLICETEST iki modu da CI'da doğruluyor. Yol boyu iki gizli
 bug düzeldi (devrilme tweeni freed-lambda seli; HUD gizleme listesi).
 Ayrıntı RAPOR_ACILIS.md; sayılar/metinler acilis_balance.gd.
+
+## GÜNCEL DURUM NOTU (korotu-isik — dalda, merge bekliyor)
+Korotu hakiki ışık kaynağı oldu: emission (yalnız çiçek çanı, #7FEFE0;
+gündüz 0.4 / gece 1.5) + olgun evrede gerçek OmniLight (menzil 2.5,
+gölgesiz, gece 0.85) + 4 sn'lik sakin nefes (±%15, meşale titremesinden
+farklı). Işık olgunlukta doğar, hasatta söner (fener-mi-hasat-mı
+ikilemi); düşen çiçek hafif ışır. Sigortalar: max 8 ışık (en yakın),
+kalite Düşük'te ışık kapalı emission açık. Yaratık Işık Kuramı korotu
+alanını da sayıyor (%10 yavaş + çatlak sönmesi); su warm_lights'a
+bilerek girmedi (cool_lights TODO). golden_wheat de bağlandı (tek mesh
+kompozisyon, root_scale 1.0, rastgele Y-rot, fide yeşil ton, doku 1024
+— 6.5→0.65 MB). FARMTEST2 yeşil. Ayrıntı RAPOR_KOROTUISIK.md.
+EK (bugday-v2): golden_wheat v2 yeni üretimle değişti — yeniden 1024'e
+paketlendi (8.1→0.95 MB, 2548 üçgen, boy 0.578 → root_scale 1.0);
+taban v2'de de uyumlu, kancalar kod değişmeden çalıştı.

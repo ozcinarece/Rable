@@ -50,6 +50,7 @@ const TIERS := {
 		"torch_flicker": false,
 		"particles": false,
 		"far_simplify_dist": 14.0,
+		"korotu_isik": false,  # korotu-isik: gercek OmniLight izni
 	},
 	"orta": {
 		"label": "Orta",
@@ -60,6 +61,7 @@ const TIERS := {
 		"torch_flicker": true,
 		"particles": true,
 		"far_simplify_dist": 22.0,
+		"korotu_isik": true,  # korotu-isik: gercek OmniLight izni
 	},
 	"yuksek": {
 		"label": "Yüksek",
@@ -70,6 +72,7 @@ const TIERS := {
 		"torch_flicker": true,
 		"particles": true,
 		"far_simplify_dist": 32.0,
+		"korotu_isik": true,  # korotu-isik: gercek OmniLight izni
 	},
 }
 
