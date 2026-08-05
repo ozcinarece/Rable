@@ -112,8 +112,9 @@ const CROP_GLB_BOY := {"pumpkin": 0.55, "earth_apple": 0.38, "korotu": 0.45,
 ## Toprak tumsekli modeller zemine gomulur (kenar cimle bulussun).
 const CROP_GLB_GOM := {"pumpkin": 0.015, "earth_apple": 0.02, "korotu": 0.015,
 		"golden_wheat": 0.02}   # koyu taban tarla karosuna otursun
-## HUCRE KOMPOZISYONLU modeller (tek GLB'de cok sap): kompozisyon
-## yonsuz — hucrede rastgele Y-rotasyon tekduzeligi kirar.
+## HUCRE KOMPOZISYONLU modeller (tek GLB'de cok sap): hucrede
+## rastgele Y-rotasyon tekduzeligi kirar — YALNIZ 90 derecenin
+## katlari (kullanici kurali: serbest aci karo hizasini bozuyor).
 const CROP_GLB_YROT := ["golden_wheat"]
 ## Fide evresinde yesil ton kaymasi alan modeller (genc basak yesili).
 const CROP_GLB_FIDE_YESIL := ["golden_wheat"]

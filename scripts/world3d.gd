@@ -8997,10 +8997,12 @@ func _build_crop_visual(crop_id: String, stage: int) -> Node3D:
 			inst.scale = Vector3(s2, s2, s2)
 			inst.position.y = -aabb.position.y * s2 \
 					- float(TarimBalance.CROP_GLB_GOM.get(crop_id, 0.0)) * s2
-			# Hucre kompozisyonlu modeller yonsuz: rastgele Y-rotasyon
-			# tekduzeligi kirar (yalniz evre gecisinde yeniden secilir).
+			# Hucre kompozisyonlu modeller: Y-rotasyon YALNIZ 90'in
+			# katlari (kullanici kurali — serbest aci taban/karo
+			# hizasini bozuyor); 4 yonden rastgele secim tekduzeligi
+			# yine kirar (evre gecisinde yeniden secilir).
 			if crop_id in TarimBalance.CROP_GLB_YROT:
-				inst.rotation.y = randf() * TAU
+				inst.rotation.y = float(randi_range(0, 3)) * (TAU / 4.0)
 			# Fide: genc basak yesili (albedo ton kaymasi)
 			if kova == 1 and crop_id in TarimBalance.CROP_GLB_FIDE_YESIL:
 				for fmi: MeshInstance3D in inst.find_children("*",
